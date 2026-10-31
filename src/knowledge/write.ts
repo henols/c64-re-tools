@@ -1,69 +1,42 @@
 // Semantic knowledge writes. Every accepted change is one
 // revision in one transaction: superseded rows are closed, never deleted.
 
-import type { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
-import { type AddressRange, formatC64Address, instructionLength, SPACE_PATTERN, subtract, SYMBOL_NAME } from "../c64.ts";
+import { type AddressRange, formatC64Address, formatC64Range, instructionLength, type ReferenceKind, REFERENCE_KINDS, SPACE_PATTERN, subtract, SYMBOL_NAME } from "../c64.ts";
 import { isoCet } from "../time.ts";
 import { CONFLICT_RULES, conflicts, conflictTable, type Conflict, type ConflictRow } from "./conflicts.ts";
-import { transaction } from "./database.ts";
+import { markChanged, prepare, transaction } from "./database.ts";
 import { labelProblem, MNEMONICS } from "../opcodes.ts";
-import { checkExpression, evaluate, identifiers, operandText, replaceIdentifiers } from "./expression.ts";
+import { checkExpression, evaluate, identifiers, OPERAND_SELECTS, operandText, replaceIdentifiers, type OperandSelect } from "./expression.ts";
 import {
   baseLabel,
   baseValue,
-  COMMENT_COLUMNS,
   commentsAt,
+  coverageRuns,
   currentRevision,
+  currentStartScreen,
+  FACTS,
   listMacroUses,
-  listOperands,
   listPatches,
-  listReleases,
   listSwitches,
   listText,
-  MACRO_COLUMNS,
-  MACRO_USE_COLUMNS,
   macroNamed,
   macroUsesOverlapping,
-  MODULE_COLUMNS,
   moduleAt,
   moduleWithFile,
-  OPERAND_COLUMNS,
   operandAt,
-  PATCH_COLUMNS,
   patchesOverlapping,
-  REFERENCE_COLUMNS,
   referencesFrom,
-  REGION_COLUMNS,
   regionsOverlapping,
-  RELEASE_COLUMNS,
   releaseLabeled,
-  SWITCH_COLUMNS,
-  START_SCREEN_COLUMNS,
-  currentStartScreen,
-  startScreenRanges,
-  switchNamed,
-  coverageRuns,
   resolveRevision,
-  SUPPRESSION_COLUMNS,
+  startScreenRanges,
   suppressionsOverlapping,
-  SYMBOL_COLUMNS,
+  switchNamed,
   symbolAt,
   symbolNamed,
-  toComment,
-  toMacro,
-  toMacroUse,
-  toModule,
-  toOperand,
-  toPatch,
-  toReference,
-  toRegion,
-  toRelease,
-  toSuppression,
-  toSwitch,
-  toStartScreen,
-  toSymbol,
   type CommentRow,
   type CoverageRun,
   type MacroRow,
@@ -79,8 +52,10 @@ import {
   type SwitchRow,
   type SymbolRow,
 } from "./read.ts";
-import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MEMORY_ROW, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, GENERATED_FOLDERS, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, LEFTOVERS_SWITCH, START_SCREEN_MODES, START_SCREEN_SWITCH, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, OPERAND_SELECTS, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type StartScreenMode, type SwitchKind, type SymbolKind } from "./schema.ts";
-import { newRevisionId, rowId, sqlName } from "./text.ts";
+import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MEMORY_ROW, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, GENERATED_FOLDERS, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, LEFTOVERS_SWITCH, START_SCREEN_MODES, START_SCREEN_SWITCH, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, POINTER_KIND, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type Origin, type RegionType, type Space, type StartScreenMode, type SwitchKind, type SymbolKind } from "./schema.ts";
+import { newRevisionId, rowId, sqlName, TABLES, tableSpec } from "./text.ts";
+
+type Raw = Record<string, unknown>;
 
 /** What a change rests on: a coverage run, a test or another project file with its SHA-256, or a note. */
 export interface Evidence {
@@ -118,7 +93,6 @@ export interface WriteResult<T, P = never> {
   previous?: P;
 }
 
-export { SYMBOL_NAME };
 const MAX_COMMENT = 4000;
 /** The most characters of patch code and of a macro body. */
 const MAX_CODE = 8000;
@@ -146,6 +120,20 @@ export interface ChangeContext {
   restores?: string;
   /** A revert of one space: the space whose knowledge it restores. Without it, a revert restores every space. */
   restoresSpace?: Space;
+  /** A merge of the work of two computers: it writes while the knowledge has conflicts, to decide them. */
+  allowConflicts?: boolean;
+}
+
+/** The value of a row field as its column holds it: a list is text, true is 1, false is 0, and a missing value is null. */
+function columnValue(value: unknown): SQLInputValue {
+  if (value === undefined) return null;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  return Array.isArray(value) ? listText(value as string[]) : (value as SQLInputValue);
+}
+
+/** The column values of a row of a table, in the order of its fields. `by` names a value of the row by the key of its field (a row as the reads give it) or by its column. */
+function rowValues(table: string, row: object, by: "key" | "column" = "key"): SQLInputValue[] {
+  return tableSpec(table).fields.map((field) => columnValue((row as Raw)[field[by]]));
 }
 
 /**
@@ -156,6 +144,8 @@ export class Change {
   revision: string | null = null;
   /** The rows this write inserted, for their ids. */
   #rows = 0;
+  /** The tables that this write inserted rows into. */
+  readonly #inserted = new Set<string>();
   readonly #db: DatabaseSync;
   readonly #context: ChangeContext;
   readonly #operation: string;
@@ -165,7 +155,7 @@ export class Change {
     this.#context = context;
     this.#operation = operation;
     // A merge of two computers' work can leave conflicts: only a merge revision writes then.
-    const found = operation === "merge" ? [] : conflicts(db);
+    const found = context.allowConflicts === true ? [] : conflicts(db);
     if (found.length > 0) {
       throw new Refusal(
         "conflict",
@@ -198,10 +188,13 @@ export class Change {
   /**
    * Refuses a write that leaves two current rows where one is allowed: the
    * index has no unique indexes, because a merged text can hold such rows.
+   * The knowledge had no conflict before the write, and a closed row makes
+   * none, so only the rules of the tables that it inserted into can break; a
+   * merge checks every rule.
    */
   check(): void {
     if (this.revision === null) return;
-    const [found] = conflicts(this.#db);
+    const [found] = conflicts(this.#db, this.#context.allowConflicts === true ? undefined : this.#inserted);
     if (found !== undefined) throw new Refusal("conflict", `The write would leave ${describe(found)}. Nothing was written.`);
   }
 
@@ -212,114 +205,98 @@ export class Change {
 
   /** Closes the current rows of `table` that `where` selects. */
   close(table: string, where: string, ...values: Array<number | string>): void {
-    this.#db.prepare(`UPDATE ${table} SET valid_to_revision = ? WHERE valid_to_revision IS NULL AND ${where}`).run(this.id(), ...values);
+    const { changes } = prepare(this.#db, `UPDATE ${sqlName(table)} SET valid_to_revision = ? WHERE valid_to_revision IS NULL AND ${where}`).run(this.id(), ...values);
+    if (Number(changes) > 0) markChanged(this.#db, table);
+  }
+
+  /** Inserts a row of `table` with the values of its columns, in the order of its fields. */
+  #insert(table: string, values: SQLInputValue[]): void {
+    const columns = tableSpec(table).fields.map((field) => field.column);
+    prepare(this.#db, `INSERT INTO ${sqlName(table)} (id, ${columns.join(", ")}, valid_from_revision) VALUES (?, ${columns.map(() => "?").join(", ")}, ?)`).run(this.#rowId(), ...values, this.id());
+    this.#inserted.add(table);
+    markChanged(this.#db, table);
+  }
+
+  /** Inserts a row of `table` with the values that `row` has by column name, as a query of the table gives them. */
+  insertColumns(table: string, row: Raw): void {
+    this.#insert(table, rowValues(table, row, "column"));
   }
 
   insertSymbol(row: Omit<SymbolRow, "revision">): void {
-    this.#db.prepare("INSERT INTO symbols (id, space, address, name, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)").run(this.#rowId(), row.space, row.address, row.name, row.kind, row.origin, this.id());
+    this.#insert("symbols", rowValues("symbols", row));
   }
 
   /** A second name of an address from an analyzer. */
   insertAnalyzerName(row: Omit<SymbolRow, "revision">): void {
-    this.#db.prepare("INSERT INTO analyzer_names (id, space, address, name, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)").run(this.#rowId(), row.space, row.address, row.name, row.kind, row.origin, this.id());
+    this.#insert("analyzer_names", rowValues("analyzer_names", row));
   }
 
   insertRegion(row: Omit<RegionRow, "revision">): void {
-    this.#db
-      .prepare("INSERT INTO regions (id, space, start_address, end_address, type, element, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.start, row.end, row.type, row.element ?? null, row.origin, this.id());
+    this.#insert("regions", rowValues("regions", row));
   }
 
   insertComment(row: Omit<CommentRow, "revision">): void {
-    this.#db
-      .prepare("INSERT INTO comments (id, space, address, placement, text, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.address, row.placement, row.text, row.origin, this.id());
+    this.#insert("comments", rowValues("comments", row));
   }
 
   insertReference(row: Omit<ReferenceRow, "revision">): void {
-    this.#db
-      .prepare('INSERT INTO "references" (id, space, from_address, to_address, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(this.#rowId(), row.space, row.from, row.to, row.kind, row.origin, this.id());
+    this.#insert("references", rowValues("references", row));
   }
 
   insertModule(row: Omit<ModuleRow, "revision">): void {
-    this.#db
-      .prepare("INSERT INTO modules (id, space, start_address, file, title, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.start, row.file, row.title ?? null, row.origin, this.id());
+    this.#insert("modules", rowValues("modules", row));
   }
 
   insertOperand(row: Omit<OperandRow, "revision">): void {
-    this.#db
-      .prepare("INSERT INTO operands (id, space, address, selector, symbol, offset, expression, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.address, row.select, row.symbol ?? null, row.offset, row.expression ?? null, row.origin, this.id());
+    this.#insert("operands", rowValues("operands", row));
   }
 
   insertPatch(row: Omit<PatchRow, "revision">): void {
-    this.#db
-      .prepare("INSERT INTO patches (id, space, start_address, end_address, switch_name, code, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.start, row.end, row.switch, row.code, row.comment ?? null, row.origin, this.id());
+    this.#insert("patches", rowValues("patches", row));
   }
 
   insertSwitch(row: Omit<SwitchRow, "revision">): void {
-    this.#db
-      .prepare("INSERT INTO switches (id, space, name, kind, default_value, releases, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.name, row.kind, row.default, listText(row.releases), row.comment ?? null, row.origin, this.id());
+    this.#insert("switches", rowValues("switches", row));
   }
 
   insertRelease(row: Omit<ReleaseRow, "revision">): void {
-    this.#db
-      .prepare("INSERT INTO releases (id, space, label, base, file, sha256, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.label, row.base ? 1 : 0, row.file ?? null, row.sha256 ?? null, row.comment ?? null, row.origin, this.id());
+    this.#insert("releases", rowValues("releases", row));
   }
 
   /** Bytes of a release other than the base release, as a memory row of the program holds them. */
   insertReleaseMemory(row: { space: Space; label: string; address: number; bytes: string; origin: Origin }): void {
-    this.#db
-      .prepare("INSERT INTO release_memory (id, space, label, address, bytes, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.label, row.address, row.bytes, row.origin, this.id());
+    this.insertColumns("release_memory", row);
   }
 
   insertStartScreen(row: Omit<StartScreenRow, "revision">): void {
-    this.#db
-      .prepare("INSERT INTO start_screens (id, space, mode, screen, bitmap, charset, colours, colour, border, background, stage, call_address, colour_ram, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.mode, row.screen, row.bitmap ?? null, row.charset ?? null, row.colours ?? null, row.colour ?? null, row.border, row.background, row.stage ?? null, row.call ?? null, row.colourRam === true ? 1 : null, row.comment ?? null, row.origin, this.id());
+    this.#insert("start_screens", rowValues("start_screens", row));
   }
 
   insertMacro(row: Omit<MacroRow, "revision">): void {
-    this.#db
-      .prepare("INSERT INTO macros (id, space, name, params, body, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.name, listText(row.params), row.body, row.comment ?? null, row.origin, this.id());
+    this.#insert("macros", rowValues("macros", row));
   }
 
   insertMacroUse(row: Omit<MacroUseRow, "revision">): void {
-    this.#db
-      .prepare("INSERT INTO macro_uses (id, space, start_address, end_address, macro, args, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.start, row.end, row.macro, listText(row.args), row.origin, this.id());
+    this.#insert("macro_uses", rowValues("macro_uses", row));
   }
 
   insertSuppression(row: Omit<SuppressionRow, "revision">): void {
-    this.#db
-      .prepare("INSERT INTO suppressions (id, space, entity, start_address, end_address, to_address, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.entity, row.start, row.end, row.to ?? null, row.kind ?? null, row.origin, this.id());
+    this.#insert("suppressions", rowValues("suppressions", row));
   }
 
   /** Bytes of the program, as hex digits. */
   insertMemory(row: { space: Space; address: number; bytes: string; origin: Origin }): void {
-    this.#db.prepare("INSERT INTO memory (id, space, address, bytes, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?)").run(this.#rowId(), row.space, row.address, row.bytes, row.origin, this.id());
+    this.insertColumns("memory", row);
   }
 
   /** The entry of the program, with the machine state and the unpacker stages as JSON text when it has them. */
   insertEntry(row: { space: Space; address: number; state: string | null; stages: string | null; origin: Origin }): void {
-    this.#db
-      .prepare("INSERT INTO entries (id, space, address, state, stages, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.address, row.state, row.stages, row.origin, this.id());
+    this.insertColumns("entries", row);
   }
 
   /** The ranges of one kind of the coverage map at a project path, as text. */
   insertCoverage(row: { space: Space; map: string; kind: string; ranges: string; origin: Origin }): void {
-    this.#db
-      .prepare("INSERT INTO coverage (id, space, map, kind, ranges, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(this.#rowId(), row.space, row.map, row.kind, row.ranges, row.origin, this.id());
+    this.insertColumns("coverage", row);
   }
 }
 
@@ -332,7 +309,7 @@ function describe(conflict: Conflict): string {
     const row = entry.row as { address?: number; start?: number; end?: number; from?: number };
     if (row.address !== undefined) return formatC64Address(row.address);
     if (row.from !== undefined && entry.entity === "reference") return formatC64Address(row.from);
-    return row.end === undefined || row.end === row.start ? formatC64Address(row.start!) : `${formatC64Address(row.start!)}-${formatC64Address(row.end)}`;
+    return row.end === undefined || row.end === row.start ? formatC64Address(row.start!) : formatC64Range({ start: row.start!, end: row.end });
   };
   return `${CONFLICT_RULES[conflict.rule]} in ${conflict.space} (${[...new Set(conflict.rows.map(place))].join(", ")})`;
 }
@@ -358,7 +335,7 @@ function checkEvidence(evidence: Evidence[] | undefined): void {
 }
 
 /** Runs semantic writes in one transaction, as one revision. */
-export function write<T>(db: DatabaseSync, context: WriteContext & Pick<ChangeContext, "restores">, operation: string, work: (change: Change) => T): { revision: string | null; current: T } {
+export function write<T>(db: DatabaseSync, context: WriteContext & Pick<ChangeContext, "restores" | "allowConflicts">, operation: string, work: (change: Change) => T): { revision: string | null; current: T } {
   if (context.origin !== "user" && context.origin !== "llm") {
     throw new Refusal("invalid-input", "A semantic write comes from the user or the LLM.");
   }
@@ -377,6 +354,9 @@ interface Step<T, P = never> {
   previous?: P;
 }
 
+/** What a step reads of its write: who writes, and the image that operand, patch and macro use writes are checked against. */
+type StepContext = Pick<WriteContext, "origin" | "image">;
+
 const result = <T, P>(written: { revision: string | null; current: Step<T, P> }): WriteResult<T, P> =>
   written.current.previous === undefined ? { revision: written.revision, current: written.current.current } : { revision: written.revision, current: written.current.current, previous: written.current.previous };
 
@@ -393,15 +373,28 @@ function confirms(existing: Origin, origin: Origin): boolean {
   return existing !== origin && (!isSemantic(existing) || origin === "user");
 }
 
+/** The program bytes of each space for each write: no step of a write changes the program, so a write reads them once. */
+const programs = new WeakMap<Change, Map<Space, (address: number) => number | undefined>>();
+
 /**
  * The bytes of the program of a space in the knowledge, by address: undefined
  * outside it. A module and a comment are checked against them.
  */
-function programBytes(db: DatabaseSync, space: Space): (address: number) => number | undefined {
-  const rows = db.prepare("SELECT address, bytes FROM current_memory WHERE space = ?").all(space) as Array<{ address: number; bytes: string }>;
-  const memory = new Map<number, number>();
-  for (const row of rows) Buffer.from(row.bytes, "hex").forEach((byte, offset) => memory.set(row.address + offset, byte));
-  return (address) => memory.get(address);
+function programBytes(db: DatabaseSync, change: Change, space: Space): (address: number) => number | undefined {
+  let known = programs.get(change);
+  if (known === undefined) programs.set(change, (known = new Map()));
+  let byteAt = known.get(space);
+  if (byteAt === undefined) {
+    const memory = new Uint8Array(0x10000);
+    const held = new Uint8Array(0x10000);
+    for (const row of prepare(db, "SELECT address, bytes FROM current_memory WHERE space = ?").all(space) as Array<{ address: number; bytes: string }>) {
+      const bytes = Buffer.from(row.bytes, "hex");
+      memory.set(bytes, row.address);
+      held.fill(1, row.address, row.address + bytes.length);
+    }
+    known.set(space, (byteAt = (address) => (held[address] === 1 ? memory[address] : undefined)));
+  }
+  return byteAt;
 }
 
 /** Every request names its space; without one it is the C64. */
@@ -414,7 +407,7 @@ type PlacementRequest = InSpace & { address: number; placement: CommentPlacement
 type ReferenceRequest = InSpace & { from: number; to: number; kind: ReferenceKind };
 type AddressRequest = InSpace & { address: number };
 
-const spaceOf = (request: InSpace): Space => request.space ?? DEFAULT_SPACE;
+export const spaceOf = (request: InSpace): Space => request.space ?? DEFAULT_SPACE;
 
 export function checkSpace(request: InSpace): void {
   if (request.space !== undefined && !SPACE_PATTERN.test(request.space)) throw new Refusal("invalid-input", "space must be c64, drive8, or bank0 to bank255.");
@@ -428,7 +421,7 @@ function checkSymbol(request: SymbolRequest): void {
   if (request.kind !== undefined) checkOneOf(SYMBOL_KINDS, request.kind, "kind");
 }
 
-function renameStep(db: DatabaseSync, change: Change, origin: Origin, request: SymbolRequest): Step<SymbolRow, SymbolRow> {
+function renameStep(db: DatabaseSync, change: Change, request: SymbolRequest, { origin }: StepContext): Step<SymbolRow, SymbolRow> {
   const space = spaceOf(request);
   const existing = symbolAt(db, request.address, space);
   const kind = request.kind ?? existing?.kind ?? "label";
@@ -453,7 +446,7 @@ function renameStep(db: DatabaseSync, change: Change, origin: Origin, request: S
   return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
 }
 
-function removeSymbolStep(db: DatabaseSync, change: Change, origin: Origin, request: AddressRequest): Step<null> {
+function removeSymbolStep(db: DatabaseSync, change: Change, request: AddressRequest): Step<null> {
   const space = spaceOf(request);
   const existing = symbolAt(db, request.address, space);
   if (existing === undefined) throw new Refusal("not-found", `There is no symbol at ${formatC64Address(request.address)}.`);
@@ -496,7 +489,7 @@ function elementOf(piece: AddressRange, element: number | undefined): { element?
 }
 
 /** Closes the current regions over [start, end] and keeps their parts outside it. */
-export function clearRange(db: DatabaseSync, change: Change, start: number, end: number, space: Space = DEFAULT_SPACE): void {
+function clearRange(db: DatabaseSync, change: Change, start: number, end: number, space: Space = DEFAULT_SPACE): void {
   const overlapping = regionsOverlapping(db, start, end, space);
   if (overlapping.length === 0) return;
   change.close("regions", "space = ? AND start_address <= ? AND end_address >= ?", space, end, start);
@@ -508,7 +501,7 @@ export function clearRange(db: DatabaseSync, change: Change, start: number, end:
   }
 }
 
-function classifyStep(db: DatabaseSync, change: Change, origin: Origin, request: RegionRequest): Step<RegionRow[], RegionRow[]> {
+function classifyStep(db: DatabaseSync, change: Change, request: RegionRequest, { origin }: StepContext): Step<RegionRow[], RegionRow[]> {
   const space = spaceOf(request);
   const overlapping = regionsOverlapping(db, request.start, request.end, space);
   const [only] = overlapping;
@@ -519,17 +512,17 @@ function classifyStep(db: DatabaseSync, change: Change, origin: Origin, request:
   liftRegionSuppressions(db, change, request.start, request.end, space);
   // Data is not code: an analyzer reference from there is false code. dual-use bytes are also code.
   if (!CODE_REGION_TYPES.includes(request.type) && request.type !== "dual-use") {
-    change.close('"references"', "space = ? AND from_address BETWEEN ? AND ? AND origin NOT IN ('user', 'llm')", space, request.start, request.end);
+    change.close("references", "space = ? AND from_address BETWEEN ? AND ? AND origin NOT IN ('user', 'llm')", space, request.start, request.end);
   }
   const previous = overlapping.filter((row) => row.origin !== origin);
   const current = regionsOverlapping(db, request.start, request.end, space);
   return previous.length === 0 ? { current } : { current, previous };
 }
 
-function unclassifyStep(db: DatabaseSync, change: Change, origin: Origin, request: RangeRequest): Step<null> {
+function unclassifyStep(db: DatabaseSync, change: Change, request: RangeRequest, { origin }: StepContext): Step<null> {
   const space = spaceOf(request);
   if (regionsOverlapping(db, request.start, request.end, space).length === 0) {
-    throw new Refusal("not-found", `No region covers ${formatC64Address(request.start)}-${formatC64Address(request.end)}.`);
+    throw new Refusal("not-found", `No region covers ${formatC64Range(request)}.`);
   }
   clearRange(db, change, request.start, request.end, space);
   // Suppress only the parts that no region suppression holds yet, so suppressions never overlap.
@@ -548,13 +541,13 @@ function checkComment(request: CommentRequest): string {
   return text;
 }
 
-function commentStep(db: DatabaseSync, change: Change, origin: Origin, request: CommentRequest): Step<CommentRow, CommentRow> {
+function commentStep(db: DatabaseSync, change: Change, request: CommentRequest, { origin }: StepContext): Step<CommentRow, CommentRow> {
   const space = spaceOf(request);
   const text = request.text.trim();
   const existing = commentsAt(db, request.address, space).find((comment) => comment.placement === request.placement);
   if (existing?.text === text && !confirms(existing.origin, origin)) return { current: existing };
   // A comment belongs to an instruction: the listing and the source show it at the start of the instruction only.
-  checkInstructionStart(db, space, programBytes(db, space), request.address, "comment");
+  checkInstructionStart(db, space, programBytes(db, change, space), request.address, "comment");
   if (existing !== undefined) change.close("comments", "space = ? AND address = ? AND placement = ?", space, request.address, request.placement);
   change.insertComment({ space, address: request.address, placement: request.placement, text, origin });
   const current = commentsAt(db, request.address, space).find((comment) => comment.placement === request.placement)!;
@@ -567,7 +560,7 @@ function checkPlacement(request: PlacementRequest): void {
   checkOneOf(COMMENT_PLACEMENTS, request.placement, "placement");
 }
 
-function uncommentStep(db: DatabaseSync, change: Change, _origin: Origin, request: PlacementRequest): Step<null> {
+function uncommentStep(db: DatabaseSync, change: Change, request: PlacementRequest): Step<null> {
   const space = spaceOf(request);
   if (!commentsAt(db, request.address, space).some((comment) => comment.placement === request.placement)) {
     throw new Refusal("not-found", `There is no ${request.placement} comment at ${formatC64Address(request.address)}.`);
@@ -584,33 +577,35 @@ function checkReference(request: ReferenceRequest): void {
   if (request.kind === POINTER_KIND) throw new Refusal("invalid-input", "Only an operand expression writes a pointer reference: use operand and unoperand.");
 }
 
-function referenceStep(db: DatabaseSync, change: Change, origin: Origin, request: ReferenceRequest): Step<ReferenceRow, ReferenceRow> {
+function referenceStep(db: DatabaseSync, change: Change, request: ReferenceRequest, { origin }: StepContext): Step<ReferenceRow, ReferenceRow> {
   const space = spaceOf(request);
   const find = () => referencesFrom(db, request.from, space).find((reference) => reference.to === request.to && reference.kind === request.kind);
   const existing = find();
   if (existing !== undefined && !confirms(existing.origin, origin)) return { current: existing };
   // A confirmation of a reference of an analyzer makes it a reference of the writer: the next run of the analyzer keeps it.
-  if (existing !== undefined) change.close('"references"', "space = ? AND from_address = ? AND to_address = ? AND kind = ?", space, request.from, request.to, request.kind);
+  if (existing !== undefined) change.close("references", "space = ? AND from_address = ? AND to_address = ? AND kind = ?", space, request.from, request.to, request.kind);
   change.insertReference({ space, from: request.from, to: request.to, kind: request.kind, origin });
   change.close("suppressions", "space = ? AND entity = 'reference' AND start_address = ? AND to_address = ? AND kind = ?", space, request.from, request.to, request.kind);
   return existing !== undefined ? { current: find()!, previous: existing } : { current: find()! };
 }
 
-function unreferenceStep(db: DatabaseSync, change: Change, origin: Origin, request: ReferenceRequest): Step<null> {
+function unreferenceStep(db: DatabaseSync, change: Change, request: ReferenceRequest, { origin }: StepContext): Step<null> {
   const space = spaceOf(request);
   if (!referencesFrom(db, request.from, space).some((reference) => reference.to === request.to && reference.kind === request.kind)) {
     throw new Refusal("not-found", `There is no ${request.kind} reference from ${formatC64Address(request.from)} to ${formatC64Address(request.to)}.`);
   }
-  change.close('"references"', "space = ? AND from_address = ? AND to_address = ? AND kind = ?", space, request.from, request.to, request.kind);
+  change.close("references", "space = ? AND from_address = ? AND to_address = ? AND kind = ?", space, request.from, request.to, request.kind);
   change.insertSuppression({ space, entity: "reference", start: request.from, end: request.from, to: request.to, kind: request.kind, origin: origin as SuppressionRow["origin"] });
   return { current: null };
 }
 
 type OperandRequest = InSpace & { address: number; select: OperandSelect; symbol?: string; offset?: number; expression?: string };
 
-/** Current operand expressions that use a name, as a symbol or inside expression text. */
+/** Current operand expressions that use a name, as a symbol or inside expression text. The query keeps the expressions that hold the name as text. */
 function operandsNaming(db: DatabaseSync, space: Space, name: string): OperandRow[] {
-  return listOperands(db, undefined, undefined, space).filter((row) => row.symbol === name || (row.expression !== undefined && identifiers(row.expression).includes(name)));
+  return (prepare(db, `SELECT ${FACTS.operands.columns} FROM current_operands WHERE space = ? AND (symbol = ? OR instr(expression, ?) > 0) ORDER BY address`).all(space, name, name) as Raw[])
+    .map(FACTS.operands.map)
+    .filter((row) => row.symbol === name || (row.expression !== undefined && identifiers(row.expression).includes(name)));
 }
 
 /** A rename of a symbol renames it in every operand expression that uses it; the rows keep their origin. */
@@ -662,7 +657,7 @@ function checkInstructionStart(db: DatabaseSync, space: Space, byteAt: (address:
     const opcode = byteAt(next);
     if (opcode === undefined) {
       if (write !== "operand") return;
-      throw new Refusal("invalid-input", `The code region ${formatC64Address(code.start)}-${formatC64Address(code.end)} has no program byte at ${formatC64Address(next)}, so its instructions up to ${where} are not known. Correct the region (classify), then write the operand.`);
+      throw new Refusal("invalid-input", `The code region ${formatC64Range(code)} has no program byte at ${formatC64Address(next)}, so its instructions up to ${where} are not known. Correct the region (classify), then write the operand.`);
     }
     start = next;
     next += instructionLength(opcode);
@@ -707,7 +702,7 @@ function checkOperandValue(db: DatabaseSync, space: Space, image: OperandImage, 
   return identifiers(text).map((name) => resolve(name)!);
 }
 
-function operandStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: (space: Space) => OperandImage }, request: OperandRequest): Step<OperandRow, OperandRow> {
+function operandStep(db: DatabaseSync, change: Change, request: OperandRequest, context: StepContext): Step<OperandRow, OperandRow> {
   const space = spaceOf(request);
   if (context.image === undefined) throw new Refusal("invalid-input", "An operand expression is checked against the image, and no image was given.");
   const wanted: Omit<OperandRow, "space" | "address" | "origin" | "revision"> = { select: request.select, offset: request.offset ?? 0 };
@@ -723,7 +718,7 @@ function operandStep(db: DatabaseSync, change: Change, context: ChangeContext & 
   change.insertOperand({ space, address: request.address, ...wanted, origin });
   const pointers = referencesFrom(db, request.address, space).filter((reference) => reference.kind === POINTER_KIND);
   for (const reference of pointers) {
-    if (!targets.has(reference.to)) change.close('"references"', "space = ? AND from_address = ? AND to_address = ? AND kind = ?", space, request.address, reference.to, POINTER_KIND);
+    if (!targets.has(reference.to)) change.close("references", "space = ? AND from_address = ? AND to_address = ? AND kind = ?", space, request.address, reference.to, POINTER_KIND);
   }
   for (const to of targets) {
     if (!pointers.some((reference) => reference.to === to)) change.insertReference({ space, from: request.address, to, kind: POINTER_KIND, origin });
@@ -732,11 +727,11 @@ function operandStep(db: DatabaseSync, change: Change, context: ChangeContext & 
   return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
 }
 
-function unoperandStep(db: DatabaseSync, change: Change, _origin: Origin, request: AddressRequest): Step<null> {
+function unoperandStep(db: DatabaseSync, change: Change, request: AddressRequest): Step<null> {
   const space = spaceOf(request);
   if (operandAt(db, request.address, space) === undefined) throw new Refusal("not-found", `There is no operand expression at ${formatC64Address(request.address)}.`);
   change.close("operands", "space = ? AND address = ?", space, request.address);
-  change.close('"references"', "space = ? AND from_address = ? AND kind = ?", space, request.address, POINTER_KIND);
+  change.close("references", "space = ? AND from_address = ? AND kind = ?", space, request.address, POINTER_KIND);
   return { current: null };
 }
 
@@ -754,14 +749,14 @@ function checkModule(request: ModuleRequest): void {
   if (request.title !== undefined && (request.title.trim().length === 0 || request.title.length > MAX_COMMENT)) throw new Refusal("invalid-input", `A module title has 1 to ${MAX_COMMENT} characters.`);
 }
 
-function moduleStep(db: DatabaseSync, change: Change, origin: Origin, request: ModuleRequest): Step<ModuleRow, ModuleRow> {
+function moduleStep(db: DatabaseSync, change: Change, request: ModuleRequest, { origin }: StepContext): Step<ModuleRow, ModuleRow> {
   const space = spaceOf(request);
   const existing = moduleAt(db, request.start, space);
   // A module write without a title keeps the title it has.
   const title = request.title === undefined ? existing?.title : request.title.trim();
   if (existing !== undefined && existing.file === request.file && existing.title === title && !confirms(existing.origin, origin)) return { current: existing };
   // A file of the source starts at an instruction: a start inside one splits it into bytes.
-  checkInstructionStart(db, space, programBytes(db, space), request.start, "module");
+  checkInstructionStart(db, space, programBytes(db, change, space), request.start, "module");
   const owner = moduleWithFile(db, request.file, space);
   if (owner !== undefined && owner.start !== request.start) {
     throw new Refusal("conflict", `The file ${request.file} already belongs to the module at ${formatC64Address(owner.start)}. Give this module another file, or remove that module first.`);
@@ -772,7 +767,7 @@ function moduleStep(db: DatabaseSync, change: Change, origin: Origin, request: M
   return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
 }
 
-function unmoduleStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { start: number }): Step<null> {
+function unmoduleStep(db: DatabaseSync, change: Change, request: InSpace & { start: number }): Step<null> {
   const space = spaceOf(request);
   if (moduleAt(db, request.start, space) === undefined) throw new Refusal("not-found", `No module starts at ${formatC64Address(request.start)}.`);
   change.close("modules", "space = ? AND start_address = ?", space, request.start);
@@ -870,9 +865,9 @@ export function leastPatchBytes(code: string): number | undefined {
   return bytes;
 }
 
-function patchStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: (space: Space) => OperandImage }, request: PatchRequest): Step<PatchRow, PatchRow> {
+function patchStep(db: DatabaseSync, change: Change, request: PatchRequest, context: StepContext): Step<PatchRow, PatchRow> {
   const space = spaceOf(request);
-  const range = `${formatC64Address(request.start)}-${formatC64Address(request.end)}`;
+  const range = formatC64Range(request);
   if (context.image === undefined) throw new Refusal("invalid-input", "A patch is checked against the image, and no image was given.");
   const image = context.image(space);
   checkInImage(image, request.start, request.end, "a patch");
@@ -889,12 +884,12 @@ function patchStep(db: DatabaseSync, change: Change, context: ChangeContext & { 
   if (other !== undefined) {
     throw new Refusal(
       "conflict",
-      `The patch ${range} of ${request.switch} overlaps the patch of ${other.switch} at ${formatC64Address(other.start)}-${formatC64Address(other.end)}. Patches of different switches can have the same range, as alternatives; no other overlap is allowed. Change or remove that patch first (unpatch).`,
+      `The patch ${range} of ${request.switch} overlaps the patch of ${other.switch} at ${formatC64Range(other)}. Patches of different switches can have the same range, as alternatives; no other overlap is allowed. Change or remove that patch first (unpatch).`,
     );
   }
   const [use] = macroUsesOverlapping(db, request.start, request.end, space);
   if (use !== undefined) {
-    throw new Refusal("conflict", `The patch ${range} overlaps the use of the macro ${use.macro} at ${formatC64Address(use.start)}-${formatC64Address(use.end)}. Remove that use first (unuse).`);
+    throw new Refusal("conflict", `The patch ${range} overlaps the use of the macro ${use.macro} at ${formatC64Range(use)}. Remove that use first (unuse).`);
   }
   const find = () => patchesOverlapping(db, request.start, request.start, space).find(mine);
   const existing = find();
@@ -910,7 +905,7 @@ function patchStep(db: DatabaseSync, change: Change, context: ChangeContext & { 
   return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
 }
 
-function unpatchStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { start: number; switch?: string }): Step<null> {
+function unpatchStep(db: DatabaseSync, change: Change, request: InSpace & { start: number; switch?: string }): Step<null> {
   const space = spaceOf(request);
   const found = patchesOverlapping(db, request.start, request.start, space).filter((row) => row.start === request.start && (request.switch === undefined || row.switch === request.switch));
   if (found.length === 0) throw new Refusal("not-found", `No patch${request.switch === undefined ? "" : ` of ${request.switch}`} starts at ${formatC64Address(request.start)}.`);
@@ -937,7 +932,7 @@ function checkAlternatives(db: DatabaseSync, space: Space, changed: readonly Swi
       return owner.default !== baseValue(owner, base);
     });
     if (on.length < 2) continue;
-    const range = `${formatC64Address(patches[0]!.start)}-${formatC64Address(patches[0]!.end)}`;
+    const range = formatC64Range(patches[0]!);
     throw new Refusal(
       "conflict",
       `The switches ${on.map((patch) => patch.switch).join(" and ")} have alternative patches at ${range}, and the default build puts in both of them. Give one of the switches the default of the base release (switch <name> --default).`,
@@ -971,7 +966,7 @@ function defaultOf(request: SwitchRequest, existing: SwitchRow | undefined): 0 |
   throw new Refusal("invalid-input", `A ${request.kind} switch needs a default: give --default 0 or --default 1.`);
 }
 
-function switchStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: (space: Space) => OperandImage }, request: SwitchRequest): Step<SwitchRow, SwitchRow> {
+function switchStep(db: DatabaseSync, change: Change, request: SwitchRequest, context: StepContext): Step<SwitchRow, SwitchRow> {
   const space = spaceOf(request);
   const base = baseLabel(db, space);
   if (base === undefined) throw new Refusal("not-found", "The knowledge has no base release. Record the release whose bytes are the program first (release <label> --file <file> --base).");
@@ -1002,7 +997,7 @@ function switchStep(db: DatabaseSync, change: Change, context: ChangeContext & {
   return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
 }
 
-function unswitchStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { name: string }): Step<null> {
+function unswitchStep(db: DatabaseSync, change: Change, request: InSpace & { name: string }): Step<null> {
   const space = spaceOf(request);
   if (switchNamed(db, request.name, space) === undefined) throw new Refusal("not-found", `There is no switch ${request.name}.`);
   const patches = listPatches(db, undefined, request.name, undefined, space);
@@ -1034,7 +1029,7 @@ function checkRelease(request: ReleaseRequest): void {
   checkCommentText(request.comment, "A release comment");
 }
 
-function releaseStep(db: DatabaseSync, change: Change, origin: Origin, request: ReleaseRequest): Step<ReleaseRow, ReleaseRow> {
+function releaseStep(db: DatabaseSync, change: Change, request: ReleaseRequest, { origin }: StepContext): Step<ReleaseRow, ReleaseRow> {
   const space = spaceOf(request);
   const existing = releaseLabeled(db, request.label, space);
   const base = request.base ?? existing?.base ?? false;
@@ -1073,7 +1068,7 @@ function releaseStep(db: DatabaseSync, change: Change, origin: Origin, request: 
   return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
 }
 
-function unreleaseStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { label: string }): Step<null> {
+function unreleaseStep(db: DatabaseSync, change: Change, request: InSpace & { label: string }): Step<null> {
   const space = spaceOf(request);
   const existing = releaseLabeled(db, request.label, space);
   if (existing === undefined) throw new Refusal("not-found", `There is no release ${request.label}.`);
@@ -1154,9 +1149,9 @@ function checkStartScreen(request: StartScreenRequest): void {
 }
 
 /** The bytes of a start screen of a stage, and its call, must be in the program of that space. */
-function checkStage(db: DatabaseSync, request: StartScreenRequest): void {
+function checkStage(db: DatabaseSync, change: Change, request: StartScreenRequest): void {
   if (request.stage === undefined) return;
-  const byteAt = programBytes(db, request.stage);
+  const byteAt = programBytes(db, change, request.stage);
   if (byteAt(request.screen) === undefined && db.prepare("SELECT 1 FROM current_memory WHERE space = ? LIMIT 1").get(request.stage) === undefined) {
     throw new Refusal("not-found", `The knowledge has no program in ${request.stage}. Capture the stage while it shows the start screen, and put the capture into the project knowledge with image --space ${request.stage}. Then record the start screen again.`);
   }
@@ -1165,14 +1160,14 @@ function checkStage(db: DatabaseSync, request: StartScreenRequest): void {
     return true;
   };
   for (const { what, range } of startScreenRanges(request)) {
-    if (!inStage(range)) throw new Refusal("invalid-input", `The ${what} at ${formatC64Address(range.start)}-${formatC64Address(range.end)} is not in the program in ${request.stage}. Capture the stage again, and do not exclude the memory of the start screen.`);
+    if (!inStage(range)) throw new Refusal("invalid-input", `The ${what} at ${formatC64Range(range)} is not in the program in ${request.stage}. Capture the stage again, and do not exclude the memory of the start screen.`);
   }
   if (request.call !== undefined && !inStage({ start: request.call, end: request.call })) throw new Refusal("invalid-input", `The call ${formatC64Address(request.call)} is not in the program in ${request.stage}.`);
 }
 
-function startScreenStep(db: DatabaseSync, change: Change, origin: Origin, request: StartScreenRequest): Step<StartScreenRow, StartScreenRow> {
+function startScreenStep(db: DatabaseSync, change: Change, request: StartScreenRequest, { origin }: StepContext): Step<StartScreenRow, StartScreenRow> {
   const space = spaceOf(request);
-  checkStage(db, request);
+  checkStage(db, change, request);
   const existing = currentStartScreen(db, space);
   const comment = request.comment === undefined ? existing?.comment : request.comment.trim();
   const row: Omit<StartScreenRow, "revision"> = {
@@ -1191,7 +1186,7 @@ function startScreenStep(db: DatabaseSync, change: Change, origin: Origin, reque
     ...(comment === undefined ? {} : { comment }),
     origin: origin as StartScreenRow["origin"],
   };
-  const same = existing !== undefined && KEYS.start_screens.key(existing) === KEYS.start_screens.key({ ...row, origin: existing.origin, revision: "" });
+  const same = existing !== undefined && JSON.stringify(rowValues("start_screens", existing)) === JSON.stringify(rowValues("start_screens", { ...row, origin: existing.origin }));
   if (same && !confirms(existing.origin, origin)) return { current: existing };
   if (existing !== undefined) change.close("start_screens", "space = ?", space);
   change.insertStartScreen(row);
@@ -1199,7 +1194,7 @@ function startScreenStep(db: DatabaseSync, change: Change, origin: Origin, reque
   return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
 }
 
-function unstartScreenStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace): Step<null> {
+function unstartScreenStep(db: DatabaseSync, change: Change, request: InSpace): Step<null> {
   const space = spaceOf(request);
   if (currentStartScreen(db, space) === undefined) throw new Refusal("not-found", "The knowledge has no start screen.");
   change.close("start_screens", "space = ?", space);
@@ -1228,7 +1223,7 @@ function checkMacro(request: MacroRequest): void {
   checkCommentText(request.comment, "A macro comment");
 }
 
-function macroStep(db: DatabaseSync, change: Change, origin: Origin, request: MacroRequest): Step<MacroRow, MacroRow> {
+function macroStep(db: DatabaseSync, change: Change, request: MacroRequest, { origin }: StepContext): Step<MacroRow, MacroRow> {
   const space = spaceOf(request);
   const existing = macroNamed(db, request.name, space);
   const params = request.params ?? [];
@@ -1250,7 +1245,7 @@ function macroStep(db: DatabaseSync, change: Change, origin: Origin, request: Ma
   return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
 }
 
-function unmacroStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { name: string }): Step<null> {
+function unmacroStep(db: DatabaseSync, change: Change, request: InSpace & { name: string }): Step<null> {
   const space = spaceOf(request);
   if (macroNamed(db, request.name, space) === undefined) throw new Refusal("not-found", `There is no macro ${request.name}.`);
   const uses = listMacroUses(db, undefined, request.name, undefined, space);
@@ -1272,9 +1267,11 @@ function checkMacroUse(request: MacroUseRequest): void {
   }
 }
 
-/** Current macro uses that name a symbol in an arg. */
+/** Current macro uses that name a symbol in an arg. The query keeps the uses whose args hold the name as text. */
 function usesNaming(db: DatabaseSync, space: Space, name: string): MacroUseRow[] {
-  return listMacroUses(db, undefined, undefined, undefined, space).filter((row) => row.args.some((arg) => identifiers(arg).includes(name)));
+  return (prepare(db, `SELECT ${FACTS.macro_uses.columns} FROM current_macro_uses WHERE space = ? AND instr(args, ?) > 0 ORDER BY start_address`).all(space, name) as Raw[])
+    .map(FACTS.macro_uses.map)
+    .filter((row) => row.args.some((arg) => identifiers(arg).includes(name)));
 }
 
 /** A rename of a symbol renames it in the args of every macro use; the rows keep their origin. */
@@ -1285,9 +1282,9 @@ function renameInUses(db: DatabaseSync, change: Change, space: Space, from: stri
   }
 }
 
-function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: (space: Space) => OperandImage }, request: MacroUseRequest): Step<MacroUseRow, MacroUseRow> {
+function useStep(db: DatabaseSync, change: Change, request: MacroUseRequest, context: StepContext): Step<MacroUseRow, MacroUseRow> {
   const space = spaceOf(request);
-  const range = `${formatC64Address(request.start)}-${formatC64Address(request.end)}`;
+  const range = formatC64Range(request);
   if (context.image === undefined) throw new Refusal("invalid-input", "A macro use is checked against the image, and no image was given.");
   const image = context.image(space);
   const macro = macroNamed(db, request.macro, space);
@@ -1313,11 +1310,11 @@ function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { im
   }
   const [patch] = patchesOverlapping(db, request.start, request.end, space);
   if (patch !== undefined) {
-    throw new Refusal("conflict", `The macro use ${range} overlaps the patch of ${patch.switch} at ${formatC64Address(patch.start)}-${formatC64Address(patch.end)}. Change or remove that patch first (unpatch).`);
+    throw new Refusal("conflict", `The macro use ${range} overlaps the patch of ${patch.switch} at ${formatC64Range(patch)}. Change or remove that patch first (unpatch).`);
   }
   const other = macroUsesOverlapping(db, request.start, request.end, space).find((row) => row.start !== request.start);
   if (other !== undefined) {
-    throw new Refusal("conflict", `The macro use ${range} overlaps the use of ${other.macro} at ${formatC64Address(other.start)}-${formatC64Address(other.end)}. Remove that use first (unuse).`);
+    throw new Refusal("conflict", `The macro use ${range} overlaps the use of ${other.macro} at ${formatC64Range(other)}. Remove that use first (unuse).`);
   }
   const existing = macroUsesOverlapping(db, request.start, request.start, space).find((row) => row.start === request.start);
   const origin = context.origin as MacroUseRow["origin"];
@@ -1328,157 +1325,53 @@ function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { im
   return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
 }
 
-function unuseStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { start: number }): Step<null> {
+function unuseStep(db: DatabaseSync, change: Change, request: InSpace & { start: number }): Step<null> {
   const space = spaceOf(request);
   if (!macroUsesOverlapping(db, request.start, request.start, space).some((row) => row.start === request.start)) throw new Refusal("not-found", `No macro use starts at ${formatC64Address(request.start)}.`);
   change.close("macro_uses", "space = ? AND start_address = ?", space, request.start);
   return { current: null };
 }
 
-/** Names the symbol at an address (one current symbol per address, unique names). */
-export function renameSymbol(db: DatabaseSync, context: WriteContext, request: SymbolRequest): WriteResult<SymbolRow, SymbolRow> {
-  checkSymbol(request);
-  return result(write(db, context, "rename-symbol", (change) => renameStep(db, change, context.origin, request)));
+/** A write: the operation of its revision, the check that refuses bad input before anything opens, and the step that runs inside a change. */
+interface WriteOp<R, T, P> {
+  operation: string;
+  check(request: NoInfer<R>): unknown;
+  step(db: DatabaseSync, change: Change, request: R, context: StepContext): Step<T, P>;
 }
 
-export function removeSymbol(db: DatabaseSync, context: WriteContext, request: AddressRequest): WriteResult<null> {
+/** The write of one request as one revision. */
+const single =
+  <R, T, P>({ operation, check, step }: WriteOp<R, T, P>) =>
+  (db: DatabaseSync, context: WriteContext, request: R): WriteResult<T, P> => {
+    check(request);
+    return result(write(db, context, operation, (change) => step(db, change, request, context)));
+  };
+
+/** The check of a write at an address: its space and the address. */
+function checkAt(request: AddressRequest): void {
   checkSpace(request);
   checkAddress(request.address);
-  return result(write(db, context, "remove-symbol", (change) => removeSymbolStep(db, change, context.origin, request)));
 }
 
-/** Classifies [start, end]; overlapping regions are split so current regions never overlap. */
-export function classifyRegion(db: DatabaseSync, context: WriteContext, request: RegionRequest): WriteResult<RegionRow[], RegionRow[]> {
-  checkRegion(request);
-  return result(write(db, context, "classify-region", (change) => classifyStep(db, change, context.origin, request)));
-}
-
-/** Makes [start, end] unclassified again; parts of regions outside it stay. */
-export function unclassifyRegion(db: DatabaseSync, context: WriteContext, request: RangeRequest): WriteResult<null> {
-  checkRange(request);
-  return result(write(db, context, "unclassify-region", (change) => unclassifyStep(db, change, context.origin, request)));
-}
-
-export function setComment(db: DatabaseSync, context: WriteContext, request: CommentRequest): WriteResult<CommentRow, CommentRow> {
-  checkComment(request);
-  return result(write(db, context, "set-comment", (change) => commentStep(db, change, context.origin, request)));
-}
-
-export function removeComment(db: DatabaseSync, context: WriteContext, request: PlacementRequest): WriteResult<null> {
-  checkPlacement(request);
-  return result(write(db, context, "remove-comment", (change) => uncommentStep(db, change, context.origin, request)));
-}
-
-export function addReference(db: DatabaseSync, context: WriteContext, request: ReferenceRequest): WriteResult<ReferenceRow, ReferenceRow> {
-  checkReference(request);
-  return result(write(db, context, "add-reference", (change) => referenceStep(db, change, context.origin, request)));
-}
-
-export function removeReference(db: DatabaseSync, context: WriteContext, request: ReferenceRequest): WriteResult<null> {
-  checkReference(request);
-  return result(write(db, context, "remove-reference", (change) => unreferenceStep(db, change, context.origin, request)));
-}
-
-/** Starts a file of the generated source at an address; one module per address and per file. */
-export function setModule(db: DatabaseSync, context: WriteContext, request: ModuleRequest): WriteResult<ModuleRow, ModuleRow> {
-  checkModule(request);
-  return result(write(db, context, "set-module", (change) => moduleStep(db, change, context.origin, request)));
-}
-
-export function removeModule(db: DatabaseSync, context: WriteContext, request: InSpace & { start: number }): WriteResult<null> {
+/** The check of a write at a start: its space and the start. */
+function checkStart(request: InSpace & { start: number }): void {
   checkSpace(request);
   checkAddress(request.start, "start");
-  return result(write(db, context, "remove-module", (change) => unmoduleStep(db, change, context.origin, request)));
 }
 
-/**
- * Writes the operand expression of the instruction at an address, after
- * a check against the image, and a pointer reference to each name it uses.
- */
-export function setOperand(db: DatabaseSync, context: WriteContext, request: OperandRequest): WriteResult<OperandRow, OperandRow> {
-  checkOperand(request);
-  return result(write(db, context, "set-operand", (change) => operandStep(db, change, context, request)));
-}
-
-export function removeOperand(db: DatabaseSync, context: WriteContext, request: AddressRequest): WriteResult<null> {
-  checkSpace(request);
-  checkAddress(request.address);
-  return result(write(db, context, "remove-operand", (change) => unoperandStep(db, change, context.origin, request)));
-}
-
-/**
- * Writes code that replaces [start, end] when its switch does not have its
- * base value, after a check that the switch exists, the range is in the image,
- * and it overlaps no macro use and no patch other than an alternative.
- */
-export function setPatch(db: DatabaseSync, context: WriteContext, request: PatchRequest): WriteResult<PatchRow, PatchRow> {
-  checkPatch(request);
-  return result(write(db, context, "set-patch", (change) => patchStep(db, change, context, request)));
-}
-
-export function removePatch(db: DatabaseSync, context: WriteContext, request: InSpace & { start: number; switch?: string }): WriteResult<null> {
-  checkSpace(request);
-  checkAddress(request.start, "start");
+function checkUnpatch(request: InSpace & { start: number; switch?: string }): void {
+  checkStart(request);
   if (request.switch !== undefined) checkSwitchName(request.switch);
-  return result(write(db, context, "remove-patch", (change) => unpatchStep(db, change, context.origin, request)));
 }
 
-/** Writes a switch: its kind, its default and the releases that have it on. The knowledge needs a base release first. */
-export function setSwitch(db: DatabaseSync, context: WriteContext, request: SwitchRequest): WriteResult<SwitchRow, SwitchRow> {
-  checkSwitch(request);
-  return result(write(db, context, "set-switch", (change) => switchStep(db, change, context, request)));
-}
-
-export function removeSwitch(db: DatabaseSync, context: WriteContext, request: InSpace & { name: string }): WriteResult<null> {
-  checkSpace(request);
-  checkSwitchName(request.name);
-  return result(write(db, context, "remove-switch", (change) => unswitchStep(db, change, context.origin, request)));
-}
-
-/** Writes a release of the program and its bytes. The caller reads the bytes from the file of the release, and checks the file of the base release. */
-export function setRelease(db: DatabaseSync, context: WriteContext, request: ReleaseRequest): WriteResult<ReleaseRow, ReleaseRow> {
-  checkRelease(request);
-  return result(write(db, context, "set-release", (change) => releaseStep(db, change, context.origin, request)));
-}
-
-export function removeRelease(db: DatabaseSync, context: WriteContext, request: InSpace & { label: string }): WriteResult<null> {
-  checkSpace(request);
-  return result(write(db, context, "remove-release", (change) => unreleaseStep(db, change, context.origin, request)));
-}
-
-/** Writes the start screen of the program: the loader of the generated source shows it before the entry. */
-export function setStartScreen(db: DatabaseSync, context: WriteContext, request: StartScreenRequest): WriteResult<StartScreenRow, StartScreenRow> {
-  checkStartScreen(request);
-  return result(write(db, context, "set-start-screen", (change) => startScreenStep(db, change, context.origin, request)));
-}
-
-export function removeStartScreen(db: DatabaseSync, context: WriteContext, request: InSpace): WriteResult<null> {
-  checkSpace(request);
-  return result(write(db, context, "remove-start-screen", (change) => unstartScreenStep(db, change, context.origin, request)));
-}
-
-/** Writes a macro of the generated source. */
-export function setMacro(db: DatabaseSync, context: WriteContext, request: MacroRequest): WriteResult<MacroRow, MacroRow> {
-  checkMacro(request);
-  return result(write(db, context, "set-macro", (change) => macroStep(db, change, context.origin, request)));
-}
-
-export function removeMacro(db: DatabaseSync, context: WriteContext, request: InSpace & { name: string }): WriteResult<null> {
+function checkUnmacro(request: InSpace & { name: string }): void {
   checkSpace(request);
   checkMacroName(request.name);
-  return result(write(db, context, "remove-macro", (change) => unmacroStep(db, change, context.origin, request)));
 }
 
-/** Writes the instructions in [start, end] as one use of a macro, after a check against the image. */
-export function setMacroUse(db: DatabaseSync, context: WriteContext, request: MacroUseRequest): WriteResult<MacroUseRow, MacroUseRow> {
-  checkMacroUse(request);
-  return result(write(db, context, "set-macro-use", (change) => useStep(db, change, context, request)));
-}
-
-export function removeMacroUse(db: DatabaseSync, context: WriteContext, request: InSpace & { start: number }): WriteResult<null> {
+function checkUnswitch(request: InSpace & { name: string }): void {
   checkSpace(request);
-  checkAddress(request.start, "start");
-  return result(write(db, context, "remove-macro-use", (change) => unuseStep(db, change, context.origin, request)));
+  checkSwitchName(request.name);
 }
 
 /** One write of a batch, named as the command that does it alone. */
@@ -1502,7 +1395,95 @@ export type BatchOperation =
   | ({ op: "use" } & MacroUseRequest)
   | ({ op: "unuse" } & InSpace & { start: number });
 
-export const MAX_BATCH = 10_000;
+/** The writes of a batch by their op. Each is also a write of its own. */
+const OPS = {
+  rename: { operation: "rename-symbol", check: checkSymbol, step: renameStep },
+  "remove-symbol": { operation: "remove-symbol", check: checkAt, step: removeSymbolStep },
+  classify: { operation: "classify-region", check: checkRegion, step: classifyStep },
+  unclassify: { operation: "unclassify-region", check: checkRange, step: unclassifyStep },
+  comment: { operation: "set-comment", check: checkComment, step: commentStep },
+  uncomment: { operation: "remove-comment", check: checkPlacement, step: uncommentStep },
+  reference: { operation: "add-reference", check: checkReference, step: referenceStep },
+  unreference: { operation: "remove-reference", check: checkReference, step: unreferenceStep },
+  module: { operation: "set-module", check: checkModule, step: moduleStep },
+  unmodule: { operation: "remove-module", check: checkStart, step: unmoduleStep },
+  operand: { operation: "set-operand", check: checkOperand, step: operandStep },
+  unoperand: { operation: "remove-operand", check: checkAt, step: unoperandStep },
+  patch: { operation: "set-patch", check: checkPatch, step: patchStep },
+  unpatch: { operation: "remove-patch", check: checkUnpatch, step: unpatchStep },
+  macro: { operation: "set-macro", check: checkMacro, step: macroStep },
+  unmacro: { operation: "remove-macro", check: checkUnmacro, step: unmacroStep },
+  use: { operation: "set-macro-use", check: checkMacroUse, step: useStep },
+  unuse: { operation: "remove-macro-use", check: checkStart, step: unuseStep },
+} satisfies { [K in BatchOperation["op"]]: WriteOp<Extract<BatchOperation, { op: K }>, unknown, unknown> };
+
+/** Names the symbol at an address (one current symbol per address, unique names). */
+export const renameSymbol = single(OPS.rename);
+
+export const removeSymbol = single(OPS["remove-symbol"]);
+
+/** Classifies [start, end]; overlapping regions are split so current regions never overlap. */
+export const classifyRegion = single(OPS.classify);
+
+/** Makes [start, end] unclassified again; parts of regions outside it stay. */
+export const unclassifyRegion = single(OPS.unclassify);
+
+export const setComment = single(OPS.comment);
+
+export const removeComment = single(OPS.uncomment);
+
+export const addReference = single(OPS.reference);
+
+export const removeReference = single(OPS.unreference);
+
+/** Starts a file of the generated source at an address; one module per address and per file. */
+export const setModule = single(OPS.module);
+
+export const removeModule = single(OPS.unmodule);
+
+/**
+ * Writes the operand expression of the instruction at an address, after
+ * a check against the image, and a pointer reference to each name it uses.
+ */
+export const setOperand = single(OPS.operand);
+
+export const removeOperand = single(OPS.unoperand);
+
+/**
+ * Writes code that replaces [start, end] when its switch does not have its
+ * base value, after a check that the switch exists, the range is in the image,
+ * and it overlaps no macro use and no patch other than an alternative.
+ */
+export const setPatch = single(OPS.patch);
+
+export const removePatch = single(OPS.unpatch);
+
+/** Writes a switch: its kind, its default and the releases that have it on. The knowledge needs a base release first. */
+export const setSwitch = single({ operation: "set-switch", check: checkSwitch, step: switchStep });
+
+export const removeSwitch = single({ operation: "remove-switch", check: checkUnswitch, step: unswitchStep });
+
+/** Writes a release of the program and its bytes. The caller reads the bytes from the file of the release, and checks the file of the base release. */
+export const setRelease = single({ operation: "set-release", check: checkRelease, step: releaseStep });
+
+export const removeRelease = single({ operation: "remove-release", check: checkSpace, step: unreleaseStep });
+
+/** Writes the start screen of the program: the loader of the generated source shows it before the entry. */
+export const setStartScreen = single({ operation: "set-start-screen", check: checkStartScreen, step: startScreenStep });
+
+export const removeStartScreen = single({ operation: "remove-start-screen", check: checkSpace, step: unstartScreenStep });
+
+/** Writes a macro of the generated source. */
+export const setMacro = single(OPS.macro);
+
+export const removeMacro = single(OPS.unmacro);
+
+/** Writes the instructions in [start, end] as one use of a macro, after a check against the image. */
+export const setMacroUse = single(OPS.use);
+
+export const removeMacroUse = single(OPS.unuse);
+
+const MAX_BATCH = 10_000;
 
 /** The result of each write of a batch, in order. */
 export type BatchStep = Step<
@@ -1510,168 +1491,30 @@ export type BatchStep = Step<
   SymbolRow | RegionRow[] | CommentRow | ReferenceRow | ModuleRow | OperandRow | PatchRow | MacroRow | MacroUseRow
 >;
 
+/** A write of a batch. */
+type BatchWrite = WriteOp<BatchOperation, BatchStep["current"], NonNullable<BatchStep["previous"]>>;
+
 /**
  * Applies many writes as one revision in one transaction: all of them,
  * or none when one is refused. Every write is checked before anything opens.
  */
 export function applyBatch(db: DatabaseSync, context: WriteContext, operations: BatchOperation[]): { revision: string | null; steps: BatchStep[] } {
   if (operations.length === 0 || operations.length > MAX_BATCH) throw new Refusal("invalid-input", `A batch has 1 to ${MAX_BATCH} writes.`);
-  operations.forEach((operation, index) => {
-    try {
-      switch (operation.op) {
-        case "rename":
-          return checkSymbol(operation);
-        case "remove-symbol":
-          checkSpace(operation);
-          return checkAddress(operation.address);
-        case "classify":
-          return checkRegion(operation);
-        case "unclassify":
-          return checkRange(operation);
-        case "comment":
-          return void checkComment(operation);
-        case "uncomment":
-          return checkPlacement(operation);
-        case "reference":
-        case "unreference":
-          return checkReference(operation);
-        case "module":
-          return checkModule(operation);
-        case "unmodule":
-          checkSpace(operation);
-          return checkAddress(operation.start, "start");
-        case "operand":
-          return checkOperand(operation);
-        case "unoperand":
-          checkSpace(operation);
-          return checkAddress(operation.address);
-        case "patch":
-          return checkPatch(operation);
-        case "unpatch":
-          if (operation.switch !== undefined) checkSwitchName(operation.switch);
-          checkSpace(operation);
-          return checkAddress(operation.start, "start");
-        case "unuse":
-          checkSpace(operation);
-          return checkAddress(operation.start, "start");
-        case "macro":
-          return checkMacro(operation);
-        case "unmacro":
-          checkSpace(operation);
-          return checkMacroName(operation.name);
-        case "use":
-          return checkMacroUse(operation);
-        default:
-          throw new Refusal(
-            "invalid-input",
-            `op must be one of rename, remove-symbol, classify, unclassify, comment, uncomment, reference, unreference, module, unmodule, operand, unoperand, patch, unpatch, macro, unmacro, use, unuse.`,
-          );
-      }
-    } catch (error) {
-      if (error instanceof Refusal) throw new Refusal(error.code, `Write ${index + 1}: ${error.message} Nothing was written.`);
-      throw error;
-    }
-  });
-  const written = write(db, context, "apply", (change) =>
-    operations.map((operation, index): BatchStep => {
+  // Runs `work` on each write with its op; a refusal names the write.
+  const eachWrite = <T>(work: (operation: BatchOperation, op: BatchWrite) => T): T[] =>
+    operations.map((operation, index) => {
       try {
-        switch (operation.op) {
-          case "rename":
-            return renameStep(db, change, context.origin, operation);
-          case "remove-symbol":
-            return removeSymbolStep(db, change, context.origin, operation);
-          case "classify":
-            return classifyStep(db, change, context.origin, operation);
-          case "unclassify":
-            return unclassifyStep(db, change, context.origin, operation);
-          case "comment":
-            return commentStep(db, change, context.origin, operation);
-          case "uncomment":
-            return uncommentStep(db, change, context.origin, operation);
-          case "reference":
-            return referenceStep(db, change, context.origin, operation);
-          case "unreference":
-            return unreferenceStep(db, change, context.origin, operation);
-          case "module":
-            return moduleStep(db, change, context.origin, operation);
-          case "unmodule":
-            return unmoduleStep(db, change, context.origin, operation);
-          case "operand":
-            return operandStep(db, change, context, operation);
-          case "unoperand":
-            return unoperandStep(db, change, context.origin, operation);
-          case "patch":
-            return patchStep(db, change, context, operation);
-          case "unpatch":
-            return unpatchStep(db, change, context.origin, operation);
-          case "macro":
-            return macroStep(db, change, context.origin, operation);
-          case "unmacro":
-            return unmacroStep(db, change, context.origin, operation);
-          case "use":
-            return useStep(db, change, context, operation);
-          case "unuse":
-            return unuseStep(db, change, context.origin, operation);
-        }
+        if (!Object.hasOwn(OPS, operation.op)) throw new Refusal("invalid-input", `op must be one of ${Object.keys(OPS).join(", ")}.`);
+        return work(operation, OPS[operation.op] as BatchWrite);
       } catch (error) {
         if (error instanceof Refusal) throw new Refusal(error.code, `Write ${index + 1}: ${error.message} Nothing was written.`);
         throw error;
       }
-    }),
-  );
+    });
+  eachWrite((operation, op) => op.check(operation));
+  const written = write(db, context, "apply", (change) => eachWrite((operation, op) => op.step(db, change, operation, context)));
   return { revision: written.revision, steps: written.current };
 }
-
-/** Row content without its revision, as a comparable key. */
-/** The tables of the program and the columns that make a row. */
-const PROGRAM_TABLES = [
-  ["memory", "space, address, bytes, origin"],
-  ["release_memory", "space, label, address, bytes, origin"],
-  ["entries", "space, address, state, stages, origin"],
-  ["coverage", "space, map, kind, ranges, origin"],
-] as const;
-
-const KEYS = {
-  symbols: { columns: SYMBOL_COLUMNS, map: toSymbol, key: (row: SymbolRow) => `${row.space}|${row.address}|${row.name}|${row.kind}|${row.origin}` },
-  analyzer_names: { columns: SYMBOL_COLUMNS, map: toSymbol, key: (row: SymbolRow) => `${row.space}|${row.address}|${row.name}|${row.kind}|${row.origin}` },
-  regions: { columns: REGION_COLUMNS, map: toRegion, key: (row: RegionRow) => `${row.space}|${row.start}|${row.end}|${row.type}|${row.element ?? ""}|${row.origin}` },
-  comments: { columns: COMMENT_COLUMNS, map: toComment, key: (row: CommentRow) => `${row.space}|${row.address}|${row.placement}|${row.text}|${row.origin}` },
-  references: { columns: REFERENCE_COLUMNS, map: toReference, key: (row: ReferenceRow) => `${row.space}|${row.from}|${row.to}|${row.kind}|${row.origin}` },
-  modules: { columns: MODULE_COLUMNS, map: toModule, key: (row: ModuleRow) => `${row.space}|${row.start}|${row.file}|${row.title ?? ""}|${row.origin}` },
-  operands: {
-    columns: OPERAND_COLUMNS,
-    map: toOperand,
-    key: (row: OperandRow) => `${row.space}|${row.address}|${row.select}|${row.symbol ?? ""}|${row.offset}|${row.expression ?? ""}|${row.origin}`,
-  },
-  patches: {
-    columns: PATCH_COLUMNS,
-    map: toPatch,
-    key: (row: PatchRow) => `${row.space}|${row.start}|${row.end}|${row.switch}|${row.code}|${row.comment ?? ""}|${row.origin}`,
-  },
-  switches: {
-    columns: SWITCH_COLUMNS,
-    map: toSwitch,
-    key: (row: SwitchRow) => `${row.space}|${row.name}|${row.kind}|${row.default}|${listText(row.releases)}|${row.comment ?? ""}|${row.origin}`,
-  },
-  releases: {
-    columns: RELEASE_COLUMNS,
-    map: toRelease,
-    key: (row: ReleaseRow) => `${row.space}|${row.label}|${row.base}|${row.file ?? ""}|${row.sha256 ?? ""}|${row.comment ?? ""}|${row.origin}`,
-  },
-  start_screens: {
-    columns: START_SCREEN_COLUMNS,
-    map: toStartScreen,
-    key: (row: StartScreenRow) =>
-      `${row.space}|${row.mode}|${row.screen}|${row.bitmap ?? ""}|${row.charset ?? ""}|${row.colours ?? ""}|${row.colour ?? ""}|${row.border}|${row.background}|${row.stage ?? ""}|${row.call ?? ""}|${row.colourRam === true ? 1 : ""}|${row.comment ?? ""}|${row.origin}`,
-  },
-  macros: { columns: MACRO_COLUMNS, map: toMacro, key: (row: MacroRow) => `${row.space}|${row.name}|${listText(row.params)}|${row.body}|${row.comment ?? ""}|${row.origin}` },
-  macro_uses: { columns: MACRO_USE_COLUMNS, map: toMacroUse, key: (row: MacroUseRow) => `${row.space}|${row.start}|${row.end}|${row.macro}|${listText(row.args)}|${row.origin}` },
-  suppressions: {
-    columns: SUPPRESSION_COLUMNS,
-    map: toSuppression,
-    key: (row: SuppressionRow) => `${row.space}|${row.entity}|${row.start}|${row.end}|${row.to ?? ""}|${row.kind ?? ""}|${row.origin}`,
-  },
-} as const;
 
 /**
  * Makes the current knowledge equal to what it was at `revision`, as a new
@@ -1690,77 +1533,18 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
     const spaceArgs = only === undefined ? [] : [only];
     const at = `valid_from_revision <= ? AND (valid_to_revision IS NULL OR valid_to_revision > ?)${inSpace}`;
     const current = `valid_to_revision IS NULL${inSpace}`;
-    for (const [table, spec] of Object.entries(KEYS)) {
-      const name = table === "references" ? '"references"' : table;
-      const then = db.prepare(`SELECT ${spec.columns}, id FROM ${name} WHERE ${at}`).all(restored, restored, ...spaceArgs) as Array<Record<string, unknown>>;
-      const now = db.prepare(`SELECT ${spec.columns}, id FROM ${name} WHERE ${current}`).all(...spaceArgs) as Array<Record<string, unknown>>;
-      const key = (row: Record<string, unknown>) => (spec.key as (row: unknown) => string)(spec.map(row as never));
+    // A row is the same when all its values are the same.
+    for (const spec of TABLES) {
+      const columns = spec.fields.map((field) => field.column);
+      const select = `SELECT ${columns.join(", ")}, id FROM ${sqlName(spec.table)} WHERE `;
+      const then = db.prepare(select + at).all(restored, restored, ...spaceArgs) as Raw[];
+      const now = db.prepare(select + current).all(...spaceArgs) as Raw[];
+      const key = (row: Raw) => JSON.stringify(columns.map((column) => row[column]));
       const thenKeys = new Set(then.map(key));
       const nowKeys = new Set(now.map(key));
       // Close first, so restored rows never collide with the current-row rules.
-      for (const row of now) if (!thenKeys.has(key(row))) change.close(name, "id = ?", row.id as string);
-      for (const row of then) {
-        if (nowKeys.has(key(row))) continue;
-        if (table === "suppressions") {
-          change.insertSuppression(spec.map(row as never) as SuppressionRow);
-          continue;
-        }
-        if (table === "modules") {
-          change.insertModule(spec.map(row as never) as ModuleRow);
-          continue;
-        }
-        if (table === "operands") {
-          change.insertOperand(spec.map(row as never) as OperandRow);
-          continue;
-        }
-        if (table === "patches") {
-          change.insertPatch(spec.map(row as never) as PatchRow);
-          continue;
-        }
-        if (table === "macros") {
-          change.insertMacro(spec.map(row as never) as MacroRow);
-          continue;
-        }
-        if (table === "switches") {
-          change.insertSwitch(spec.map(row as never) as SwitchRow);
-          continue;
-        }
-        if (table === "releases") {
-          change.insertRelease(spec.map(row as never) as ReleaseRow);
-          continue;
-        }
-        if (table === "start_screens") {
-          change.insertStartScreen(spec.map(row as never) as StartScreenRow);
-          continue;
-        }
-        if (table === "macro_uses") {
-          change.insertMacroUse(spec.map(row as never) as MacroUseRow);
-          continue;
-        }
-        const mapped = spec.map(row as never) as SymbolRow & RegionRow & CommentRow & ReferenceRow;
-        if (table === "symbols") change.insertSymbol(mapped);
-        else if (table === "analyzer_names") change.insertAnalyzerName(mapped);
-        else if (table === "regions") change.insertRegion(mapped);
-        else if (table === "comments") change.insertComment(mapped);
-        else change.insertReference(mapped);
-      }
-    }
-    // The program: a row is the same when all its values are the same.
-    for (const [table, columns] of PROGRAM_TABLES) {
-      const then = db.prepare(`SELECT ${columns}, id FROM ${table} WHERE ${at}`).all(restored, restored, ...spaceArgs) as Array<Record<string, unknown>>;
-      const now = db.prepare(`SELECT ${columns}, id FROM ${table} WHERE ${current}`).all(...spaceArgs) as Array<Record<string, unknown>>;
-      const key = (row: Record<string, unknown>) => JSON.stringify(columns.split(", ").map((column) => row[column]));
-      const thenKeys = new Set(then.map(key));
-      const nowKeys = new Set(now.map(key));
-      for (const row of now) if (!thenKeys.has(key(row))) change.close(table, "id = ?", row.id as string);
-      for (const row of then) {
-        if (nowKeys.has(key(row))) continue;
-        const values = row as never;
-        if (table === "memory") change.insertMemory(values);
-        else if (table === "release_memory") change.insertReleaseMemory(values);
-        else if (table === "entries") change.insertEntry(values);
-        else change.insertCoverage(values);
-      }
+      for (const row of now) if (!thenKeys.has(key(row))) change.close(spec.table, "id = ?", row.id as string);
+      for (const row of then) if (!nowKeys.has(key(row))) change.insertColumns(spec.table, row);
     }
     return { restoredRevision: restored };
   });
@@ -1785,14 +1569,14 @@ const MAX_CHOICES = 100_000;
  * expression that stays. `platform` gives the C64 platform names.
  */
 export function mergeConflicts(db: DatabaseSync, context: WriteContext, platform: ReadonlyMap<string, number>): WriteResult<MergeChoice[]> {
-  return write(db, context, "merge", (change) => {
+  return write(db, { ...context, allowConflicts: true }, "merge", (change) => {
     const choices: MergeChoice[] = [];
     for (let found = conflicts(db); found.length > 0; found = conflicts(db)) {
       if (choices.length >= MAX_CHOICES) throw new Refusal("invalid-database", `The merge made ${MAX_CHOICES} choices and still finds conflicts. Nothing was written.`);
       const conflict = found[0]!;
       const newest = conflict.rows.at(-1)!;
       const older = conflict.rows.slice(0, -1);
-      const table = sqlName(conflictTable(conflict.rule));
+      const table = conflictTable(conflict.rule);
       for (const entry of older) change.close(table, "id = ?", entry.id);
       if (conflict.rule === "region" || conflict.rule === "suppression-region") keepOutside(change, conflict, conflict.rule === "region");
       if (conflict.rule === "operand") followOperand(db, change, newest.row as OperandRow, platform);
@@ -1823,7 +1607,7 @@ function followOperand(db: DatabaseSync, change: Change, kept: OperandRow, platf
   const targets = new Set(identifiers(operandText(kept)).flatMap((name) => resolve(name) ?? []));
   const pointers = referencesFrom(db, kept.address, kept.space).filter((reference) => reference.kind === POINTER_KIND);
   for (const reference of pointers) {
-    if (!targets.has(reference.to)) change.close('"references"', "space = ? AND from_address = ? AND to_address = ? AND kind = ?", kept.space, kept.address, reference.to, POINTER_KIND);
+    if (!targets.has(reference.to)) change.close("references", "space = ? AND from_address = ? AND to_address = ? AND kind = ?", kept.space, kept.address, reference.to, POINTER_KIND);
   }
   for (const to of targets) {
     if (!pointers.some((reference) => reference.to === to)) change.insertReference({ space: kept.space, from: kept.address, to, kind: POINTER_KIND, origin: kept.origin });

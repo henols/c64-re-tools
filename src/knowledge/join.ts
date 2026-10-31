@@ -7,7 +7,7 @@
 // expressions and macro args too. The join writes no knowledge.
 
 import { replaceIdentifiers } from "./expression.ts";
-import type { BatchOperation } from "./write.ts";
+import { spaceOf, type BatchOperation } from "./write.ts";
 
 export interface Batch {
   /** The file the batch came from, for the report. */
@@ -44,7 +44,6 @@ export interface JoinResult {
 }
 
 type Op<K extends BatchOperation["op"]> = Extract<BatchOperation, { op: K }>;
-const spaceOf = (op: { space?: string }) => op.space ?? "c64";
 
 /** The value of a keyed write as text, to compare and report it. */
 function valueOf(op: BatchOperation): string {

@@ -2,42 +2,54 @@
 // .c64-re-tools/knowledge/; .c64-re-tools/local/knowledge.db is an index
 // that is made again from the text when the text changed.
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { join } from "node:path";
 
 import { Refusal } from "../errors.ts";
-import { ensureLocal, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRoot } from "../project.ts";
+import { ensureLocal, KNOWLEDGE_INDEX_FILE, KNOWLEDGE_TEXT_DIRECTORY, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRoot } from "../project.ts";
 import { ensureSchema } from "./schema.ts";
-import { compareText, loadText, readText, REVISIONS_FILE, revisionsText, sha256, sqlName, TABLES, tableText, writeAtomic } from "./text.ts";
+import { compareText, knowledgeFiles, loadText, readText, REVISIONS_FILE, revisionsText, sha256, sqlName, TABLES, tableText, writeAtomic } from "./text.ts";
 
+/** The project folder, for the one-time conversion script, which imports only the knowledge. */
 export const KNOWLEDGE_DIRECTORY = PROJECT_DIRECTORY;
-/** The folder of the committed knowledge text. */
-export const TEXT_DIRECTORY = "knowledge";
-/** The index file in .c64-re-tools/local/. */
-export const INDEX_FILE = "knowledge.db";
 /** Git keeps the lines of both sides when two computers changed the same knowledge file. */
 // eol=lf: with core.autocrlf (the Windows default) git would check the files out with CRLF, so two computers would hold other bytes.
 export const GIT_ATTRIBUTES = "# The knowledge of c64-re-tools: git keeps the lines of both sides of a merge, with LF line ends on every system.\n*.jsonl merge=union text eol=lf\n.gitattributes text eol=lf\n";
 
 /** The folder of the knowledge text: .c64-re-tools/knowledge/. */
 export function textPath(root: string = projectRoot()): string {
-  return join(root, KNOWLEDGE_DIRECTORY, TEXT_DIRECTORY);
+  return join(root, PROJECT_DIRECTORY, KNOWLEDGE_TEXT_DIRECTORY);
 }
 
 /** The index: .c64-re-tools/local/knowledge.db. */
 export function indexPath(root: string = projectRoot()): string {
-  return join(root, KNOWLEDGE_DIRECTORY, LOCAL_DIRECTORY, INDEX_FILE);
+  return join(root, PROJECT_DIRECTORY, LOCAL_DIRECTORY, KNOWLEDGE_INDEX_FILE);
 }
 
 /** Refuses a project that has only the knowledge.db of an older c64-re-tools. */
 function refuseOldLayout(root: string): void {
-  if (!existsSync(textPath(root)) && existsSync(join(root, KNOWLEDGE_DIRECTORY, INDEX_FILE))) {
+  if (!existsSync(textPath(root)) && existsSync(join(root, PROJECT_DIRECTORY, KNOWLEDGE_INDEX_FILE))) {
     throw new Refusal(
       "unsupported-schema",
-      `${KNOWLEDGE_DIRECTORY}/${INDEX_FILE} is the knowledge of an older c64-re-tools. This c64-re-tools keeps the knowledge as text in ${KNOWLEDGE_DIRECTORY}/${TEXT_DIRECTORY}/. Convert it one time with distribution/convert-knowledge.ts of the c64-re-tools source repository.`,
+      `${PROJECT_DIRECTORY}/${KNOWLEDGE_INDEX_FILE} is the knowledge of an older c64-re-tools. This c64-re-tools keeps the knowledge as text in ${PROJECT_DIRECTORY}/${KNOWLEDGE_TEXT_DIRECTORY}/. Convert it one time with distribution/convert-knowledge.ts of the c64-re-tools source repository.`,
     );
   }
+}
+
+/** The prepared statements of each database by their SQL: a query that runs again is not prepared again. */
+const statements = new WeakMap<DatabaseSync, Map<string, StatementSync>>();
+
+/** The statement of `sql` on `db`, prepared once for each database; undefined without a database. */
+export function prepare(db: DatabaseSync, sql: string): StatementSync;
+export function prepare(db: DatabaseSync | undefined, sql: string): StatementSync | undefined;
+export function prepare(db: DatabaseSync | undefined, sql: string): StatementSync | undefined {
+  if (db === undefined) return undefined;
+  let known = statements.get(db);
+  if (known === undefined) statements.set(db, (known = new Map()));
+  let statement = known.get(sql);
+  if (statement === undefined) known.set(sql, (statement = db.prepare(sql)));
+  return statement;
 }
 
 function configure(db: DatabaseSync): void {
@@ -51,7 +63,7 @@ function open(path: string, readOnly: boolean): DatabaseSync {
     configure(db);
     db.prepare("SELECT count(*) FROM sqlite_master").get();
   } catch (error) {
-    throw new Refusal("invalid-database", `${KNOWLEDGE_DIRECTORY}/${LOCAL_DIRECTORY}/${INDEX_FILE} is not a readable SQLite database: ${(error as Error).message} Delete it: it is made again from the knowledge text.`);
+    throw new Refusal("invalid-database", `${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/${KNOWLEDGE_INDEX_FILE} is not a readable SQLite database: ${(error as Error).message} Delete it: it is made again from the knowledge text.`);
   }
   return db;
 }
@@ -90,6 +102,30 @@ function textHashes(files: ReadonlyMap<string, { sha256: string }>): Record<stri
   return Object.fromEntries([...files].map(([name, file]): [string, string] => [name, file.sha256]).sort(([a], [b]) => compareText(a, b)));
 }
 
+/** The SHA-256 of each knowledge file that this process read, with the stat that the file had then. */
+const knownHashes = new Map<string, { stat: string; sha256: string }>();
+
+/** The stat of a file that changes with its bytes: a write gives a new time, and writeAtomic a new inode. */
+function statOf(path: string): string {
+  const stat = statSync(path, { bigint: true });
+  return `${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+}
+
+/** The SHA-256 of each knowledge file of the project, by file name, in name order. A file is read again only when its stat changed. */
+function currentHashes(root: string): Record<string, string> {
+  const directory = textPath(root);
+  const hashes: Record<string, string> = {};
+  for (const name of knowledgeFiles(directory)) {
+    const path = join(directory, name);
+    // The stat before the read: a file that changes after it has another stat next time.
+    const stat = statOf(path);
+    let known = knownHashes.get(path);
+    if (known?.stat !== stat) knownHashes.set(path, (known = { stat, sha256: sha256(readFileSync(path)) }));
+    hashes[name] = known.sha256;
+  }
+  return hashes;
+}
+
 const sameHashes = (a: Record<string, string>, b: Record<string, string>) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
 
 /**
@@ -98,14 +134,13 @@ const sameHashes = (a: Record<string, string>, b: Record<string, string>) => JSO
  * transaction, so two processes never make the index at the same time.
  */
 function freshen(db: DatabaseSync, root: string): void {
+  if (sameHashes(currentHashes(root), storedHashes(db))) return;
   const files = readText(textPath(root));
-  const hashes = textHashes(files);
-  if (sameHashes(hashes, storedHashes(db))) return;
   db.exec("DELETE FROM evidence");
   for (const spec of TABLES) db.exec(`DELETE FROM ${sqlName(spec.table)}`);
   db.exec("DELETE FROM revisions");
   loadText(db, files);
-  storeHashes(db, hashes);
+  storeHashes(db, textHashes(files));
 }
 
 /** The project of each index opened for a write: its writes go to the text too. */
@@ -122,7 +157,7 @@ export function openForRead(root: string = projectRoot()): DatabaseSync | undefi
   const index = openIndex(root);
   try {
     // The lock is taken only when the text changed: a read does not wait for a long write that keeps the index fresh.
-    if (!sameHashes(textHashes(readText(textPath(root))), storedHashes(index))) transaction(index, () => freshen(index, root));
+    if (!sameHashes(currentHashes(root), storedHashes(index))) transaction(index, () => freshen(index, root));
   } finally {
     index.close();
   }
@@ -192,12 +227,20 @@ function newest(db: DatabaseSync): string {
   return (db.prepare("SELECT max(id) AS id FROM revisions").get() as { id: string | null }).id ?? "0";
 }
 
+/** The tables that the open transaction of each database changed. */
+const changedTables = new WeakMap<DatabaseSync, Set<string>>();
+
+/** Marks a table that the open transaction changed: its knowledge file is written when the transaction commits. */
+export function markChanged(db: DatabaseSync, table: string): void {
+  changedTables.get(db)?.add(table);
+}
+
 /**
- * Writes the knowledge files that the revisions after `before` changed, then
+ * Writes the revision log and the knowledge files of the changed tables, then
  * keeps their SHA-256 in the index. The text is written before the index
  * commits: when the commit fails, the next open makes the index from the text.
  */
-function writeText(db: DatabaseSync, root: string, before: string): void {
+function writeText(db: DatabaseSync, root: string, changed: ReadonlySet<string>): void {
   const directory = textPath(root);
   const hashes = storedHashes(db);
   const write = (file: string, text: string) => {
@@ -205,10 +248,7 @@ function writeText(db: DatabaseSync, root: string, before: string): void {
     hashes[file] = sha256(text);
   };
   write(REVISIONS_FILE, revisionsText(db));
-  for (const spec of TABLES) {
-    const changed = db.prepare(`SELECT 1 FROM ${sqlName(spec.table)} WHERE valid_from_revision > ? OR valid_to_revision > ? LIMIT 1`).get(before, before);
-    if (changed !== undefined) write(spec.file, tableText(db, spec));
-  }
+  for (const spec of TABLES) if (changed.has(spec.table)) write(spec.file, tableText(db, spec));
   storeHashes(db, hashes);
 }
 
@@ -220,15 +260,19 @@ function writeText(db: DatabaseSync, root: string, before: string): void {
 export function transaction<T>(db: DatabaseSync, work: () => T): T {
   const root = projects.get(db);
   db.exec("BEGIN IMMEDIATE");
+  const changed = new Set<string>();
+  changedTables.set(db, changed);
   try {
     if (root !== undefined) freshen(db, root);
     const before = root === undefined ? "0" : newest(db);
     const result = work();
-    if (root !== undefined && newest(db) !== before) writeText(db, root, before);
+    if (root !== undefined && newest(db) !== before) writeText(db, root, changed);
     db.exec("COMMIT");
     return result;
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
+  } finally {
+    changedTables.delete(db);
   }
 }

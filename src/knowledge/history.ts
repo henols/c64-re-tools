@@ -5,34 +5,10 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
 import {
-  COMMENT_COLUMNS,
-  MACRO_COLUMNS,
-  MACRO_USE_COLUMNS,
-  MODULE_COLUMNS,
-  OPERAND_COLUMNS,
-  PATCH_COLUMNS,
-  REFERENCE_COLUMNS,
-  RELEASE_COLUMNS,
-  SWITCH_COLUMNS,
-  REGION_COLUMNS,
+  FACTS,
   resolveRevision,
-  SUPPRESSION_COLUMNS,
-  SYMBOL_COLUMNS,
-  toComment,
-  toMacro,
-  toMacroUse,
-  toModule,
-  toOperand,
-  toPatch,
-  toReference,
-  toRelease,
-  toStartScreen,
-  START_SCREEN_COLUMNS,
-  toSwitch,
-  toRegion,
-  toSuppression,
-  toSymbol,
   type CommentRow,
+  type Fact,
   type MacroRow,
   type MacroUseRow,
   type ModuleRow,
@@ -47,7 +23,7 @@ import {
   type SymbolRow,
 } from "./read.ts";
 import { DEFAULT_SPACE, type CoverageKind, type EvidenceKind, type Origin, type Space } from "./schema.ts";
-import { compareText, NO_REVISION } from "./text.ts";
+import { compareText, NO_REVISION, sqlName } from "./text.ts";
 import type { Evidence } from "./write.ts";
 
 export interface Revision {
@@ -144,32 +120,27 @@ function bySequence(a: HistoryEntry, b: HistoryEntry): number {
   return compareText(a.from, b.from) || compareText(a.to ?? "~", b.to ?? "~");
 }
 
+/** The rows of each fact table that concern an address: each ? of the condition is the address. */
+const AT_ADDRESS: ReadonlyArray<[Fact, string]> = [
+  [FACTS.symbols, "address = ?"],
+  [FACTS.analyzer_names, "address = ?"],
+  [FACTS.regions, "start_address <= ? AND end_address >= ?"],
+  [FACTS.comments, "address = ?"],
+  [FACTS.references, "(from_address = ? OR to_address = ?)"],
+  [FACTS.suppressions, "((start_address <= ? AND end_address >= ?) OR to_address = ?)"],
+  [FACTS.modules, "start_address = ?"],
+  [FACTS.operands, "address = ?"],
+  [FACTS.patches, "start_address <= ? AND end_address >= ?"],
+  [FACTS.macro_uses, "start_address <= ? AND end_address >= ?"],
+];
+
 /** Every row, current or closed, that concerns one address of a space, oldest first. */
 export function historyAt(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): HistoryEntry[] {
   if (db === undefined) return [];
-  const validity = ", valid_to_revision";
   const entries: HistoryEntry[] = [];
-  for (const raw of db.prepare(`SELECT ${SYMBOL_COLUMNS}${validity} FROM symbols WHERE space = ? AND address = ?`).all(space, address) as Raw[]) entries.push(entry("symbol", toSymbol(raw), raw));
-  for (const raw of db.prepare(`SELECT ${SYMBOL_COLUMNS}${validity} FROM analyzer_names WHERE space = ? AND address = ?`).all(space, address) as Raw[]) entries.push(entry("analyzer-name", toSymbol(raw), raw));
-  for (const raw of db.prepare(`SELECT ${REGION_COLUMNS}${validity} FROM regions WHERE space = ? AND start_address <= ? AND end_address >= ?`).all(space, address, address) as Raw[]) {
-    entries.push(entry("region", toRegion(raw), raw));
-  }
-  for (const raw of db.prepare(`SELECT ${COMMENT_COLUMNS}${validity} FROM comments WHERE space = ? AND address = ?`).all(space, address) as Raw[]) entries.push(entry("comment", toComment(raw), raw));
-  for (const raw of db.prepare(`SELECT ${REFERENCE_COLUMNS}${validity} FROM "references" WHERE space = ? AND (from_address = ? OR to_address = ?)`).all(space, address, address) as Raw[]) {
-    entries.push(entry("reference", toReference(raw), raw));
-  }
-  for (const raw of db
-    .prepare(`SELECT ${SUPPRESSION_COLUMNS}${validity} FROM suppressions WHERE space = ? AND ((start_address <= ? AND end_address >= ?) OR to_address = ?)`)
-    .all(space, address, address, address) as Raw[]) {
-    entries.push(entry("suppression", toSuppression(raw), raw));
-  }
-  for (const raw of db.prepare(`SELECT ${MODULE_COLUMNS}${validity} FROM modules WHERE space = ? AND start_address = ?`).all(space, address) as Raw[]) entries.push(entry("module", toModule(raw), raw));
-  for (const raw of db.prepare(`SELECT ${OPERAND_COLUMNS}${validity} FROM operands WHERE space = ? AND address = ?`).all(space, address) as Raw[]) entries.push(entry("operand", toOperand(raw), raw));
-  for (const raw of db.prepare(`SELECT ${PATCH_COLUMNS}${validity} FROM patches WHERE space = ? AND start_address <= ? AND end_address >= ?`).all(space, address, address) as Raw[]) {
-    entries.push(entry("patch", toPatch(raw), raw));
-  }
-  for (const raw of db.prepare(`SELECT ${MACRO_USE_COLUMNS}${validity} FROM macro_uses WHERE space = ? AND start_address <= ? AND end_address >= ?`).all(space, address, address) as Raw[]) {
-    entries.push(entry("macro-use", toMacroUse(raw), raw));
+  for (const [fact, where] of AT_ADDRESS) {
+    const raws = db.prepare(`SELECT ${fact.columns}, valid_to_revision FROM ${sqlName(fact.table)} WHERE space = ? AND ${where}`).all(space, ...Array.from(where.matchAll(/\?/g), () => address)) as Raw[];
+    for (const raw of raws) entries.push(entry(fact.entity, fact.map(raw), raw));
   }
   return entries.sort(bySequence);
 }
@@ -177,24 +148,24 @@ export function historyAt(db: DatabaseSync | undefined, address: number, space: 
 /** Every row of a macro with this name, and every use of it, oldest first. */
 export function historyOfMacro(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): HistoryEntry[] {
   if (db === undefined) return [];
-  const macros = (db.prepare(`SELECT ${MACRO_COLUMNS}, valid_to_revision FROM macros WHERE space = ? AND name = ?`).all(space, name) as Raw[]).map((raw) => entry("macro", toMacro(raw), raw));
-  const uses = (db.prepare(`SELECT ${MACRO_USE_COLUMNS}, valid_to_revision FROM macro_uses WHERE space = ? AND macro = ?`).all(space, name) as Raw[]).map((raw) => entry("macro-use", toMacroUse(raw), raw));
+  const macros = (db.prepare(`SELECT ${FACTS.macros.columns}, valid_to_revision FROM macros WHERE space = ? AND name = ?`).all(space, name) as Raw[]).map((raw) => entry("macro", FACTS.macros.map(raw), raw));
+  const uses = (db.prepare(`SELECT ${FACTS.macro_uses.columns}, valid_to_revision FROM macro_uses WHERE space = ? AND macro = ?`).all(space, name) as Raw[]).map((raw) => entry("macro-use", FACTS.macro_uses.map(raw), raw));
   return [...macros, ...uses].sort(bySequence);
 }
 
 /** Every row of a switch with this name and every patch of it, oldest first. */
 export function historyOfSwitch(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): HistoryEntry[] {
   if (db === undefined) return [];
-  const switches = (db.prepare(`SELECT ${SWITCH_COLUMNS}, valid_to_revision FROM switches WHERE space = ? AND name = ?`).all(space, name) as Raw[]).map((raw) => entry("switch", toSwitch(raw), raw));
-  const patches = (db.prepare(`SELECT ${PATCH_COLUMNS}, valid_to_revision FROM patches WHERE space = ? AND switch_name = ?`).all(space, name) as Raw[]).map((raw) => entry("patch", toPatch(raw), raw));
+  const switches = (db.prepare(`SELECT ${FACTS.switches.columns}, valid_to_revision FROM switches WHERE space = ? AND name = ?`).all(space, name) as Raw[]).map((raw) => entry("switch", FACTS.switches.map(raw), raw));
+  const patches = (db.prepare(`SELECT ${FACTS.patches.columns}, valid_to_revision FROM patches WHERE space = ? AND switch_name = ?`).all(space, name) as Raw[]).map((raw) => entry("patch", FACTS.patches.map(raw), raw));
   return [...switches, ...patches].sort(bySequence);
 }
 
 /** Every symbol row of a space that ever had this name, oldest first: a name can move between addresses. */
 export function historyNamed(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): HistoryEntry[] {
   if (db === undefined) return [];
-  return (db.prepare(`SELECT ${SYMBOL_COLUMNS}, valid_to_revision FROM symbols WHERE space = ? AND name = ?`).all(space, name) as Raw[])
-    .map((raw) => entry("symbol", toSymbol(raw), raw))
+  return (db.prepare(`SELECT ${FACTS.symbols.columns}, valid_to_revision FROM symbols WHERE space = ? AND name = ?`).all(space, name) as Raw[])
+    .map((raw) => entry("symbol", FACTS.symbols.map(raw), raw))
     .sort(bySequence);
 }
 
@@ -265,45 +236,34 @@ export function revision(db: DatabaseSync | undefined, text: string): RevisionCh
   if (id === NO_REVISION) return { revision: { id: NO_REVISION, operation: "none", description: "The knowledge before every revision. It is empty." }, added: [], closed: [] };
   const raw = db?.prepare("SELECT * FROM revisions WHERE id = ?").get(id) as Raw | undefined;
   if (db === undefined || raw === undefined) throw new Refusal("not-found", `There is no revision ${id}.`);
-  const tables = [
-    ["symbol", "symbols", SYMBOL_COLUMNS, toSymbol],
-    ["analyzer-name", "analyzer_names", SYMBOL_COLUMNS, toSymbol],
-    ["region", "regions", REGION_COLUMNS, toRegion],
-    ["comment", "comments", COMMENT_COLUMNS, toComment],
-    ["reference", '"references"', REFERENCE_COLUMNS, toReference],
-    ["suppression", "suppressions", SUPPRESSION_COLUMNS, toSuppression],
-    ["module", "modules", MODULE_COLUMNS, toModule],
-    ["operand", "operands", OPERAND_COLUMNS, toOperand],
-    ["patch", "patches", PATCH_COLUMNS, toPatch],
-    ["switch", "switches", SWITCH_COLUMNS, toSwitch],
-    ["release", "releases", RELEASE_COLUMNS, toRelease],
-    ["start-screen", "start_screens", START_SCREEN_COLUMNS, toStartScreen],
-    ["macro", "macros", MACRO_COLUMNS, toMacro],
-    ["macro-use", "macro_uses", MACRO_USE_COLUMNS, toMacroUse],
-  ] as const;
-  // The program: its memory, its entry and its coverage.
-  const program = [
-    ["memory", "memory", "space, address, length(bytes) / 2 AS bytes, origin, valid_from_revision", (row: Raw): MemoryRow => ({ space: row.space as Space, address: row.address as number, bytes: row.bytes as number, origin: row.origin as Origin, revision: row.valid_from_revision as string })],
-    [
-      "entry",
-      "entries",
-      "space, address, state IS NOT NULL AS has_state, json_array_length(coalesce(stages, '[]')) AS stage_count, origin, valid_from_revision",
-      (row: Raw): EntryRow => ({ space: row.space as Space, address: row.address as number, state: row.has_state === 1, stages: row.stage_count as number, origin: row.origin as Origin, revision: row.valid_from_revision as string }),
-    ],
-    [
-      "coverage",
-      "coverage",
-      "space, map, kind, length(ranges) - length(replace(ranges, ' ', '')) + 1 AS ranges, origin, valid_from_revision",
-      (row: Raw): CoverageRow => ({ space: row.space as Space, map: row.map as string, kind: row.kind as CoverageKind, ranges: row.ranges as number, origin: row.origin as Origin, revision: row.valid_from_revision as string }),
-    ],
-  ] as const;
+  // The facts, then the program: its memory, its entry and its coverage.
+  const program: Fact[] = [
+    {
+      table: "memory",
+      entity: "memory",
+      columns: "space, address, length(bytes) / 2 AS bytes, origin, valid_from_revision",
+      map: (row: Raw): MemoryRow => ({ space: row.space as Space, address: row.address as number, bytes: row.bytes as number, origin: row.origin as Origin, revision: row.valid_from_revision as string }),
+    },
+    {
+      table: "entries",
+      entity: "entry",
+      columns: "space, address, state IS NOT NULL AS has_state, json_array_length(coalesce(stages, '[]')) AS stage_count, origin, valid_from_revision",
+      map: (row: Raw): EntryRow => ({ space: row.space as Space, address: row.address as number, state: row.has_state === 1, stages: row.stage_count as number, origin: row.origin as Origin, revision: row.valid_from_revision as string }),
+    },
+    {
+      table: "coverage",
+      entity: "coverage",
+      columns: "space, map, kind, length(ranges) - length(replace(ranges, ' ', '')) + 1 AS ranges, origin, valid_from_revision",
+      map: (row: Raw): CoverageRow => ({ space: row.space as Space, map: row.map as string, kind: row.kind as CoverageKind, ranges: row.ranges as number, origin: row.origin as Origin, revision: row.valid_from_revision as string }),
+    },
+  ];
   const added: HistoryEntry[] = [];
   const closed: HistoryEntry[] = [];
-  for (const [entity, table, columns, map] of [...tables, ...program]) {
-    for (const row of db.prepare(`SELECT ${columns}, valid_to_revision FROM ${table} WHERE valid_from_revision = ?`).all(id) as Raw[]) {
+  for (const { entity, table, columns, map } of [...Object.values(FACTS), ...program]) {
+    for (const row of db.prepare(`SELECT ${columns}, valid_to_revision FROM ${sqlName(table)} WHERE valid_from_revision = ?`).all(id) as Raw[]) {
       added.push(entry(entity, map(row), row));
     }
-    for (const row of db.prepare(`SELECT ${columns}, valid_to_revision FROM ${table} WHERE valid_to_revision = ?`).all(id) as Raw[]) {
+    for (const row of db.prepare(`SELECT ${columns}, valid_to_revision FROM ${sqlName(table)} WHERE valid_to_revision = ?`).all(id) as Raw[]) {
       closed.push(entry(entity, map(row), row));
     }
   }

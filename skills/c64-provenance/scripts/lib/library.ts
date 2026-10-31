@@ -9,11 +9,11 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { Refusal } from "#src/errors.ts";
 import { writeRefusal, type Written } from "#src/host-client/transfer.ts";
-import { formatC64Address, instructionLength } from "#src/c64.ts";
-import { evaluate, identifiers, operandText } from "#src/knowledge/expression.ts";
+import { formatC64Address, instructionLength, REFERENCE_KINDS, type ReferenceKind } from "#src/c64.ts";
+import { evaluate, identifiers, OPERAND_SELECTS, operandText, type OperandSelect } from "#src/knowledge/expression.ts";
 import { sha256 } from "#src/knowledge/text.ts";
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "#src/knowledge/read.ts";
-import { COMMENT_PLACEMENTS, type CommentPlacement, isSemantic, OPERAND_SELECTS, type OperandSelect, REFERENCE_KINDS, type ReferenceKind, REGION_TYPES, type RegionType, SYMBOL_KINDS, type SymbolKind } from "#src/knowledge/schema.ts";
+import { COMMENT_PLACEMENTS, type CommentPlacement, isSemantic, REGION_TYPES, type RegionType, SYMBOL_KINDS, type SymbolKind } from "#src/knowledge/schema.ts";
 import { checkOutputPath, isInside, knowledgePart, LOCAL_DIRECTORY, PROJECT_DIRECTORY } from "#src/project.ts";
 
 /** A routine shorter than this is not saved and not searched: its bytes occur by chance. */

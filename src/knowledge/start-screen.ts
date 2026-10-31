@@ -3,6 +3,7 @@
 // the colour RAM of the capture gives the colours. Thus the start screen of a
 // stage needs no address from the user.
 
+import { d018Offsets, formatC64Byte, vicBankBase } from "../c64.ts";
 import { Refusal } from "../errors.ts";
 import { LEFTOVERS_SWITCH, START_SCREEN_SWITCH, type StartScreenMode } from "./schema.ts";
 
@@ -70,16 +71,17 @@ function vicScreen(state: Record<string, unknown> | undefined, named: Named): Om
   const cia2 = ioBytes(state, "cia2");
   if (state === undefined || vic === undefined || vic.length < 0x2f || cia2 === undefined) throw new Refusal("not-found", `${named.program} has no entry state with the VIC-II and CIA 2. ${named.again}`);
   const [d011, d016, d018] = [vic[0x11]!, vic[0x16]!, vic[0x18]!];
-  if ((d011 & 0x10) === 0) throw new Refusal("invalid-input", `${named.capture} has the display off ($d011 = $${d011.toString(16).padStart(2, "0")}). ${named.again}`);
+  if ((d011 & 0x10) === 0) throw new Refusal("invalid-input", `${named.capture} has the display off ($d011 = ${formatC64Byte(d011)}). ${named.again}`);
   if ((d011 & 0x40) !== 0) throw new Refusal("invalid-input", `${named.capture} shows a screen in the extended colour mode, which a start screen does not have.`);
   const bitmap = (d011 & 0x20) !== 0;
   const multicolour = (d016 & 0x10) !== 0;
   if (!bitmap && multicolour) throw new Refusal("invalid-input", `${named.capture} shows a multicolour text screen, which a start screen does not have.`);
-  const bank = (3 - (cia2[0]! & 0x03)) << 14;
+  const bank = vicBankBase(cia2[0]!);
+  const offsets = d018Offsets(d018);
   return {
     mode: bitmap ? (multicolour ? "multicolour" : "hires") : "text",
-    screen: bank + ((d018 >> 4) & 0x0f) * 0x400,
-    ...(bitmap ? { bitmap: bank + ((d018 >> 3) & 1) * 0x2000 } : { charset: bank + ((d018 >> 1) & 7) * 0x800 }),
+    screen: bank + offsets.screen,
+    ...(bitmap ? { bitmap: bank + offsets.bitmap } : { charset: bank + offsets.characters }),
     border: vic[0x20]! & 0x0f,
     background: vic[0x21]! & 0x0f,
   };
@@ -106,7 +108,7 @@ const COLOURS = 1000;
  * colours (the low 4 bits of each byte), outside $d000-$dfff, where the loader
  * sees the I/O area. Undefined when the program has no such bytes.
  */
-export function findColours(colours: Uint8Array, byteAt: (address: number) => number | undefined): number | undefined {
+function findColours(colours: Uint8Array, byteAt: (address: number) => number | undefined): number | undefined {
   for (let start = 0x0400; start + COLOURS - 1 <= 0xffff; start++) {
     if (start <= 0xdfff && start + COLOURS - 1 >= 0xd000) continue;
     let offset = 0;

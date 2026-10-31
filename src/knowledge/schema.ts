@@ -50,12 +50,10 @@ export const EVIDENCE_KINDS = ["coverage", "test", "file", "note"] as const;
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 export const COMMENT_PLACEMENTS = ["line", "side"] as const;
 export type CommentPlacement = (typeof COMMENT_PLACEMENTS)[number];
-export { REFERENCE_KINDS, type ReferenceKind };
 /** The reference kind that only operand expressions write: code that builds the address of a symbol. */
 export const POINTER_KIND: ReferenceKind = "pointer";
-export { OPERAND_SELECTS, type OperandSelect } from "./expression.ts";
 /** What a suppression blocks: a symbol address, a region range or one reference. */
-export const SUPPRESSION_ENTITIES = ["symbol", "region", "reference"] as const;
+const SUPPRESSION_ENTITIES = ["symbol", "region", "reference"] as const;
 export type SuppressionEntity = (typeof SUPPRESSION_ENTITIES)[number];
 
 /**
@@ -130,6 +128,9 @@ export function isGeneratedFile(file: string): boolean {
  */
 export type Space = string;
 export const DEFAULT_SPACE: Space = "c64";
+
+/** The order of the spaces: the C64, the drive, the loading, then the banks by number. */
+export const spaceOrder = (space: Space): number => (space === "c64" ? -3 : space === "drive8" ? -2 : space === "loading" ? -1 : Number(space.slice(4)));
 const SPACE_CHECK = "space IN ('c64', 'drive8', 'loading') OR space GLOB 'bank[0-9]' OR space GLOB 'bank[1-9][0-9]' OR space GLOB 'bank[12][0-9][0-9]'";
 
 const list = (values: readonly string[]) => values.map((value) => `'${value}'`).join(", ");

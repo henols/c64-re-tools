@@ -7,34 +7,8 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import type { HistoryEntry } from "./history.ts";
-import {
-  COMMENT_COLUMNS,
-  MACRO_COLUMNS,
-  MACRO_USE_COLUMNS,
-  MODULE_COLUMNS,
-  OPERAND_COLUMNS,
-  PATCH_COLUMNS,
-  REFERENCE_COLUMNS,
-  RELEASE_COLUMNS,
-  START_SCREEN_COLUMNS,
-  SWITCH_COLUMNS,
-  REGION_COLUMNS,
-  SUPPRESSION_COLUMNS,
-  SYMBOL_COLUMNS,
-  toComment,
-  toMacro,
-  toMacroUse,
-  toModule,
-  toOperand,
-  toPatch,
-  toReference,
-  toRelease,
-  toStartScreen,
-  toSwitch,
-  toRegion,
-  toSuppression,
-  toSymbol,
-} from "./read.ts";
+import { prepare } from "./database.ts";
+import { FACTS, type Fact } from "./read.ts";
 import type { Space } from "./schema.ts";
 import { compareText, sqlName } from "./text.ts";
 
@@ -78,10 +52,7 @@ type Raw = Record<string, unknown>;
 
 interface TableRule {
   rule: ConflictRule;
-  table: string;
-  entity: HistoryEntry["entity"];
-  columns: string;
-  map: (raw: Raw) => HistoryEntry["row"];
+  fact: Fact;
   /**
    * The columns that must differ between current rows, "overlap" for address
    * ranges, or "partial" for ranges that may only overlap when they are equal.
@@ -92,40 +63,32 @@ interface TableRule {
 }
 
 const RULES: readonly TableRule[] = [
-  { rule: "symbol-address", table: "symbols", entity: "symbol", columns: SYMBOL_COLUMNS, map: toSymbol, key: ["address"] },
-  { rule: "symbol-name", table: "symbols", entity: "symbol", columns: SYMBOL_COLUMNS, map: toSymbol, key: ["name"] },
-  { rule: "analyzer-name-address", table: "analyzer_names", entity: "analyzer-name", columns: SYMBOL_COLUMNS, map: toSymbol, key: ["address", "origin"] },
-  { rule: "analyzer-name-name", table: "analyzer_names", entity: "analyzer-name", columns: SYMBOL_COLUMNS, map: toSymbol, key: ["name", "origin"] },
-  { rule: "region", table: "regions", entity: "region", columns: REGION_COLUMNS, map: toRegion, key: "overlap" },
-  { rule: "comment", table: "comments", entity: "comment", columns: COMMENT_COLUMNS, map: toComment, key: ["address", "placement"] },
-  { rule: "reference", table: "references", entity: "reference", columns: REFERENCE_COLUMNS, map: toReference, key: ["from_address", "to_address", "kind"] },
-  { rule: "operand", table: "operands", entity: "operand", columns: OPERAND_COLUMNS, map: toOperand, key: ["address"] },
-  { rule: "module-start", table: "modules", entity: "module", columns: MODULE_COLUMNS, map: toModule, key: ["start_address"] },
-  { rule: "module-file", table: "modules", entity: "module", columns: MODULE_COLUMNS, map: toModule, key: ["file"] },
-  { rule: "suppression-symbol", table: "suppressions", entity: "suppression", columns: SUPPRESSION_COLUMNS, map: toSuppression, key: ["start_address"], where: "entity = 'symbol'" },
-  {
-    rule: "suppression-reference",
-    table: "suppressions",
-    entity: "suppression",
-    columns: SUPPRESSION_COLUMNS,
-    map: toSuppression,
-    key: ["start_address", "to_address", "kind"],
-    where: "entity = 'reference'",
-  },
-  { rule: "suppression-region", table: "suppressions", entity: "suppression", columns: SUPPRESSION_COLUMNS, map: toSuppression, key: "overlap", where: "entity = 'region'" },
+  { rule: "symbol-address", fact: FACTS.symbols, key: ["address"] },
+  { rule: "symbol-name", fact: FACTS.symbols, key: ["name"] },
+  { rule: "analyzer-name-address", fact: FACTS.analyzer_names, key: ["address", "origin"] },
+  { rule: "analyzer-name-name", fact: FACTS.analyzer_names, key: ["name", "origin"] },
+  { rule: "region", fact: FACTS.regions, key: "overlap" },
+  { rule: "comment", fact: FACTS.comments, key: ["address", "placement"] },
+  { rule: "reference", fact: FACTS.references, key: ["from_address", "to_address", "kind"] },
+  { rule: "operand", fact: FACTS.operands, key: ["address"] },
+  { rule: "module-start", fact: FACTS.modules, key: ["start_address"] },
+  { rule: "module-file", fact: FACTS.modules, key: ["file"] },
+  { rule: "suppression-symbol", fact: FACTS.suppressions, key: ["start_address"], where: "entity = 'symbol'" },
+  { rule: "suppression-reference", fact: FACTS.suppressions, key: ["start_address", "to_address", "kind"], where: "entity = 'reference'" },
+  { rule: "suppression-region", fact: FACTS.suppressions, key: "overlap", where: "entity = 'region'" },
   // Patches of different switches at the same range are alternatives; any other overlap is a conflict.
-  { rule: "patch", table: "patches", entity: "patch", columns: PATCH_COLUMNS, map: toPatch, key: "partial" },
-  { rule: "patch-switch", table: "patches", entity: "patch", columns: PATCH_COLUMNS, map: toPatch, key: ["start_address", "end_address", "switch_name"] },
-  { rule: "switch", table: "switches", entity: "switch", columns: SWITCH_COLUMNS, map: toSwitch, key: ["name"] },
-  { rule: "release", table: "releases", entity: "release", columns: RELEASE_COLUMNS, map: toRelease, key: ["label"] },
-  { rule: "release-base", table: "releases", entity: "release", columns: RELEASE_COLUMNS, map: toRelease, key: ["base"], where: "base = 1" },
-  { rule: "start-screen", table: "start_screens", entity: "start-screen", columns: START_SCREEN_COLUMNS, map: toStartScreen, key: [] },
-  { rule: "macro", table: "macros", entity: "macro", columns: MACRO_COLUMNS, map: toMacro, key: ["name"] },
-  { rule: "macro-use", table: "macro_uses", entity: "macro-use", columns: MACRO_USE_COLUMNS, map: toMacroUse, key: "overlap" },
+  { rule: "patch", fact: FACTS.patches, key: "partial" },
+  { rule: "patch-switch", fact: FACTS.patches, key: ["start_address", "end_address", "switch_name"] },
+  { rule: "switch", fact: FACTS.switches, key: ["name"] },
+  { rule: "release", fact: FACTS.releases, key: ["label"] },
+  { rule: "release-base", fact: FACTS.releases, key: ["base"], where: "base = 1" },
+  { rule: "start-screen", fact: FACTS.start_screens, key: [] },
+  { rule: "macro", fact: FACTS.macros, key: ["name"] },
+  { rule: "macro-use", fact: FACTS.macro_uses, key: "overlap" },
 ];
 
 function conflictRow(rule: TableRule, raw: Raw): ConflictRow {
-  return { entity: rule.entity, row: rule.map(raw), from: raw.valid_from_revision as string, id: raw.id as string } as ConflictRow;
+  return { entity: rule.fact.entity, row: rule.fact.map(raw), from: raw.valid_from_revision as string, id: raw.id as string } as ConflictRow;
 }
 
 const byAge = (a: ConflictRow, b: ConflictRow) => compareText(a.from, b.from) || compareText(a.id, b.id);
@@ -134,9 +97,8 @@ const byAge = (a: ConflictRow, b: ConflictRow) => compareText(a.from, b.from) ||
 function sameKey(db: DatabaseSync, rule: TableRule, key: readonly string[]): Conflict[] {
   const where = `valid_to_revision IS NULL${rule.where === undefined ? "" : ` AND ${rule.where}`}`;
   const columns = ["space", ...key].join(", ");
-  const rows = db
-    .prepare(`SELECT ${rule.columns}, id FROM ${sqlName(rule.table)} WHERE ${where} AND (${columns}) IN (SELECT ${columns} FROM ${sqlName(rule.table)} WHERE ${where} GROUP BY ${columns} HAVING count(*) > 1)`)
-    .all() as Raw[];
+  const table = sqlName(rule.fact.table);
+  const rows = prepare(db, `SELECT ${rule.fact.columns}, id FROM ${table} WHERE ${where} AND (${columns}) IN (SELECT ${columns} FROM ${table} WHERE ${where} GROUP BY ${columns} HAVING count(*) > 1)`).all() as Raw[];
   const groups = new Map<string, Conflict>();
   for (const raw of rows) {
     const id = JSON.stringify(["space", ...key].map((column) => raw[column]));
@@ -153,9 +115,7 @@ function sameKey(db: DatabaseSync, rule: TableRule, key: readonly string[]): Con
  * range is no conflict.
  */
 function overlapping(db: DatabaseSync, rule: TableRule, sameRange = false): Conflict[] {
-  const rows = db
-    .prepare(`SELECT ${rule.columns}, id FROM ${sqlName(rule.table)} WHERE valid_to_revision IS NULL${rule.where === undefined ? "" : ` AND ${rule.where}`} ORDER BY space, start_address, end_address`)
-    .all() as Raw[];
+  const rows = prepare(db, `SELECT ${rule.fact.columns}, id FROM ${sqlName(rule.fact.table)} WHERE valid_to_revision IS NULL${rule.where === undefined ? "" : ` AND ${rule.where}`} ORDER BY space, start_address, end_address`).all() as Raw[];
   const conflicts: Conflict[] = [];
   let group: Conflict | undefined;
   let end = -1;
@@ -177,13 +137,15 @@ function overlapping(db: DatabaseSync, rule: TableRule, sameRange = false): Conf
   });
 }
 
-/** Every conflict of the knowledge, rule by rule; the rows of each, oldest first. */
-export function conflicts(db: DatabaseSync | undefined): Conflict[] {
+/** Every conflict of the knowledge, rule by rule; the rows of each, oldest first. With `tables`, only the rules of those tables. */
+export function conflicts(db: DatabaseSync | undefined, tables?: ReadonlySet<string>): Conflict[] {
   if (db === undefined) return [];
-  return RULES.flatMap((rule) => (rule.key === "overlap" || rule.key === "partial" ? overlapping(db, rule, rule.key === "partial") : sameKey(db, rule, rule.key))).map((conflict) => ({ ...conflict, rows: conflict.rows.sort(byAge) }));
+  return RULES.filter((rule) => tables === undefined || tables.has(rule.fact.table))
+    .flatMap((rule) => (rule.key === "overlap" || rule.key === "partial" ? overlapping(db, rule, rule.key === "partial") : sameKey(db, rule, rule.key)))
+    .map((conflict) => ({ ...conflict, rows: conflict.rows.sort(byAge) }));
 }
 
 /** The table of a conflict rule. */
 export function conflictTable(rule: ConflictRule): string {
-  return RULES.find((item) => item.rule === rule)!.table;
+  return RULES.find((item) => item.rule === rule)!.fact.table;
 }
