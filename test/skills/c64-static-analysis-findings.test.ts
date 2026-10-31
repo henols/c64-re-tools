@@ -2,25 +2,17 @@
 // c64-static-analysis script. No analyzer runs.
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
 import { openForWrite } from "../../src/knowledge/database.ts";
 import { importFindings } from "../../src/knowledge/import.ts";
 import { classifyRegion, renameSymbol } from "../../src/knowledge/write.ts";
 import { dxaFindings, decompilerFindings, seedsFromKnowledge } from "../../skills/c64-static-analysis/scripts/lib/findings.ts";
-
-const root = mkdtempSync(join(tmpdir(), "c64-re-tools-findings-"));
-const db = openForWrite(root);
-after(() => {
-  db.close();
-  rmSync(root, { recursive: true, force: true });
-});
+import { scratchDir } from "../kit.ts";
 
 test("seeds come from current semantic knowledge only: routines, non-code regions and names", () => {
   assert.deepEqual(seedsFromKnowledge(undefined, [0x080d]), { entryPoints: [0x080d], dataRanges: [], labels: [] }, "no database means no seeds beyond the given ones");
+  using db = openForWrite(scratchDir("findings"));
   renameSymbol(db, { origin: "llm" }, { address: 0x2100, name: "update_player", kind: "routine" });
   renameSymbol(db, { origin: "user" }, { address: 0x3000, name: "player_x", kind: "variable" });
   classifyRegion(db, { origin: "llm" }, { start: 0x4000, end: 0x403f, type: "sprite" });
@@ -54,37 +46,33 @@ test("seeds come from current semantic knowledge only: routines, non-code region
 });
 
 test("a data or variable symbol of the user or the LLM makes its non-code region data for the analyzer, also a region of DXA; code and executed addresses stay free", () => {
-  const own = openForWrite(mkdtempSync(join(root, "symbols-")));
-  try {
-    importFindings(own, {
-      analyzer: "dxa",
-      coverage: [{ start: 0x4700, end: 0x47ff }],
-      authoritative: { symbols: false, regions: true, references: false },
-      symbols: [],
-      regions: [
-        { start: 0x4700, end: 0x4706, type: "code" },
-        { start: 0x4707, end: 0x471f, type: "bytes" },
-        { start: 0x4720, end: 0x473f, type: "bytes" },
-        { start: 0x4740, end: 0x47ff, type: "bytes" },
-      ],
-      references: [],
-    });
-    renameSymbol(own, { origin: "llm" }, { address: 0x4707, name: "version_banner", kind: "data" });
-    renameSymbol(own, { origin: "llm" }, { address: 0x4703, name: "self_mod_operand", kind: "variable" });
-    renameSymbol(own, { origin: "llm" }, { address: 0x4728, name: "executed_byte", kind: "variable" });
-    renameSymbol(own, { origin: "llm" }, { address: 0x4750, name: "frame_counter", kind: "variable" });
-    renameSymbol(own, { origin: "llm" }, { address: 0x0041, name: "score", kind: "variable" });
-    renameSymbol(own, { origin: "llm" }, { address: 0x4760, name: "a_label", kind: "label" });
-    const executed = (address: number) => address === 0x4728 || address === 0x4745;
-    assert.deepEqual(seedsFromKnowledge(own, [], "c64", executed).dataRanges, [
-      { start: 0x0041, end: 0x0041 },
-      { start: 0x4707, end: 0x471f },
-      // $4750 is in a region with an executed byte: only its own byte.
-      { start: 0x4750, end: 0x4750 },
-    ]);
-  } finally {
-    own.close();
-  }
+  using own = openForWrite(scratchDir("findings-symbols"));
+  importFindings(own, {
+    analyzer: "dxa",
+    coverage: [{ start: 0x4700, end: 0x47ff }],
+    authoritative: { symbols: false, regions: true, references: false },
+    symbols: [],
+    regions: [
+      { start: 0x4700, end: 0x4706, type: "code" },
+      { start: 0x4707, end: 0x471f, type: "bytes" },
+      { start: 0x4720, end: 0x473f, type: "bytes" },
+      { start: 0x4740, end: 0x47ff, type: "bytes" },
+    ],
+    references: [],
+  });
+  renameSymbol(own, { origin: "llm" }, { address: 0x4707, name: "version_banner", kind: "data" });
+  renameSymbol(own, { origin: "llm" }, { address: 0x4703, name: "self_mod_operand", kind: "variable" });
+  renameSymbol(own, { origin: "llm" }, { address: 0x4728, name: "executed_byte", kind: "variable" });
+  renameSymbol(own, { origin: "llm" }, { address: 0x4750, name: "frame_counter", kind: "variable" });
+  renameSymbol(own, { origin: "llm" }, { address: 0x0041, name: "score", kind: "variable" });
+  renameSymbol(own, { origin: "llm" }, { address: 0x4760, name: "a_label", kind: "label" });
+  const executed = (address: number) => address === 0x4728 || address === 0x4745;
+  assert.deepEqual(seedsFromKnowledge(own, [], "c64", executed).dataRanges, [
+    { start: 0x0041, end: 0x0041 },
+    { start: 0x4707, end: 0x471f },
+    // $4750 is in a region with an executed byte: only its own byte.
+    { start: 0x4750, end: 0x4750 },
+  ]);
 });
 
 test("functions become routine symbols, code is code and data is bytes", () => {
@@ -177,32 +165,26 @@ test("a (zp),y or (zp,x) instruction keeps only its reference to the pointer, ne
 });
 
 test("an echoed seed stays with its semantic owner, and a code/data disagreement is reported", () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-echo-"));
-  const own = openForWrite(project);
-  try {
-    renameSymbol(own, { origin: "llm" }, { address: 0x0818, name: "init_result", kind: "routine" });
-    renameSymbol(own, { origin: "user" }, { address: 0x080d, name: "main", kind: "variable" });
-    const result = importFindings(
-      own,
-      decompilerFindings({
-        coverage: [{ start: 0x0801, end: 0x0827 }],
-        functions: [
-          { entry: 0x080d, name: "main", nameSource: "seed" },
-          { entry: 0x0818, name: "init_result", nameSource: "seed" },
-        ],
-        regions: [],
-        references: [],
-        decompilations: [],
-        instructions: [],
-        completeness: { functions: true, regions: true, references: true },
-      }),
-    );
-    assert.equal(result.revision, null, "nothing changes owner");
-    assert.deepEqual(result.conflicts.map((conflict) => conflict.category === "symbol" && [conflict.address, conflict.reason]), [[0x080d, "kind"]]);
-  } finally {
-    own.close();
-    rmSync(project, { recursive: true, force: true });
-  }
+  using own = openForWrite(scratchDir("echo"));
+  renameSymbol(own, { origin: "llm" }, { address: 0x0818, name: "init_result", kind: "routine" });
+  renameSymbol(own, { origin: "user" }, { address: 0x080d, name: "main", kind: "variable" });
+  const result = importFindings(
+    own,
+    decompilerFindings({
+      coverage: [{ start: 0x0801, end: 0x0827 }],
+      functions: [
+        { entry: 0x080d, name: "main", nameSource: "seed" },
+        { entry: 0x0818, name: "init_result", nameSource: "seed" },
+      ],
+      regions: [],
+      references: [],
+      decompilations: [],
+      instructions: [],
+      completeness: { functions: true, regions: true, references: true },
+    }),
+  );
+  assert.equal(result.revision, null, "nothing changes owner");
+  assert.deepEqual(result.conflicts.map((conflict) => conflict.category === "symbol" && [conflict.address, conflict.reason]), [[0x080d, "kind"]]);
 });
 
 test("DXA labels are non-authoritative label symbols; its regions are authoritative", () => {
@@ -230,30 +212,24 @@ test("DXA labels are non-authoritative label symbols; its regions are authoritat
 });
 
 test("a DXA label in a data region is a data symbol, so a user data symbol that DXA echoes gives no conflict", () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-dxa-data-"));
-  const own = openForWrite(project);
-  try {
-    renameSymbol(own, { origin: "user" }, { address: 0x0824, name: "table", kind: "variable" });
-    const findings = dxaFindings({
-      coverage: [{ start: 0x0801, end: 0x0827 }],
-      regions: [
-        { start: 0x0801, end: 0x0823, classification: "code" },
-        { start: 0x0824, end: 0x0827, classification: "data" },
-      ],
-      labels: [
-        { address: 0x080d, name: "l80d" },
-        { address: 0x0824, name: "table" },
-      ],
-      listingBytes: 100,
-      completeness: { regions: true, labels: false },
-    });
-    assert.deepEqual(findings.symbols, [
-      { address: 0x080d, name: "l80d", kind: "label" },
-      { address: 0x0824, name: "table", kind: "data" },
-    ]);
-    assert.deepEqual(importFindings(own, findings).conflicts, []);
-  } finally {
-    own.close();
-    rmSync(project, { recursive: true, force: true });
-  }
+  using own = openForWrite(scratchDir("dxa-data"));
+  renameSymbol(own, { origin: "user" }, { address: 0x0824, name: "table", kind: "variable" });
+  const findings = dxaFindings({
+    coverage: [{ start: 0x0801, end: 0x0827 }],
+    regions: [
+      { start: 0x0801, end: 0x0823, classification: "code" },
+      { start: 0x0824, end: 0x0827, classification: "data" },
+    ],
+    labels: [
+      { address: 0x080d, name: "l80d" },
+      { address: 0x0824, name: "table" },
+    ],
+    listingBytes: 100,
+    completeness: { regions: true, labels: false },
+  });
+  assert.deepEqual(findings.symbols, [
+    { address: 0x080d, name: "l80d", kind: "label" },
+    { address: 0x0824, name: "table", kind: "data" },
+  ]);
+  assert.deepEqual(importFindings(own, findings).conflicts, []);
 });

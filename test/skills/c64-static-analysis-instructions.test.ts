@@ -2,20 +2,15 @@
 // operand in 6502 syntax, the target, and whether the coverage saw it run.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
 import { instructionList, modeOf } from "../../skills/c64-static-analysis/scripts/lib/instructions.ts";
 import { vectoredPrg } from "../fixtures/prg/vectored.ts";
 import { importPrg } from "../fixtures/program.ts";
-import { readEnvelope } from "../kit.ts";
-
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-instructions-"));
-after(() => rmSync(project, { recursive: true, force: true }));
+import { runScriptSync, scratchDir, skillScript } from "../kit.ts";
 
 test("the mode comes from the opcode", () => {
   const cases: Array<[number, string]> = [
@@ -57,11 +52,10 @@ test("the list writes operands in 6502 syntax, the flow target, and executed fro
 });
 
 test("analyze --out-instructions writes the decompiler's instructions to a project file", { timeout: 120_000 }, () => {
+  const project = scratchDir("instructions");
   importPrg(project, vectoredPrg);
-  const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
-  const run = spawnSync(process.execPath, [...process.execArgv, script, "analyze", "--entry", "$080d", "--out-instructions", "analysis/instructions.json"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-  const json = readEnvelope(run.stdout, run.status).json as { instructions: { out: string; count: number } };
-  assert.equal(json.instructions.out, "analysis/instructions.json", run.stdout);
+  const { json, stdout } = runScriptSync(skillScript("c64-static-analysis", "static-analysis.ts"), ["analyze", "--entry", "$080d", "--out-instructions", "analysis/instructions.json"], { cwd: project });
+  assert.equal(json.instructions.out, "analysis/instructions.json", stdout);
   const list = JSON.parse(readFileSync(join(project, "analysis", "instructions.json"), "utf8")) as Array<{ address: string; mnemonic: string; mode: string; operand: string }>;
   assert.equal(list.length, json.instructions.count);
   // The decompiler follows LDA #$20 / STA $0300 / LDA #$08 / STA $0301 and finds the target of the indirect jump.

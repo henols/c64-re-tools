@@ -4,24 +4,21 @@
 // contiguous range, as the real one does. No Exomizer needed.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
-import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
+import { prg, SYS_2061 } from "../../src/c64.testkit.ts";
+import { runScript, scratchDir, skillScript } from "../kit.ts";
+import { nodeStandIn } from "./node-stand-in.ts";
 
-const script = resolve(import.meta.dirname, "../../skills/c64-packer/scripts/packer.ts");
-const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-packer-"));
-after(() => rmSync(scratch, { recursive: true, force: true }));
+const script = skillScript("c64-packer", "packer.ts");
+const scratch = scratchDir("packer");
 
 // The fake: "sfx <entry> ... -o <out> <inputs>" writes a PRG at $0801 that holds
 // the entry and the merged inputs; "desfx -o <out> <packed>" writes back the
 // largest contiguous range of them and names the entry. FAKE_EXO_* change it.
-const FAKE = `#!/usr/bin/env node
-import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+const FAKE = `import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 const argv = process.argv.slice(2);
 if (process.env.FAKE_EXO_LOG) appendFileSync(process.env.FAKE_EXO_LOG, JSON.stringify(argv) + "\\n");
 const out = argv[argv.indexOf("-o") + 1];
@@ -59,21 +56,10 @@ if (argv[0] === "sfx") {
 }
 `;
 
-function fakeExomizer(): string {
-  const fake = join(scratch, "exomizer.ts");
-  writeFileSync(fake, FAKE);
-  chmodSync(fake, 0o755);
-  // Windows starts no script by its shebang: a .cmd file runs it through Node.
-  if (process.platform !== "win32") return fake;
-  const program = join(scratch, "exomizer.cmd");
-  writeFileSync(program, `@"${process.execPath}" "${fake}" %*\r\n`);
-  return program;
-}
-const exomizer = fakeExomizer();
+const exomizer = nodeStandIn(scratch, "exomizer", FAKE);
 
-const prg = (start: number, bytes: number[]) => Buffer.from([start & 0xff, start >> 8, ...bytes]);
 /** 10 SYS2061, then code at $080d. */
-const BASIC = prg(0x0801, [0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00, 0xee, 0x20, 0xd0, 0x4c, 0x0d, 0x08]);
+const BASIC = prg(0x0801, SYS_2061, [0xee, 0x20, 0xd0, 0x4c, 0x0d, 0x08]);
 
 let projects = 0;
 /** A project with these files in it. */
@@ -87,20 +73,8 @@ function project(files: Record<string, Buffer>): string {
   return root;
 }
 
-async function packer(root: string, args: string[], env: Record<string, string> = {}): Promise<{ status: number | null; json: Record<string, unknown>; envelope: ScriptEnvelope }> {
-  const child = spawn(process.execPath, [...process.execArgv, script, "pack", ...args], {
-    cwd: root,
-    env: { ...process.env, C64RT_EXOMIZER: exomizer, C64RT_HOST: "127.0.0.1:1", ...env },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  child.stderr.on("data", (chunk) => (stderr += chunk));
-  const [status] = (await once(child, "exit")) as [number | null];
-  assert.equal(stderr, "");
-  const { envelope, json } = readEnvelope(stdout, status);
-  return { status, json: json as Record<string, unknown>, envelope };
+function packer(root: string, args: string[], env: Record<string, string> = {}) {
+  return runScript(script, ["pack", ...args], { cwd: root, env: { C64RT_EXOMIZER: exomizer, ...env } });
 }
 
 test("a BASIC program is packed with its SYS address as the entry and checked", { timeout: 60_000 }, async () => {
@@ -108,12 +82,8 @@ test("a BASIC program is packed with its SYS address as the entry and checked", 
   const log = join(root, "argv.jsonl");
   const { status, json, envelope } = await packer(root, ["build/game.prg", "--out", "build/game-packed.prg"], { FAKE_EXO_LOG: log });
   assert.equal(status, 0, JSON.stringify(json));
-  assert.equal(json.result, "PASS");
   assert.equal(envelope.hint, "Run build/game-packed.prg in the emulator with RUN. Make sure that the program starts and works.");
-  assert.equal(json.out, "build/game-packed.prg");
-  assert.equal(json.entry, "$080d");
-  assert.equal(json.unpackedBytes, BASIC.length - 2);
-  assert.equal(json.unpackSeconds, 1);
+  assert.partialDeepStrictEqual(json, { result: "PASS", out: "build/game-packed.prg", entry: "$080d", unpackedBytes: BASIC.length - 2, unpackSeconds: 1 });
   assert.deepEqual(json.inputs, [{ file: "build/game.prg", loadRange: { start: "$0801", end: "$0812" }, bytes: 18 }]);
   assert.deepEqual(json.check, { entry: "$080d", identical: true, segments: [{ start: "$0801", end: "$0812", result: "identical" }] });
   assert.equal(readFileSync(join(root, "build", "game-packed.prg")).readUInt16LE(0), 0x0801);
@@ -129,7 +99,7 @@ test("several files go into one program in load order, with --entry and --exit-m
   assert.equal(status, 0, JSON.stringify(json));
   assert.equal(json.result, "PASS");
   assert.equal(json.exitMemory, "$35");
-  assert.deepEqual((json.check as { segments: unknown[] }).segments, [{ start: "$1000", end: "$1005", result: "identical" }]);
+  assert.deepEqual(json.check.segments, [{ start: "$1000", end: "$1005", result: "identical" }]);
   const [sfx] = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as string[]);
   assert.ok(sfx!.includes("-Di_ram_exit=53"), JSON.stringify(sfx));
   assert.deepEqual(sfx!.slice(-2).map((path) => path.replaceAll("\\", "/").split("/").at(-1)), ["0.prg", "1.prg"]);
@@ -142,11 +112,11 @@ test("a program that unpacks to other bytes or jumps elsewhere is FAIL and is no
   assert.equal(corrupt.json.result, "FAIL");
   assert.match(corrupt.envelope.hint!, /The script did not write it\. Do not use it\./);
   assert.equal(corrupt.json.out, undefined);
-  assert.deepEqual((corrupt.json.check as { segments: unknown[] }).segments, [{ start: "$0801", end: "$0812", result: "different", differences: 1, firstDifference: { address: "$0804", built: "$ff", reference: "$00" } }]);
+  assert.deepEqual(corrupt.json.check.segments, [{ start: "$0801", end: "$0812", result: "different", differences: 1, firstDifference: { address: "$0804", built: "$ff", reference: "$00" } }]);
   const elsewhere = await packer(root, ["game.prg", "--out", "packed.prg"], { FAKE_EXO_ENTRY: "fce2" });
   assert.equal(elsewhere.status, 0, JSON.stringify(elsewhere.json));
   assert.equal(elsewhere.json.result, "FAIL");
-  assert.equal((elsewhere.json.check as { entry: string }).entry, "$fce2");
+  assert.equal(elsewhere.json.check.entry, "$fce2");
   assert.equal(existsSync(join(root, "packed.prg")), false);
 });
 
@@ -156,7 +126,7 @@ test("a check that does not hold all inputs is INCONCLUSIVE", { timeout: 60_000 
   assert.equal(status, 0, JSON.stringify(json));
   assert.equal(json.result, "INCONCLUSIVE");
   assert.match(envelope.hint!, /^The check does not hold all bytes of the inputs\. Run packed\.prg in the emulator/);
-  assert.deepEqual((json.check as { segments: unknown[] }).segments, [
+  assert.deepEqual(json.check.segments, [
     { start: "$1000", end: "$1003", result: "identical" },
     { start: "$8000", end: "$8001", result: "not covered", uncovered: 2 },
   ]);
@@ -168,7 +138,7 @@ test("wrong calls are refused before Exomizer runs: no SYS, an entry below $0400
   const refused = async (args: string[], message: RegExp) => {
     const { status, json } = await packer(root, args, { FAKE_EXO_LOG: log });
     assert.equal(status, 2, JSON.stringify(json));
-    const error = json.error as { code: string; message: string };
+    const { error } = json;
     assert.equal(error.code, "invalid-input");
     assert.match(error.message, message);
   };
@@ -183,7 +153,7 @@ test("an Exomizer that cannot pack is an error with its message", { timeout: 60_
   const root = project({ "game.prg": BASIC });
   const { status, json } = await packer(root, ["game.prg", "--out", "packed.prg"], { FAKE_EXO_FAIL: "1" });
   assert.equal(status, 2, JSON.stringify(json));
-  const error = json.error as { code: string; message: string };
+  const { error } = json;
   assert.equal(error.code, "operation-failed");
   assert.match(error.message, /Exomizer could not pack the program \(exit 1\)\. The last output of Exomizer:\n {2}Error: the data overlaps the decrunch table\./);
 });

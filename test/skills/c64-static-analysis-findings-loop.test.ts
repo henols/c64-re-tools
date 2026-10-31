@@ -5,12 +5,7 @@
 // The language checks are in src/native/decompiler/language.test.ts.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
 import { analysisSubjectPrg } from "../fixtures/prg/analysis-subject.ts";
 import { importPrg } from "../fixtures/program.ts";
@@ -19,22 +14,14 @@ import { historyAt, revisions } from "../../src/knowledge/history.ts";
 import { analyzerNamesAt, symbolAt } from "../../src/knowledge/read.ts";
 import { nthIn } from "../../src/knowledge/revisions.testkit.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
-import { readEnvelope } from "../kit.ts";
+import { runScript, scratchDir, skillScript } from "../kit.ts";
 
-const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-m8-"));
-after(() => rmSync(project, { recursive: true, force: true }));
+const script = skillScript("c64-static-analysis", "static-analysis.ts");
+const project = scratchDir("findings-loop");
 
 /** Runs an analysis in the project. No Host Runtime runs: the script runs its tools itself. */
-async function analyze(...args: string[]): Promise<Record<string, unknown>> {
-  const child = spawn(process.execPath, [...process.execArgv, script, "analyze", ...args], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  child.stderr.on("data", (chunk) => (stderr += chunk));
-  const [status] = (await once(child, "exit")) as [number | null];
-  assert.equal(stderr, "");
-  return readEnvelope(stdout, status).json as Record<string, unknown>;
+async function analyze(...args: string[]) {
+  return (await runScript(script, ["analyze", ...args], { cwd: project })).json;
 }
 
 /** Reads the knowledge of the project. */
@@ -69,7 +56,7 @@ test("decompiler findings, a semantic rename and a seeded re-run go through one 
       problem: "code and data disagree",
     },
   ]);
-  const decompiled = (second.decompilations as Array<{ entry: string; text: string }>)[0]!;
+  const decompiled = second.decompilations[0];
   assert.match(decompiled.text, /init_result\(\);/, "the decompiler uses the semantic name");
 
   // 4. Knowledge after the loop: semantic names stay with their owners, history is complete.

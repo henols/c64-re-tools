@@ -5,17 +5,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { assemble } from "../../src/native/acme.ts";
-import { ACME, findTool } from "../../src/native/discover.ts";
+import { ACME } from "../../src/native/discover.ts";
 import { localToolContext } from "../../src/native/local.ts";
 import { imageReader } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
 import { CATALOGUE, findMacroUses } from "../../skills/c64-static-analysis/scripts/lib/macros.ts";
+import { toolSkip } from "../kit.ts";
 
-let acmeSkip: string | false = false;
-try {
-  findTool(ACME);
-} catch {
-  acmeSkip = "ACME is not installed: install acme or set C64RT_ACME to run these tests";
-}
+const acmeSkip = toolSkip(ACME);
 
 /** One idiom of each kind, zero page and absolute, from $1000; RTS ($60) between them ends no run. */
 const PARTS: Array<{ bytes: number[]; macro: string; args: string[] }> = [

@@ -1,48 +1,20 @@
-// The routine library of c64-provenance (D71): a routine from the knowledge of
+// The routine library of c64-provenance: a routine from the knowledge of
 // one program, its file, and the search for it in another program at another
 // address, with the names there as an apply batch.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "../../src/knowledge/read.ts";
 import { Refusal } from "../../src/errors.ts";
+import { failsWith } from "../../src/errors.testkit.ts";
 import { findRoutine, libraryFolder, parseRoutine, readLibrary, routineFrom, routineText, saveRoutine, suggest, type ProgramKnowledge, type Routine, type RoutineSource } from "../../skills/c64-provenance/scripts/lib/library.ts";
+import { routineBytes } from "../fixtures/prg/routine.ts";
+import { scratchDir } from "../kit.ts";
 
-const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-library-"));
-after(() => rmSync(scratch, { recursive: true, force: true }));
-
-/**
- * The routine at `base` ($1000 in program A): a loop that copies a table of the
- * routine to the SID, a call inside the routine, a zero-page read, and a pointer
- * to the table as two immediates. `sid` and `zp` are the outside addresses.
- */
-function routineBytes(base: number, sid = 0xd400, zp = 0xfb): number[] {
-  const lo = (value: number) => value & 0xff;
-  const hi = (value: number) => value >> 8;
-  const table = base + 0x20;
-  const pointer = base + 0x14;
-  return [
-    0xa2, 0x00, // LDX #$00
-    0xbd, lo(table), hi(table), // LDA table,X
-    0x9d, lo(sid), hi(sid), // STA sid,X
-    0xe8, // INX
-    0xe0, 0x07, // CPX #$07
-    0xd0, 0xf5, // BNE base+2
-    0x20, lo(pointer), hi(pointer), // JSR set_pointer
-    0xa5, zp, // LDA zp
-    0x60, // RTS
-    0xea, // NOP
-    0xa9, lo(table), // set_pointer: LDA #<table
-    0xa0, hi(table), // LDY #>table
-    0x60, // RTS
-    0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, // fill to base+$20
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, // table
-  ];
-}
+const scratch = scratchDir("library");
 
 const A = 0x1000;
 const bytesA = routineBytes(A);
@@ -387,7 +359,7 @@ test("routine refuses a library in the knowledge of the project, also through a 
   const project = join(scratch, "project");
   mkdirSync(join(project, ".c64-re-tools", "knowledge"), { recursive: true });
   const knowledge = /--library: \.c64-re-tools\/knowledge(\/x3)? is in \.c64-re-tools\/knowledge\/, the knowledge of the project\. Only the commands that change the project knowledge write it: a write there destroys the knowledge\. Give a library folder beside the projects, for example \.\.\/library\.$/;
-  assert.throws(() => libraryFolder(".c64-re-tools/knowledge", { create: true, cwd: project }), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && knowledge.test(error.message));
+  assert.throws(() => libraryFolder(".c64-re-tools/knowledge", { create: true, cwd: project }), failsWith("invalid-input", knowledge));
   assert.throws(() => libraryFolder(".c64-re-tools/knowledge/x3", { create: true, cwd: project }), knowledge);
   assert.equal(existsSync(join(project, ".c64-re-tools", "knowledge", "x3")), false);
   symlinkSync(join(project, ".c64-re-tools", "knowledge"), join(scratch, "linked"));

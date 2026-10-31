@@ -2,25 +2,22 @@
 // findings, and their targets seeded into the same analysis run.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
+import { prg, SYS_2061 } from "../../src/c64.testkit.ts";
 import { openForRead } from "../../src/knowledge/database.ts";
 import { listReferences, listRegions } from "../../src/knowledge/read.ts";
-import { DXA, findTool } from "../../src/native/discover.ts";
+import { DXA } from "../../src/native/discover.ts";
 import { imageReader } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
 import { findIdioms } from "../../skills/c64-static-analysis/scripts/lib/idioms.ts";
 import { findPointers } from "../../skills/c64-static-analysis/scripts/lib/pointers.ts";
 import { findPitfalls } from "../../skills/c64-static-analysis/scripts/lib/pitfalls.ts";
-import { readEnvelope } from "../kit.ts";
+import { runScriptSync, scratchDir, skillScript, toolSkip } from "../kit.ts";
 import { importImage, importPrg } from "../fixtures/program.ts";
 
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-idioms-"));
-after(() => rmSync(project, { recursive: true, force: true }));
+const dxaSkip = toolSkip(DXA);
+const script = skillScript("c64-static-analysis", "static-analysis.ts");
 
 /** A flat image with code placed at addresses, and the range that the tests analyze. */
 function image(parts: Record<number, number[]>): { byteAt: ReturnType<typeof imageReader>; memory: Uint8Array } {
@@ -121,20 +118,19 @@ test("a self-modified opcode is written and executed in one run: a copier's writ
   assert.equal(findIdioms(byteAt, RANGE, covered(many)).candidates.selfModified.length, 0x100);
 });
 
-test("an analysis writes the idioms as heuristic knowledge and DXA finds the code behind an RTS table", { skip: (() => { try { findTool(DXA); return false; } catch { return "dxa is not installed"; } })(), timeout: 120_000 }, () => {
+test("an analysis writes the idioms as heuristic knowledge and DXA finds the code behind an RTS table", { skip: dxaSkip, timeout: 120_000 }, () => {
   // 10 SYS2061 ; $080d: LDX #0 / LDA $0830,X / PHA / LDA $0828,X / PHA / RTS ; low $0828: $1f ; high $0830: $08 ; target $0820: INC $d020 / JMP $0820.
-  const prg = new Uint8Array(2 + 0x0838 - 0x0801).fill(0);
-  prg.set([0x01, 0x08, 0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00]);
-  const at = (address: number, bytes: number[]) => prg.set(bytes, address - 0x0801 + 2);
+  const body = new Uint8Array(0x0838 - 0x0801);
+  body.set(SYS_2061);
+  const at = (address: number, bytes: number[]) => body.set(bytes, address - 0x0801);
   at(0x080d, [0xa2, 0x00, 0xbd, 0x30, 0x08, 0x48, 0xbd, 0x28, 0x08, 0x48, 0x60]);
   at(0x0820, [0xee, 0x20, 0xd0, 0x4c, 0x20, 0x08]);
   at(0x0828, [0x1f]);
   at(0x0830, [0x08]);
-  importPrg(project, prg);
-  const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
-  const run = spawnSync(process.execPath, [...process.execArgv, script, "analyze", "--analyzer", "dxa"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-  const json = readEnvelope(run.stdout, run.status).json as { idioms: { rtsTables: number; revision: number | null } };
-  assert.equal(json.idioms.rtsTables, 1, run.stdout);
+  const project = scratchDir("idioms");
+  importPrg(project, prg(0x0801, body));
+  const run = runScriptSync(script, ["analyze", "--analyzer", "dxa"], { cwd: project });
+  assert.equal(run.json.idioms.rtsTables, 1, run.stdout);
   const db = openForRead(project);
   assert.ok(listRegions(db).some((region) => region.origin === "heuristic" && region.start === 0x0828), "the low table is heuristic knowledge");
   assert.ok(listReferences(db).some((reference) => reference.origin === "heuristic" && reference.from === 0x0817 && reference.to === 0x0820));
@@ -142,29 +138,24 @@ test("an analysis writes the idioms as heuristic knowledge and DXA finds the cod
   db?.close();
 });
 
-test("an RTS table at the end of a segment ends there: the bytes after the program give no targets", { skip: (() => { try { findTool(DXA); return false; } catch { return "dxa is not installed"; } })(), timeout: 120_000 }, () => {
+test("an RTS table at the end of a segment ends there: the bytes after the program give no targets", { skip: dxaSkip, timeout: 120_000 }, () => {
   // Two segments, so the analyzer gets the 64 KiB, with 0 outside the segments.
   // $080d: LDX #0 / LDA $0837,X / PHA / LDA $0836,X / PHA / $0817 RTS ; the word table at $0836 is the last 2 bytes of the segment: target $0820.
   const memory = new Uint8Array(0x10000);
-  memory.set([0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00], 0x0801);
+  memory.set(SYS_2061, 0x0801);
   memory.set([0xa2, 0x00, 0xbd, 0x37, 0x08, 0x48, 0xbd, 0x36, 0x08, 0x48, 0x60], 0x080d);
   memory.set([0xee, 0x20, 0xd0, 0x4c, 0x20, 0x08], 0x0820);
   memory.set([0x1f, 0x08], 0x0836);
   memory[0xc000] = 0x60;
-  const own = mkdtempSync(join(tmpdir(), "c64-re-tools-idioms-end-"));
-  try {
-    importImage(own, memory, { space: "c64", segments: [{ start: 0x0801, end: 0x0837 }, { start: 0xc000, end: 0xc000 }] });
-    const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
-    const run = spawnSync(process.execPath, [...process.execArgv, script, "analyze", "--analyzer", "dxa", "--entry", "$080d"], { cwd: own, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-    assert.equal(readEnvelope(run.stdout, run.status).envelope.ok, true, run.stdout);
-    const db = openForRead(own);
-    const heuristic = listReferences(db).filter((reference) => reference.origin === "heuristic");
-    assert.deepEqual(heuristic.map((reference) => [reference.from, reference.to, reference.kind]), [[0x0817, 0x0820, "jump"]], "no target in the zero bytes after the segment");
-    assert.deepEqual(listRegions(db).filter((region) => region.origin === "heuristic").map((region) => [region.start, region.end, region.type]), [[0x0836, 0x0837, "rts-addresses"]]);
-    db?.close();
-  } finally {
-    rmSync(own, { recursive: true, force: true });
-  }
+  const own = scratchDir("idioms-end");
+  importImage(own, memory, { space: "c64", segments: [{ start: 0x0801, end: 0x0837 }, { start: 0xc000, end: 0xc000 }] });
+  const run = runScriptSync(script, ["analyze", "--analyzer", "dxa", "--entry", "$080d"], { cwd: own });
+  assert.equal(run.envelope.ok, true, run.stdout);
+  const db = openForRead(own);
+  const heuristic = listReferences(db).filter((reference) => reference.origin === "heuristic");
+  assert.deepEqual(heuristic.map((reference) => [reference.from, reference.to, reference.kind]), [[0x0817, 0x0820, "jump"]], "no target in the zero bytes after the segment");
+  assert.deepEqual(listRegions(db).filter((region) => region.origin === "heuristic").map((region) => [region.start, region.end, region.type]), [[0x0836, 0x0837, "rts-addresses"]]);
+  db?.close();
 });
 
 test("pointer candidates: immediate pairs stored to a vector or a (zp),y pair, and sprite pointers in a sprite region, all in code", () => {

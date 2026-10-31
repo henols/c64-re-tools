@@ -1,26 +1,23 @@
 // The c64-unpacker packing evidence. No emulator needed.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { mkdirSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
 import { inspect, readMemoryMap, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/lib/evidence.ts";
 import { removeStaleFiles } from "../../skills/c64-unpacker/scripts/lib/machine.ts";
 import { callReturn, captureSegments, executedIn, stageCandidates, stagePoints, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
-import { COVERAGE } from "../../src/c64.ts";
+import { COVERAGE, formatC64Address } from "../../src/c64.ts";
+import { prg, SYS_2061 } from "../../src/c64.testkit.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
-import { readEnvelope, seededBytes } from "../kit.ts";
+import { runScriptSync, scratchDir, seededBytes, skillScript } from "../kit.ts";
 
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-unpacker-"));
-after(() => rmSync(project, { recursive: true, force: true }));
-
-const stub = [0x01, 0x08, 0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00];
+const project = scratchDir("unpacker");
+const script = skillScript("c64-unpacker", "unpacker.ts");
 
 test("random-looking bytes after a BASIC start look packed", () => {
-  const result = inspect(Uint8Array.from([...stub, ...seededBytes(0x6502, 4096)]));
+  const result = inspect(prg(0x0801, SYS_2061, seededBytes(0x6502, 4096)));
   assert.equal(result.packing, "likely");
   assert.deepEqual(result.basicStart, { line: 10, sys: "$080d" });
   assert.equal((result.entropy as { blocks: number }).blocks, 16);
@@ -55,10 +52,8 @@ test("code-like bytes do not look packed", () => {
 
 test("a short program is unclear, and the script reports it", () => {
   writeFileSync(join(project, "packed.prg"), xorPackedPrg);
-  const script = resolve(import.meta.dirname, "../../skills/c64-unpacker/scripts/unpacker.ts");
-  const run = spawnSync(process.execPath, [...process.execArgv, script, "inspect", "packed.prg"], { cwd: project, encoding: "utf8" });
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const { envelope, json: result } = readEnvelope(run.stdout, run.status);
+  const { status, stdout, envelope, json: result } = runScriptSync(script, ["inspect", "packed.prg"], { cwd: project });
+  assert.equal(status, 0, stdout);
   assert.equal(result.packing, "unclear");
   assert.deepEqual(result.basicStart, { line: 10, sys: "$080d" });
   assert.equal(envelope.hint, "Run trace to get the evidence of a run.");
@@ -68,12 +63,11 @@ test("a short program is unclear, and the script reports it", () => {
 test("the commands take a PRG and check the call before an emulator starts", () => {
   writeFileSync(join(project, "packed.prg"), xorPackedPrg);
   writeFileSync(join(project, "game.d64"), Buffer.alloc(174848, 1));
-  const script = resolve(import.meta.dirname, "../../skills/c64-unpacker/scripts/unpacker.ts");
   // No host listens at port 1: a call that got to the emulator would fail with machine-unavailable.
-  const refused = (...args: string[]) => {
-    const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-    assert.equal(run.status, 2, `${args.join(" ")}: ${run.stdout}`);
-    const { error } = readEnvelope(run.stdout, run.status).json as { error: { code: string; message: string } };
+  const refused = (...args: string[]): string => {
+    const { status, stdout, json } = runScriptSync(script, args, { cwd: project });
+    assert.equal(status, 2, `${args.join(" ")}: ${stdout}`);
+    const { error } = json;
     assert.equal(error.code, "invalid-input", `${args.join(" ")}: ${error.message}`);
     // A wrong command line also gives the help command: the asserts read the message without it.
     return error.message.split("\n")[0]!.replace(/ To get the usage, run unpacker\.ts \w+ --help\.$/, "");
@@ -137,7 +131,7 @@ test("plain-looking bytes behind start code that moves them are unclear, not unl
   const plain = Array.from({ length: 4096 }, (_, index) => [0xbd, 0x00, 0x20, 0x99, 0x00, 0x30, 0xe8, 0xd0, 0xf7][index % 9]!);
   const result = inspect(Uint8Array.from([...basic, ...code, ...plain]));
   assert.deepEqual(result.basicText, [`10 SYS${start} CRUNCHED BY SOMEONE`]);
-  assert.deepEqual(result.start, { at: `$${start.toString(16).padStart(4, "0")}`, jumpsOutside: "$c000", writesOutside: "$c000" });
+  assert.deepEqual(result.start, { at: formatC64Address(start), jumpsOutside: "$c000", writesOutside: "$c000" });
   assert.deepEqual(result.decodeLoops, [], "a copy without EOR is no decode loop");
   assert.equal(result.packing, "unclear", "the entropy alone says unlikely");
   assert.match(result.evidence, /decodes or moves bytes outside the program/);
