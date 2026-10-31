@@ -14,7 +14,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { formatC64Address, instructionLength } from "../../c64.ts";
 import { matrixRows } from "../../c64-keys.ts";
 import { encodePng, type IndexedFrame } from "../../graphics.ts";
-import { accessedValue, instructionText, JAM_OPCODES, operandAddress } from "../../opcodes.ts";
+import { accessedValue, instructionText, JAM_OPCODES, OPCODES, operandAddress } from "../../opcodes.ts";
 import type { ProcessSupervisor } from "../../native/processes.ts";
 import { trace } from "../../trace.ts";
 import type { ViceSessionFactory, ViceSessionHandle } from "../server.ts";
@@ -30,7 +30,7 @@ import {
 import { decodeProgramCounter, MonitorConnectionError, MonitorError, MonitorTimeoutError, ResponseType, type MonitorResponse } from "./binary-monitor.ts";
 import { decodeCia, decodeSid, decodeSprite, decodeVicii } from "./chips.ts";
 import { compareFrames, differenceImage } from "./screen.ts";
-import { isRefusal } from "../../errors.ts";
+import { describeError, isRefusal } from "../../errors.ts";
 import type { ViceFeature, ViceFlaw } from "../../native/discover.ts";
 import { checkMedia, hasSignature } from "../../media.ts";
 import { pressSnapshotRestore, setSnapshotMatrix } from "../../vsf.ts";
@@ -67,7 +67,7 @@ class StepTimeout extends Error {
   override name = "StepTimeout";
   readonly why: string;
   constructor(why: string, cause: unknown) {
-    super(cause instanceof Error ? cause.message : String(cause));
+    super(describeError(cause));
     this.why = why;
   }
 }
@@ -242,13 +242,12 @@ export class ViceSession implements ViceSessionHandle {
   #heldWhy = VICE_HELD;
   /** Session-local snapshots by name, as files in the session directory. */
   readonly #snapshots = new Map<string, string>();
-  #snapshotFiles = 0;
   /** Session-local screen baselines, lost with the session. */
   readonly #baselines = new Map<string, { frame: IndexedFrame; palette: Array<[number, number, number]> }>();
   /** The CPU clock when the session stopwatch last started (c64_timing). */
   #timingStart = 0n;
-  /** Counts staged media files, for unique names. */
-  #staged = 0;
+  /** Counts the snapshot and staged media files, for unique names. */
+  #files = 0;
   /** True after an autostart of a cartridge, until an autostart of another file detaches it. */
   #cartridge = false;
   /** The last staged file of each kind that VICE took; VICE can still read it. */
@@ -315,7 +314,7 @@ export class ViceSession implements ViceSessionHandle {
       return;
     }
     this.#lost = true;
-    void vice.stop().catch((error: unknown) => this.#log(`stopping the lost VICE failed: ${error instanceof Error ? error.message : String(error)}`));
+    void vice.stop().catch((error: unknown) => this.#log(`stopping the lost VICE failed: ${describeError(error)}`));
   }
 
   /** Restarts headless from the handover saved when the window opened. */
@@ -330,7 +329,7 @@ export class ViceSession implements ViceSessionHandle {
       this.#log("the session is headless again, in the state of when the window opened");
     } catch (error) {
       this.#lost = true;
-      this.#log(`going back headless failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.#log(`going back headless failed: ${describeError(error)}`);
     } finally {
       this.#windowClosing = false;
     }
@@ -369,7 +368,7 @@ export class ViceSession implements ViceSessionHandle {
     reply: Buffer[] = [],
   ): Promise<ViceOperations[O]["result"]> {
     // A window request for the mode the session is in sends nothing to VICE, so a held VICE does not stop it.
-    return this.#enqueue(() => this.#run(op, params, attachments, reply), { whileHeld: op === "window" }) as Promise<ViceOperations[O]["result"]>;
+    return this.#enqueue(() => this.#operations[op](params, attachments, reply), { whileHeld: op === "window" });
   }
 
   async close(): Promise<void> {
@@ -388,205 +387,151 @@ export class ViceSession implements ViceSessionHandle {
     return this.#adapter;
   }
 
-  async #run(op: ViceOperation, params: unknown, attachments: Buffer[], reply: Buffer[]): Promise<unknown> {
-    switch (op) {
-      case "status":
-        return this.#status();
-      case "ioRead": {
-        const read = params as ViceOperations["ioRead"]["params"];
-        const bytes = await this.#observe(() => this.#machine.readIo(read.address, read.size));
-        return { address: read.address, data: Buffer.from(bytes).toString("hex") };
+  /** The work of each operation, with its parameters checked on the wire. */
+  readonly #operations: { [O in ViceOperation]: (params: ViceOperations[O]["params"], attachments: Buffer[], reply: Buffer[]) => Promise<ViceOperations[O]["result"]> } = {
+    status: () => this.#status(),
+    ioRead: async ({ address, size }) => {
+      const bytes = await this.#observe(() => this.#machine.readIo(address, size));
+      return { address, data: Buffer.from(bytes).toString("hex") };
+    },
+    memoryRead: async (read) => ({ address: read.address, data: await this.#observe(() => this.#machine.readMemory(read)) }),
+    registersGet: ({ space }) => this.#observe(() => this.#machine.readRegisters(space)),
+    memoryWrite: async (write) => {
+      this.#requireStopped();
+      return { address: write.address, bytesWritten: await this.#machine.writeMemory(write) };
+    },
+    memorySearch: async (search) => ({ matches: await this.#observe(() => this.#machine.search({ ...search, limit: search.maxResults })) }),
+    memoryCompare: (params) => this.#memoryCompare(params),
+    disassemble: async (request) => ({ instructions: await this.#observe(() => this.#machine.disassemble(request)) }),
+    registersSet: async ({ space, values }) => {
+      this.#requireStopped();
+      return this.#machine.writeRegisters(space, values);
+    },
+    execution: (params) => this.#execution(params),
+    runUntil: (params) => this.#runUntil(params),
+    programLoad: async (params, attachments) => this.#programLoad(params, onlyAttachment(attachments)),
+    autostart: async ({ type, index, run }, attachments) => {
+      if (type === "tap") this.#refuseBroken("tape", "c64_autostart of a tape image");
+      const bytes = onlyAttachment(attachments);
+      checkMedia(type, bytes);
+      if (index > 0 && this.#directory !== undefined && isOneOf(DISK_IMAGE_TYPES, type)) checkDirectoryEntry(await this.#directory(type, bytes, this.#abort.signal), index);
+      const file = this.#stage(bytes, type);
+      // VICE keeps a cartridge through every reset and autostart, as a real C64 does.
+      if (type !== "crt" && this.#cartridge) {
+        await this.#observe(() => this.#machine.detachCartridge());
+        this.#cartridge = false;
+        this.#replaceStaged("cartridge", undefined);
       }
-      case "memoryRead": {
-        const read = params as ViceOperations["memoryRead"]["params"];
-        const data = await this.#observe(() => this.#machine.readMemory(read));
-        return { address: read.address, data };
+      // Port 1 shares the keyboard lines: a held direction types keys into the RUN that the autostart types.
+      const centred: Array<1 | 2> = [];
+      for (const [port, joystick] of this.#joysticks) {
+        if (joystick.direction === "center" && !joystick.fire) continue;
+        const centre: JoystickState = { port, direction: "center", fire: false };
+        await this.#observe(() => this.#machine.setJoystick(centre));
+        this.#joysticks.set(port, centre);
+        centred.push(port);
       }
-      case "registersGet": {
-        const { space } = params as ViceOperations["registersGet"]["params"];
-        return this.#observe(() => this.#machine.readRegisters(space));
+      await this.#runningCommand(() => this.#machine.autostart(file, index, run));
+      this.#clearJam();
+      this.#autostarting = true;
+      if (type === "crt") this.#cartridge = true;
+      this.#replaceStaged(stagedKind(type), file);
+      // A reset sets the CPU clock back, so the stopwatch starts again.
+      this.#timingStart = 0n;
+      return { state: "running", ...(centred.length === 0 ? {} : { joysticksCentred: centred }) };
+    },
+    diskAttach: async ({ type }, attachments) => {
+      const bytes = onlyAttachment(attachments);
+      checkMedia(type, bytes);
+      const file = this.#stage(bytes, type);
+      await this.#observe(() => this.#machine.attachDisk(file));
+      this.#replaceStaged("disk", file);
+      return { attached: true };
+    },
+    reset: (params) => this.#reset(params),
+    keyboard: async ({ data }) => {
+      const bytes = Buffer.from(data, "hex");
+      await this.#refuseWhileAutostartLoads("a key now stops it before RUN", "type");
+      await this.#observe(() => this.#machine.feedKeyboard(bytes));
+      return { queuedBytes: bytes.length };
+    },
+    press: (params) => this.#press(params),
+    breakpoint: (params) => this.#breakpoint(params),
+    watchpoint: (params) => this.#watchpoint(params),
+    screenCapture: async ({ baseline }) => {
+      if (baseline !== undefined && !this.#baselines.has(baseline) && this.#baselines.size >= MAX_BASELINES) {
+        throw new WireFailure("limit-exceeded", `A session keeps at most ${MAX_BASELINES} baselines. Remove one first with c64_screen action remove.`);
       }
-      case "memoryWrite": {
-        const write = params as ViceOperations["memoryWrite"]["params"];
-        this.#requireStopped();
-        return { address: write.address, bytesWritten: await this.#machine.writeMemory(write) };
+      const shot = await this.#observe(() => this.#machine.captureFrame(this.#videoStandard));
+      if (baseline !== undefined) this.#baselines.set(baseline, shot);
+      const result: ViceOperations["screenCapture"]["result"] = {
+        width: shot.frame.width,
+        height: shot.frame.height,
+        png: encodePng(shot.frame, shot.palette).toString("base64"),
+      };
+      if (baseline !== undefined) result.baseline = baseline;
+      return result;
+    },
+    screenCompare: (params) => this.#screenCompare(params),
+    screenBaselines: async () => ({ baselines: [...this.#baselines.keys()] }),
+    screenDiscard: async ({ baseline }) => {
+      if (!this.#baselines.delete(baseline)) throw new WireFailure("not-found", `There is no baseline named ${baseline}.`);
+      return { removed: true };
+    },
+    snapshot: (params) => this.#snapshot(params),
+    snapshotFile: (params, attachments, reply) => this.#snapshotFile(params, attachments, reply),
+    cpuHistory: (params) => this.#cpuHistory(params),
+    trace: async (params, _attachments, reply) => {
+      // The hits go as an attachment: thousands of them do not fit in one message.
+      const { hits, ...traced } = await this.#trace(params);
+      reply.push(Buffer.from(JSON.stringify(hits), "utf8"));
+      return { ...traced, hits: hits.length };
+    },
+    backtrace: ({ depth, space }) =>
+      this.#observe(async () => {
+        const { sp } = await this.#machine.readRegisters(space);
+        return { frames: backtraceFromStack(sp, await this.#machine.readAll(space), depth) };
+      }),
+    timing: async ({ action }) => {
+      const now = await this.#observe(() => this.#machine.clock());
+      if (action === "start") {
+        this.#timingStart = now;
+        return { started: true };
       }
-      case "memorySearch": {
-        const search = params as ViceOperations["memorySearch"]["params"];
-        const matches = await this.#observe(() => this.#machine.search({ ...search, limit: search.maxResults }));
-        return { matches };
+      return { cycles: (now - this.#timingStart).toString() };
+    },
+    profile: async (request) => {
+      if (request.action === "clear") {
+        await this.#observe(() => this.#machine.startProfiler());
+        return { cleared: true };
       }
-      case "memoryCompare":
-        return this.#memoryCompare(params as ViceOperations["memoryCompare"]["params"]);
-      case "disassemble": {
-        const request = params as ViceOperations["disassemble"]["params"];
-        return { instructions: await this.#observe(() => this.#machine.disassemble(request)) };
+      return { entries: await this.#observe(() => this.#machine.profile(request.limit)) };
+    },
+    memmap: async (request) => {
+      if (request.action === "clear") {
+        await this.#observe(() => this.#machine.clearMemmap());
+        return { cleared: true };
       }
-      case "registersSet": {
-        const { space, values } = params as ViceOperations["registersSet"]["params"];
-        this.#requireStopped();
-        return this.#machine.writeRegisters(space, values);
-      }
-      case "execution":
-        return this.#execution(params as ExecutionParams);
-      case "runUntil":
-        return this.#runUntil(params as ViceOperations["runUntil"]["params"]);
-      case "programLoad":
-        return this.#programLoad(params as ViceOperations["programLoad"]["params"], onlyAttachment(attachments));
-      case "autostart": {
-        const { type, index, run } = params as ViceOperations["autostart"]["params"];
-        if (type === "tap") this.#refuseBroken("tape", "c64_autostart of a tape image");
-        const bytes = onlyAttachment(attachments);
-        checkMedia(type, bytes);
-        if (index > 0 && this.#directory !== undefined && isOneOf(DISK_IMAGE_TYPES, type)) checkDirectoryEntry(await this.#directory(type, bytes, this.#abort.signal), index);
-        const file = this.#stage(bytes, type);
-        // VICE keeps a cartridge through every reset and autostart, as a real C64 does.
-        if (type !== "crt" && this.#cartridge) {
-          await this.#observe(() => this.#machine.detachCartridge());
-          this.#cartridge = false;
-          this.#replaceStaged("cartridge", undefined);
-        }
-        // Port 1 shares the keyboard lines: a held direction types keys into the RUN that the autostart types.
-        const centred: Array<1 | 2> = [];
-        for (const [port, joystick] of this.#joysticks) {
-          if (joystick.direction === "center" && !joystick.fire) continue;
-          const centre: JoystickState = { port, direction: "center", fire: false };
-          await this.#observe(() => this.#machine.setJoystick(centre));
-          this.#joysticks.set(port, centre);
-          centred.push(port);
-        }
-        await this.#runningCommand(() => this.#machine.autostart(file, index, run));
-        this.#clearJam();
-        this.#autostarting = true;
-        if (type === "crt") this.#cartridge = true;
-        this.#replaceStaged(stagedKind(type), file);
-        // A reset sets the CPU clock back, so the stopwatch starts again.
-        this.#timingStart = 0n;
-        return { state: "running", ...(centred.length === 0 ? {} : { joysticksCentred: centred }) };
-      }
-      case "diskAttach": {
-        const { type } = params as ViceOperations["diskAttach"]["params"];
-        const bytes = onlyAttachment(attachments);
-        checkMedia(type, bytes);
-        const file = this.#stage(bytes, type);
-        await this.#observe(() => this.#machine.attachDisk(file));
-        this.#replaceStaged("disk", file);
-        return { attached: true };
-      }
-      case "reset":
-        return this.#reset(params as ViceOperations["reset"]["params"]);
-      case "keyboard": {
-        const bytes = Buffer.from((params as ViceOperations["keyboard"]["params"]).data, "hex");
-        await this.#refuseWhileAutostartLoads("a key now stops it before RUN", "type");
-        await this.#observe(() => this.#machine.feedKeyboard(bytes));
-        return { queuedBytes: bytes.length };
-      }
-      case "press":
-        return this.#press(params as ViceOperations["press"]["params"]);
-      case "breakpoint":
-        return this.#breakpoint(params as BreakpointParams);
-      case "watchpoint":
-        return this.#watchpoint(params as WatchpointParams);
-      case "screenCapture": {
-        const { baseline } = params as ViceOperations["screenCapture"]["params"];
-        if (baseline !== undefined && !this.#baselines.has(baseline) && this.#baselines.size >= MAX_BASELINES) {
-          throw new WireFailure("limit-exceeded", `A session keeps at most ${MAX_BASELINES} baselines. Remove one first with c64_screen action remove.`);
-        }
-        const shot = await this.#observe(() => this.#machine.captureFrame(this.#videoStandard));
-        if (baseline !== undefined) this.#baselines.set(baseline, shot);
-        const result: ViceOperations["screenCapture"]["result"] = {
-          width: shot.frame.width,
-          height: shot.frame.height,
-          png: encodePng(shot.frame, shot.palette).toString("base64"),
-        };
-        if (baseline !== undefined) result.baseline = baseline;
-        return result;
-      }
-      case "screenCompare":
-        return this.#screenCompare(params as ViceOperations["screenCompare"]["params"]);
-      case "screenBaselines":
-        return { baselines: [...this.#baselines.keys()] };
-      case "screenDiscard": {
-        const { baseline } = params as ViceOperations["screenDiscard"]["params"];
-        if (!this.#baselines.delete(baseline)) throw new WireFailure("not-found", `There is no baseline named ${baseline}.`);
-        return { removed: true };
-      }
-      case "snapshot":
-        return this.#snapshot(params as ViceOperations["snapshot"]["params"]);
-      case "snapshotFile":
-        return this.#snapshotFile(params as ViceOperations["snapshotFile"]["params"], attachments, reply);
-      case "cpuHistory":
-        return this.#cpuHistory(params as ViceOperations["cpuHistory"]["params"]);
-      case "trace": {
-        // The hits go as an attachment: thousands of them do not fit in one message.
-        const { hits, ...traced } = await this.#trace(params as ViceOperations["trace"]["params"]);
-        reply.push(Buffer.from(JSON.stringify(hits), "utf8"));
-        return { ...traced, hits: hits.length };
-      }
-      case "backtrace": {
-        const { depth, space } = params as ViceOperations["backtrace"]["params"];
-        return this.#observe(async () => {
-          const { sp } = await this.#machine.readRegisters(space);
-          return { frames: backtraceFromStack(sp, await this.#machine.readAll(space), depth) };
-        });
-      }
-      case "timing": {
-        const { action } = params as ViceOperations["timing"]["params"];
-        const now = await this.#observe(() => this.#machine.clock());
-        if (action === "start") {
-          this.#timingStart = now;
-          return { started: true };
-        }
-        return { cycles: (now - this.#timingStart).toString() };
-      }
-      case "profile": {
-        const request = params as ViceOperations["profile"]["params"];
-        if (request.action === "clear") {
-          await this.#observe(() => this.#machine.startProfiler());
-          return { cleared: true };
-        }
-        return { entries: await this.#observe(() => this.#machine.profile(request.limit)) };
-      }
-      case "memmap": {
-        const request = params as ViceOperations["memmap"]["params"];
-        if (request.action === "clear") {
-          await this.#observe(() => this.#machine.clearMemmap());
-          return { cleared: true };
-        }
-        return await this.#observe(() => this.#machine.memmap(request.start, request.end, request.maxRanges));
-      }
-      case "vicii":
-        return this.#observe(() => this.#vicii());
-      case "sprites": {
-        const { indexes } = params as ViceOperations["sprites"]["params"];
-        return this.#observe(async () => ({ sprites: await this.#sprites(indexes) }));
-      }
-      case "cia": {
-        const { which } = params as ViceOperations["cia"]["params"];
-        return this.#observe(async () => ({ chips: await this.#cias(which) }));
-      }
-      case "sid":
-        return this.#observe(() => this.#sid());
-      case "observe":
-        return this.#observeAll(params as ObserveParams);
-      case "joystick": {
-        this.#refuseBroken("joystick", "c64_joystick");
-        const joystick = params as JoystickState;
-        await this.#observe(() => this.#machine.setJoystick(joystick));
-        this.#joysticks.set(joystick.port, joystick);
-        return joystick;
-      }
-      case "warp": {
-        const { enabled } = params as ViceOperations["warp"]["params"];
-        await this.#observe(() => this.#machine.setWarp(enabled));
-        this.#userWarp = enabled;
-        return { enabled };
-      }
-      case "window":
-        return this.#window((params as ViceOperations["window"]["params"]).action === "open" ? "window" : "headless");
-    }
-    throw new WireFailure("invalid-input", `unknown operation: ${String(op)}`);
-  }
+      return await this.#observe(() => this.#machine.memmap(request.start, request.end, request.maxRanges));
+    },
+    vicii: () => this.#observe(() => this.#vicii()),
+    sprites: ({ indexes }) => this.#observe(async () => ({ sprites: await this.#sprites(indexes) })),
+    cia: ({ which }) => this.#observe(async () => ({ chips: await this.#cias(which) })),
+    sid: () => this.#observe(() => this.#sid()),
+    observe: (params) => this.#observeAll(params),
+    joystick: async (joystick) => {
+      this.#refuseBroken("joystick", "c64_joystick");
+      await this.#observe(() => this.#machine.setJoystick(joystick));
+      this.#joysticks.set(joystick.port, joystick);
+      return joystick;
+    },
+    warp: async ({ enabled }) => {
+      await this.#observe(() => this.#machine.setWarp(enabled));
+      this.#userWarp = enabled;
+      return { enabled };
+    },
+    window: ({ action }) => this.#window(action === "open" ? "window" : "headless"),
+  };
 
   async #status(): Promise<MachineStatus> {
     const warp = await this.#observe(() => this.#machine.warp());
@@ -642,11 +587,9 @@ export class ViceSession implements ViceSessionHandle {
         throw new WireFailure("invalid-input", `The anchor is outside the frame: a ${this.#videoStandard} frame has lines 0-${raster.lines - 1} and cycles 0-${raster.cycles - 1}.`);
       }
       const outcome = await this.#runFrames(params.count, undefined, params.anchor);
-      this.#stopSpace = outcome.space;
       return {
         state: "stopped",
-        // A stop event carries the computer's PC; a stop in the drive reports the drive's.
-        pc: outcome.space === "drive8" ? (await this.#machine.readRegisters("drive8")).pc : outcome.pc,
+        pc: await this.#stopPc(outcome),
         space: outcome.space,
         advancedFrames: outcome.frames,
         stopReason: outcome.end === "target" ? "frames" : outcome.end,
@@ -686,6 +629,12 @@ export class ViceSession implements ViceSessionHandle {
     const point = this.#stepStoppedByPoint();
     // A point stops the step early: VICE does not tell how many instructions ran.
     return { state: "stopped", pc: await this.#pc(), ...(point.pointId === undefined ? { executed: count } : point) };
+  }
+
+  /** The pc of the CPU that a frame-clocked run stopped in, which status gives from then on: a stop event carries the computer's pc, a stop in the drive reports the drive's. */
+  async #stopPc(outcome: { pc: number; space: "c64" | "drive8" }): Promise<number> {
+    this.#stopSpace = outcome.space;
+    return outcome.space === "drive8" ? (await this.#machine.readRegisters("drive8")).pc : outcome.pc;
   }
 
   /** The breakpoint or watchpoint that stopped a step, next or until-return early; VICE then keeps the rest of the step. */
@@ -890,7 +839,6 @@ export class ViceSession implements ViceSessionHandle {
    */
   async #traceHit(point: number, kind: TraceKind, frame: number): Promise<TraceHit> {
     const position = await this.#machine.rasterPosition();
-    const byteAt = async (address: number) => Number.parseInt(await this.#machine.readMemory({ address, size: 1, space: "c64", view: "cpu" }), 16);
     if (kind === "exec") {
       const registers = await this.#machine.readRegisters("c64");
       const bytes = [...Buffer.from(await this.#machine.readMemory({ address: registers.pc, size: 3, space: "c64", view: "cpu" }), "hex")];
@@ -917,9 +865,10 @@ export class ViceSession implements ViceSessionHandle {
     const at = Number((((BigInt(position.line * cycles + position.cycle) - (now - entry.clock)) % span) + span) % span);
     const bytes = [...Buffer.from(entry.bytes, "hex")];
     // A zero-page pointer is read now: the instruction did not change it.
-    const pointer = new Map<number, number>();
-    for (const address of [bytes[1] ?? 0, ((bytes[1] ?? 0) + 1) & 0xff, ((bytes[1] ?? 0) + entry.x) & 0xff, ((bytes[1] ?? 0) + entry.x + 1) & 0xff]) pointer.set(address, await byteAt(address));
-    const address = operandAddress(bytes, entry.x, entry.y, (zp) => pointer.get(zp) ?? 0);
+    const { mode } = OPCODES[bytes[0]!]!;
+    const zeroPage = mode === "izx" || mode === "izy" ? Buffer.from(await this.#machine.readMemory({ address: 0, size: 0x100, space: "c64", view: "cpu" }), "hex") : undefined;
+    const address = operandAddress(bytes, entry.x, entry.y, (zp) => zeroPage?.[zp] ?? 0);
+    const byteAt = async (at: number) => Number.parseInt(await this.#machine.readMemory({ address: at, size: 1, space: "c64", view: "cpu" }), 16);
     return {
       point,
       pc: entry.address,
@@ -1076,9 +1025,7 @@ export class ViceSession implements ViceSessionHandle {
       if (expression !== undefined) await this.#machine.setCondition(checkpoint, expression);
       const outcome = await this.#runFrames(params.timeoutFrames, { checkpoint, deferred });
       const stopReason = outcome.end === "frames" ? "timeout" : outcome.end;
-      // A stop event carries the computer's PC; a stop in the drive reports the drive's.
-      const pc = outcome.space === "drive8" ? (await this.#machine.readRegisters("drive8")).pc : outcome.pc;
-      this.#stopSpace = outcome.space;
+      const pc = await this.#stopPc(outcome);
       return { reached: stopReason === "target", stopReason, state: "stopped", pc, space: outcome.space, ...(outcome.pointId === undefined ? {} : { pointId: outcome.pointId }) };
     } finally {
       await this.#machine.deleteCheckpoint(checkpoint);
@@ -1149,7 +1096,7 @@ export class ViceSession implements ViceSessionHandle {
     if (params.action !== "add") return publicView(await this.#changePoint(this.#breakpoints, "breakpoint", params));
     // A breakpoint over a range stops at the first instruction executed in it: exec, not a watch.
     const added = await this.#addPoint({
-      ...(params.size === undefined ? pointRange({ address: params.address }) : { start: params.address, end: params.address + params.size - 1, operation: 0x04 }),
+      ...pointRange(params),
       space: params.space,
       ...(params.condition === undefined ? {} : { condition: params.condition }),
     });
@@ -1173,7 +1120,7 @@ export class ViceSession implements ViceSessionHandle {
     if (params.action === "remove") return this.#removePoint(this.#watchpoints, "watchpoint", params.id);
     if (params.action !== "add") return publicView(await this.#changePoint(this.#watchpoints, "watchpoint", params));
     const added = await this.#addPoint({
-      ...pointRange({ address: params.address, size: params.size, access: params.access }),
+      ...pointRange(params),
       space: params.space,
       ...(params.condition === undefined ? {} : { condition: params.condition }),
     });
@@ -1204,13 +1151,15 @@ export class ViceSession implements ViceSessionHandle {
     }
   }
 
-  /** VICE (3.9, 3.10) stops answering at the restore of a snapshot saved at the reset stop while the disk drive was busy. */
-  #refuseAtResetStop(verb: string): void {
+  /**
+   * VICE (3.9, 3.10) stops answering at the restore of a snapshot saved at the
+   * reset stop while the disk drive was busy, and at keys pressed there; `when` names the case.
+   */
+  #refuseAtResetStop(verb: string, when = "at the restore of a snapshot saved here when the disk drive was busy"): void {
     if (!this.#atResetStop) return;
     throw new WireFailure(
       "operation-failed",
-      "The CPU stands at the reset stop of c64_reset with run false. The emulator stops answering at the restore of a snapshot saved here when the disk drive was busy. " +
-        `Step one instruction with c64_execution, then ${verb}.`,
+      `The CPU stands at the reset stop of c64_reset with run false. The emulator stops answering ${when}. Step one instruction with c64_execution, then ${verb}.`,
     );
   }
 
@@ -1225,13 +1174,7 @@ export class ViceSession implements ViceSessionHandle {
   async #press(params: ViceOperations["press"]["params"]): Promise<PressResult> {
     this.#refuseBroken("keyboard", "c64_press");
     await this.#refuseWhileAutostartLoads("a key now stops it before RUN", "press the keys");
-    if (this.#atResetStop) {
-      throw new WireFailure(
-        "operation-failed",
-        "The CPU stands at the reset stop of c64_reset with run false. The emulator stops answering when keys are pressed here while the disk drive is busy. " +
-          "Step one instruction with c64_execution, then press the keys.",
-      );
-    }
+    this.#refuseAtResetStop("press the keys", "when keys are pressed here while the disk drive is busy");
     const running = this.#state === "running";
     await this.#stop();
     await this.#refuseJammed("press");
@@ -1242,12 +1185,11 @@ export class ViceSession implements ViceSessionHandle {
       await this.#setKeys(matrixRows([]), false);
       const end = held.end === "frames" ? await this.#runFrames(params.frames) : held;
       if (end.end !== "frames") {
-        this.#stopSpace = end.space;
         return {
           taps,
           state: "stopped",
           stopReason: end.end as PointStopReason,
-          pc: end.space === "drive8" ? (await this.#machine.readRegisters("drive8")).pc : end.pc,
+          pc: await this.#stopPc(end),
           space: end.space,
           ...(end.pointId === undefined ? {} : { pointId: end.pointId }),
         };
@@ -1265,10 +1207,7 @@ export class ViceSession implements ViceSessionHandle {
       await this.#machine.saveSnapshot(file);
       const bytes = readFileSync(file);
       const why = setSnapshotMatrix(bytes, rows) ?? (restore ? pressSnapshotRestore(bytes) : undefined);
-      if (why !== undefined) {
-        this.#log(`c64_press was used, and this VICE writes snapshots that c64-re-tools does not know: ${why}.`);
-        throw new WireFailure("not-implemented", BROKEN_MESSAGES.keyboard);
-      }
+      if (why !== undefined) this.#notImplemented("keyboard", `c64_press was used, and this VICE writes snapshots that c64-re-tools does not know: ${why}.`);
       writeFileSync(file, bytes);
       await this.#machine.restoreSnapshot(file);
     } finally {
@@ -1285,8 +1224,12 @@ export class ViceSession implements ViceSessionHandle {
    */
   #refuseBroken(feature: ViceFeature, tool: string): void {
     const flaw = this.#broken.get(feature);
-    if (flaw === undefined) return;
-    this.#log(`${tool} was used, and this VICE does not support it. ${flaw}`);
+    if (flaw !== undefined) this.#notImplemented(feature, `${tool} was used, and this VICE does not support it. ${flaw}`);
+  }
+
+  /** Refuses a feature as not implemented; `log` tells the host console why. */
+  #notImplemented(feature: ViceFeature, log: string): never {
+    this.#log(log);
     throw new WireFailure("not-implemented", BROKEN_MESSAGES[feature]);
   }
 
@@ -1296,8 +1239,7 @@ export class ViceSession implements ViceSessionHandle {
    * replaces it (#replaceStaged).
    */
   #stage(bytes: Buffer, type: string): string {
-    this.#staged++;
-    const file = join(this.#workDir, `media-${this.#staged}${type === "" ? "" : `.${type}`}`);
+    const file = join(this.#workDir, `media-${++this.#files}${type === "" ? "" : `.${type}`}`);
     writeFileSync(file, bytes);
     return file;
   }
@@ -1435,7 +1377,7 @@ export class ViceSession implements ViceSessionHandle {
       if (existing === undefined && this.#snapshots.size >= MAX_SNAPSHOTS) {
         throw new WireFailure("limit-exceeded", `A session keeps at most ${MAX_SNAPSHOTS} snapshots. Remove one first with action remove.`);
       }
-      const file = existing ?? join(this.#workDir, `snapshot-${++this.#snapshotFiles}.vsf`);
+      const file = existing ?? join(this.#workDir, `snapshot-${++this.#files}.vsf`);
       await this.#observe(() => this.#machine.saveSnapshot(file));
       this.#snapshots.set(params.name, file);
       return { saved: true, name: params.name };
@@ -1550,7 +1492,7 @@ export class ViceSession implements ViceSessionHandle {
       if (running && !this.#closed) await this.#resume().catch(() => {});
       throw error;
     }
-    await old.stop().catch((error: unknown) => this.#log(`stopping the earlier VICE failed: ${error instanceof Error ? error.message : String(error)}`));
+    await old.stop().catch((error: unknown) => this.#log(`stopping the earlier VICE failed: ${describeError(error)}`));
     if (mode === "window") {
       this.#handover = handover;
     } else {
@@ -1607,10 +1549,10 @@ export class ViceSession implements ViceSessionHandle {
     } catch (error) {
       await vice.stop().catch(() => {});
       if (error instanceof WireFailure) throw error;
-      this.#log(`moving the machine to a new VICE failed: ${error instanceof Error ? error.message : String(error)}\n${vice.outputTail()}`);
+      this.#log(`moving the machine to a new VICE failed: ${describeError(error)}\n${vice.outputTail()}`);
       throw new WireFailure(
         "operation-failed",
-        `The new emulator did not take the machine state (${error instanceof Error ? error.message : String(error)}). ` +
+        `The new emulator did not take the machine state (${describeError(error)}). ` +
           `The machine stays ${this.#mode === "window" ? "in the window" : "headless"}, as it was.`,
       );
     }
@@ -1833,14 +1775,13 @@ export class ViceSession implements ViceSessionHandle {
   #recover(runningBefore: boolean, halts: number): void {
     if (this.#held !== undefined) return;
     this.#log("VICE takes no commands (paused in its window, a dialog is open, or a step does not end); waiting until it goes on");
-    const why = (error: unknown) => (error instanceof Error ? error.message : String(error));
     this.#held = (async () => {
       try {
         try {
           await this.#machine.answered();
           await this.#machine.drainText();
         } catch (error) {
-          if (!this.#closed) this.#log(`VICE did not come back: ${why(error)}`);
+          if (!this.#closed) this.#log(`VICE did not come back: ${describeError(error)}`);
         }
         if (this.#closed || this.#lost) return;
         // The ping that answered stopped the machine; put back the run state of before the operation.
@@ -1848,7 +1789,7 @@ export class ViceSession implements ViceSessionHandle {
         if (runningBefore && this.#haltCount === halts) await this.#resume();
         this.#log(`VICE takes commands again; the machine is ${this.#state} as before`);
       } catch (error) {
-        if (!this.#closed) this.#log(`restoring the run state failed: ${why(error)}`);
+        if (!this.#closed) this.#log(`restoring the run state failed: ${describeError(error)}`);
       } finally {
         this.#held = undefined;
       }
@@ -1907,11 +1848,10 @@ function onlyAttachment(attachments: Buffer[]): Buffer {
   return bytes;
 }
 
-/** The VICE checkpoint range and operation of a breakpoint (no size) or a watchpoint. */
+/** The VICE checkpoint range and operation of a breakpoint (exec, one address without a size) or a watchpoint (its access). */
 function pointRange(point: { address: number; size?: number; access?: Watchpoint["access"] }): { start: number; end: number; operation: number } {
-  if (point.size === undefined) return { start: point.address, end: point.address, operation: 0x04 }; // exec
-  const operation = point.access === "read" ? 0x01 : point.access === "write" ? 0x02 : 0x03;
-  return { start: point.address, end: point.address + point.size - 1, operation };
+  const operation = point.access === undefined ? 0x04 : point.access === "read" ? 0x01 : point.access === "write" ? 0x02 : 0x03;
+  return { start: point.address, end: point.address + (point.size ?? 1) - 1, operation };
 }
 
 /** Sets a user checkpoint with its condition; removes it again if the condition is refused. */
