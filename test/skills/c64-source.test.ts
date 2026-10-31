@@ -1,51 +1,38 @@
-// The c64-source generator: the ACME opcode table, the layout and text
-// of the source, the loader plan, and with real ACME and the decompiler the
+// The c64-source generator: the layout and text of the source, the loader
+// plan, and with real ACME and the decompiler the
 // byte-identical round trip. The ACME parts are skipped (never
 // passed) when the tool is not installed.
 
 import assert from "node:assert/strict";
-import { spawn, spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { once } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
-import { COVERAGE, instructionLength } from "../../src/c64.ts";
+import { COVERAGE, prgRange } from "../../src/c64.ts";
+import { prg, SYS_2061 } from "../../src/c64.testkit.ts";
+import { memoryRows } from "../../src/knowledge/program.ts";
+import { applyBatch, classifyRegion, removePatch, renameSymbol, setOperand, setRelease, setSwitch } from "../../src/knowledge/write.ts";
 import { assemble } from "../../src/native/acme.ts";
-import { ACME, EXOMIZER, findTool } from "../../src/native/discover.ts";
+import { ACME, EXOMIZER } from "../../src/native/discover.ts";
 import { localToolContext } from "../../src/native/local.ts";
 import { ciaSection, copierAreas, copyOrder, loaderLimits, planLoader, loaderState, simulate, START_SCREEN_CODE, START_SCREEN_FILE, START_SCREEN_SIZES, startScreenPlan, stopCause, type EntryCia, type EntryState, type LoaderPlan } from "../../skills/c64-source/scripts/lib/loader.ts";
 import { packLoader } from "../../src/loader.ts";
 import { WireFailure } from "../../src/protocol/messages.ts";
 import { PACKAGE } from "../../src/package.ts";
-import { MODE_LENGTH, OPCODES } from "../../src/opcodes.ts";
-import { configText, configValues, entriesInData, entryOutsideImage, layout, render, stagePatchText, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
+import { configText, configValues, entriesInData, entryOutsideImage, layout, render, stagePatchText, type Layout, type Rendered, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
 import { planStage, STAGE_CODE_END, STAGE_FILE, stageParts, type StageInput } from "../../skills/c64-source/scripts/lib/stage.ts";
 import { decode, describeAddress, platformNames } from "../../src/platform.ts";
 import type { StartScreenRow } from "../../src/knowledge/read.ts";
 import { referenceHeader } from "../../src/reference-pages.ts";
-import { readEnvelope, seededBytes } from "../kit.ts";
+import { importCoverage, importPrg } from "../fixtures/program.ts";
+import { scratchDir, seededBytes, toolSkip } from "../kit.ts";
+import { capturedProject, generate, writeKnowledge } from "./source-kit.ts";
 
-let acmeSkip: string | false = false;
-try {
-  findTool(ACME);
-} catch {
-  acmeSkip = "ACME is not installed: install acme or set C64RT_ACME to run these tests";
-}
-let exomizerSkip: string | false = acmeSkip;
-try {
-  findTool(EXOMIZER);
-} catch {
-  exomizerSkip ||= "Exomizer is not installed: install exomizer or set C64RT_EXOMIZER to run these tests";
-}
+const acmeSkip = toolSkip(ACME);
+const exomizerSkip = toolSkip(ACME, EXOMIZER);
 
-const projects: string[] = [];
 /** The folder of the reports of the source in src/: its source map. */
 const REPORTS = ".c64-re-tools/local/generated/src";
-after(() => {
-  for (const project of projects) rmSync(project, { recursive: true, force: true });
-});
 
 function input(bytes: number[], start: number, overrides: Partial<SourceInput> = {}): SourceInput {
   return {
@@ -61,17 +48,31 @@ function input(bytes: number[], start: number, overrides: Partial<SourceInput> =
   };
 }
 
-const textOf = (rendered: ReturnType<typeof render>, name: string) => rendered.files.find((file) => file.name === name)!.text;
+/** The source of an input or a layout, with no header and no instruction written as bytes. */
+const renderSource = (source: SourceInput | Layout): Rendered => render("pieces" in source ? source : layout(source), new Set(), []);
+const textOf = (rendered: Rendered, name: string) => rendered.files.find((file) => file.name === name)!.text;
 /** The head of constants.asm without platform areas. */
 const CONSTANTS = '; Names of addresses outside the image.\n; "Used" counts the instructions and table entries of this source that use the name.\n\n';
 
-test("the ACME table has every opcode, with the 6502 length of each", () => {
-  for (let opcode = 0; opcode < 0x100; opcode++) {
-    const entry = OPCODES[opcode];
-    assert.ok(entry !== undefined, `opcode ${opcode.toString(16)}`);
-    assert.equal(MODE_LENGTH[entry.mode], instructionLength(opcode), `opcode ${opcode.toString(16)} ${entry.mnemonic}`);
-  }
-});
+/** Assembles files with ACME: the program with its load address (undefined when ACME stopped), the symbols and the diagnostics. */
+async function acme(files: ReadonlyArray<{ name: string; text: string }>, entrySource = "main.asm", defines: Record<string, number> = {}) {
+  const contents = files.map((file) => Buffer.from(file.text));
+  const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource, includeDirs: [], defines }, contents, localToolContext());
+  return { program: result.assembled ? attachments![0]! : undefined, symbols: result.symbols ?? [], diagnostics: result.diagnostics };
+}
+
+/** As acme, for files that ACME must assemble. */
+async function assembled(files: ReadonlyArray<{ name: string; text: string }>, entrySource = "main.asm") {
+  const { program, symbols, diagnostics } = await acme(files, entrySource);
+  assert.ok(program !== undefined, JSON.stringify(diagnostics));
+  return { program, symbols };
+}
+
+/** Assembles rendered files with ACME; the program bytes after the load address, or the diagnostics. */
+async function assembleRendered(rendered: Rendered, defines: Record<string, number> = {}): Promise<{ bytes?: number[]; messages: string[] }> {
+  const { program, diagnostics } = await acme(rendered.files, "main.asm", defines);
+  return { ...(program === undefined ? {} : { bytes: [...program.subarray(2)] }), messages: diagnostics.map((diagnostic) => diagnostic.message) };
+}
 
 test("operands get names, forced sizes and labels inside instructions", () => {
   // $1000: LDA $0012 (absolute), STA $1007 (into the next instruction), LDA #0, LDA $1010 (zero page? no: absolute), JMP $1000
@@ -95,7 +96,7 @@ test("tables, strings and sprites are written by their region type", () => {
     { start: 0x1004, end: 0x1007, type: "rts-addresses-split" },
     { start: 0x1008, end: 0x100a, type: "petscii" },
   ];
-  const text = textOf(render(layout(input(bytes, 0x1000, { regions, instructions: new Map([[0x100b, 1]]) })), new Set(), []), "segments/segment_1000.asm");
+  const text = textOf(renderSource(input(bytes, 0x1000, { regions, instructions: new Map([[0x100b, 1]]) })), "segments/segment_1000.asm");
   assert.match(text, /!word l_100b,l_100b/);
   assert.match(text, /!byte <\(l_100b-1\),<\(l_100b-1\),>\(l_100b-1\),>\(l_100b-1\)/);
   assert.match(text, /!pet "hi"\n {8}!byte \$00\nl_100b\n {8}rts/);
@@ -104,7 +105,7 @@ test("tables, strings and sprites are written by their region type", () => {
 test("a charset is written one character of 8 bytes to a line, without !fill", () => {
   const bytes = Array.from({ length: 24 }, (_, index) => (index < 16 ? 0 : index));
   const regions: SourceInput["regions"] = [{ start: 0x2000, end: 0x2017, type: "charset" }];
-  const text = textOf(render(layout(input(bytes, 0x2000, { regions })), new Set(), []), "segments/segment_2000.asm");
+  const text = textOf(renderSource(input(bytes, 0x2000, { regions })), "segments/segment_2000.asm");
   const lines = text.split("\n").filter((line) => line.includes("!byte"));
   assert.deepEqual(
     lines.map((line) => line.trim()),
@@ -118,7 +119,7 @@ test("a comment at an operand byte (knowledge of an older version) shows with it
   const bytes = [0xad, 0x04, 0x01, 0x60];
   const instructions = new Map([[0x1bc9, 3], [0x1bcc, 1]]);
   const comments: SourceInput["comments"] = [{ address: 0x1bc9, placement: "side", text: "the mode" }, { address: 0x1bca, placement: "side", text: "mid-instruction comment" }];
-  const text = textOf(render(layout(input(bytes, 0x1bc9, { instructions, comments })), new Set(), []), "segments/segment_1bc9.asm");
+  const text = textOf(renderSource(input(bytes, 0x1bc9, { instructions, comments })), "segments/segment_1bc9.asm");
   assert.match(text, /lda \$0104 +; the mode \$1bca: mid-instruction comment\n/);
 });
 
@@ -128,7 +129,7 @@ test("the source map gives the line of each name and of each address that the so
   const instructions = new Map([[0x1000, 3], [0x1003, 3], [0x1006, 2], [0x1008, 1]]);
   const regions: SourceInput["regions"] = [{ start: 0x1009, end: 0x100c, type: "addresses" }];
   const symbols = [{ address: 0xd020, name: "border" }, { address: 0x1000, name: "start" }, { address: 0x1009, name: "table" }];
-  const rendered = render(layout(input(bytes, 0x1000, { instructions, regions, symbols, comments: [{ address: 0x1006, placement: "line", text: "clear" }] })), new Set(), []);
+  const rendered = renderSource(input(bytes, 0x1000, { instructions, regions, symbols, comments: [{ address: 0x1006, placement: "line", text: "clear" }] }));
   const lineOf = (file: string, line: number) => textOf(rendered, file).split("\n")[line - 1]!;
   const labels = new Map(rendered.labels.map((label) => [label.name, label]));
   assert.deepEqual([...labels.keys()].sort(), ["border", "l_1006", "l_1007", "start", "table"]);
@@ -321,10 +322,7 @@ test("with real ACME, a packed loader puts the copier in one free range and page
     ],
   );
   assert.equal(plan.end, 0xc400 + 0x03ff - 0x024a);
-  const contents = [Buffer.from(plan.text)];
-  const { result, attachments } = await assemble({ files: [{ path: "loader.asm", size: contents[0]!.length }], entrySource: "loader.asm", includeDirs: [], defines: {} }, contents, localToolContext());
-  assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
-  const program = attachments![0]!;
+  const { program } = await assembled([{ name: "loader.asm", text: plan.text }], "loader.asm");
   assert.equal(program.readUInt16LE(0), 0xc000);
   assert.equal(program.length - 2, plan.end - 0xc000 + 1);
   const memory = new Int16Array(0x10000).fill(-1);
@@ -382,7 +380,7 @@ test("with real ACME, the loader takes its copies and its jump from labels, so c
     byteAt: (address) => (address >= 0xc000 ? address & 0x7f : bytes[address - 0x1000]!),
   };
   const laid = layout(source);
-  const rendered = render(laid, new Set(), []);
+  const rendered = renderSource(laid);
   const plan = planLoader({
     segments: [{ start: 0x1000, end: 0x10ff, files: ["segments/segment_1000.asm"] }, { start: 0xc000, end: 0xc0ff, files: ["segments/segment_c000.asm"] }],
     byteAt: source.byteAt,
@@ -394,22 +392,16 @@ test("with real ACME, the loader takes its copies and its jump from labels, so c
   assert.match(plan.text, /\n- {7}lda loader_copier_src,x\n/);
   assert.match(plan.text, /\n {8}!word loader_end_1000 - loader_from_1000, loader_from_1000, loader_to_1000 : !byte 0 ; segment \$1000-\$10ff\n/);
   assert.match(plan.text, /\nc64_source_loader_jump jmp entry\n/);
-  const build = async (files: Array<{ name: string; text: string }>, entrySource: string) => {
-    const contents = files.map((file) => Buffer.from(file.text));
-    const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource, includeDirs: [], defines: {} }, contents, localToolContext());
-    assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
-    return { program: attachments![0]!, symbols: result.symbols ?? [] };
-  };
   const files = [...rendered.files, { name: "loader.asm", text: plan.text }];
-  const unchanged = await build(files, "loader.asm");
+  const unchanged = await assembled(files, "loader.asm");
   const memory = runCopyTable(unchanged.program, plan.copies.length);
   for (const segment of source.segments) for (let address = segment.start; address <= segment.end; address++) assert.equal(memory[address], source.byteAt(address), `$${address.toString(16)}`);
 
   // 16 fill bytes fewer: the code from the entry moves down by 16, the copies and the jump follow it.
   const moved = files.map((file) => (file.name === "segments/segment_1000.asm" ? { ...file, text: file.text.replace("!fill 64, $00", "!fill 48, $00") } : file));
   assert.notDeepEqual(moved, files);
-  const main = await build(moved, "main.asm");
-  const relocated = await build(moved, "loader.asm");
+  const main = await assembled(moved);
+  const relocated = await assembled(moved, "loader.asm");
   const after = runCopyTable(relocated.program, plan.copies.length);
   main.program.subarray(2, 2 + 0xf0).forEach((byte, offset) => assert.equal(after[0x1000 + offset], byte, `$${(0x1000 + offset).toString(16)}`));
   for (let address = 0xc000; address <= 0xc0ff; address++) assert.equal(after[address], source.byteAt(address));
@@ -426,16 +418,12 @@ test("with real ACME, the loader stub switches the BASIC ROM out before it moves
   // Found in a field run on a 46 KB game: with the BASIC ROM in, the stub moved ROM bytes as the copier.
   const bytes = Array.from({ length: 0xa000 }, (_, offset) => offset & 0xff);
   const source = input(bytes, 0x1000, { regions: [{ start: 0x1000, end: 0xafff, type: "bytes" }] });
-  const rendered = render(layout(source), new Set(), []);
+  const rendered = renderSource(source);
   const plan = planLoader({ segments: [{ start: 0x1000, end: 0xafff, files: ["segments/segment_1000.asm"] }], byteAt: source.byteAt, state: state({ pc: 0x1000 }), entry: 0x1000, header: [] });
-  const files = [...rendered.files, { name: "loader.asm", text: plan.text }];
-  const contents = files.map((file) => Buffer.from(file.text));
-  const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "loader.asm", includeDirs: [], defines: {} }, contents, localToolContext());
-  assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
-  const program = attachments![0]!;
+  const { program, symbols } = await assembled([...rendered.files, { name: "loader.asm", text: plan.text }], "loader.asm");
   assert.equal(program.length - 2, plan.end - 0x0801 + 1, "the plan has the size of the stub");
   assert.deepEqual([...program.subarray(2 + 0x080d - 0x0801, 2 + 0x0812 - 0x0801)], [0x78, 0xa9, 0x34, 0x85, 0x01], "sei, lda #$34, sta $01");
-  const copierSource = result.symbols!.find((symbol) => symbol.name === "loader_copier_src")!;
+  const copierSource = symbols.find((symbol) => symbol.name === "loader_copier_src")!;
   assert.ok(copierSource.kind === "address" && copierSource.address >= 0xa000, "the copier lies under the BASIC ROM");
 });
 
@@ -462,20 +450,14 @@ test("with real ACME and Exomizer, a 62 KiB image with RAM at $d000-$dfff packs 
   memory.set(seededBytes(3, 0x6000 - 0x0801), 0x0801);
   memory.set(seededBytes(4, 0x1000), 0xd000);
   const source: SourceInput = { ...input([0], 0x0801, { regions: segments.map((segment) => ({ ...segment, type: "bytes" as const })) }), segments, byteAt: (address) => memory[address]! };
-  const rendered = render(layout(source), new Set(), []);
+  const rendered = renderSource(source);
   const pages = Uint8Array.from({ length: 0x400 }, (_, index) => (index * 13 + 5) & 0xff);
   const plan = planLoader({ segments: segments.map((segment) => ({ ...segment, files: [] })), byteAt: source.byteAt, state: state({ pages }), entry: 0x0810, header: [] });
   assert.deepEqual(plan.packed, { start: 0xc000 });
   assert.equal(plan.copier, 0xc000);
-  const build = async (files: Array<{ name: string; text: string }>, entrySource: string) => {
-    const contents = files.map((file) => Buffer.from(file.text));
-    const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource, includeDirs: [], defines: {} }, contents, localToolContext());
-    assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
-    return attachments![0]!;
-  };
   const files = [...rendered.files, { name: "loader.asm", text: plan.text }];
-  const main = await build(files, "main.asm");
-  const copier = await build(files, "loader.asm");
+  const { program: main } = await assembled(files);
+  const { program: copier } = await assembled(files, "loader.asm");
   assert.equal(copier.readUInt16LE(0), 0xc000);
   assert.equal(copier.length - 2, plan.end - 0xc000 + 1, "the build has the planned size");
   // The copies of the copier give pages $0002-$03ff.
@@ -516,14 +498,14 @@ test("a start screen gives the VIC-II values from its addresses, and the loader 
 });
 
 test("config.asm has START_SCREEN with the default 1 when the knowledge has a start screen, and keeps a 0", () => {
-  const rendered = render(layout(input([0xea], 0x1000, { startScreen: true })), new Set(), []);
+  const rendered = renderSource(input([0xea], 0x1000, { startScreen: true }));
   assert.match(textOf(rendered, "config.asm"), /\n; Start screen: on by default\nSTART_SCREEN = 1 ; the loader shows the start screen/);
   // A release is the bytes of its file: its build has no start screen.
-  const release = render(layout(input([0xea], 0x1000, { startScreen: true, releases: [{ label: "FIRESTAR", base: true }] })), new Set(), []);
+  const release = renderSource(input([0xea], 0x1000, { startScreen: true, releases: [{ label: "FIRESTAR", base: true }] }));
   assert.match(textOf(release, "switches.asm"), /!ifdef RELEASE_FIRESTAR \{\n {8}START_SCREEN = 0\n\}/);
   assert.equal(rendered.files.some((file) => file.name === "switches.asm"), false, "without releases there is no switches.asm");
   assert.deepEqual([...configValues(configText({ switches: [], patches: new Map(), startScreen: true, leftovers: [] }, new Map([["START_SCREEN", 0]])))], [["START_SCREEN", 0]]);
-  assert.equal(render(layout(input([0xea], 0x1000)), new Set(), []).files.some((file) => file.name === "config.asm"), false);
+  assert.equal(renderSource(input([0xea], 0x1000)).files.some((file) => file.name === "config.asm"), false);
 });
 
 test("with real ACME, the start screen code has its planned size in each colour mode, for START_SCREEN 0 and 1", { skip: acmeSkip }, async () => {
@@ -531,12 +513,9 @@ test("with real ACME, the start screen code has its planned size in each colour 
     for (const on of [0, 1]) {
       const values = { d011: 0x3b, d016: 0x18, d018: 0x79, bank: 2, border: 0, background: 6, colour_mode: mode, colour: 1, colours: 0x7f40 };
       const text = ["!cpu 6510", "* = $c000", ...Object.entries(values).map(([name, value]) => `c64_source_ss_${name} = ${value}`), `START_SCREEN = ${on}`, '!zone c64_source_start_screen {', '!source "start_screen.asm"', "}"].join("\n");
-      const files = [{ path: "test.asm", text }, { path: "start_screen.asm", text: START_SCREEN_CODE }];
-      const contents = files.map((file) => Buffer.from(file.text));
-      const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.path, size: contents[index]!.length })), entrySource: "test.asm", includeDirs: [], defines: {} }, contents, localToolContext());
-      assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
-      assert.equal(attachments![0]!.length - 2, size, `colour mode ${mode}, START_SCREEN ${on}`);
-      const label = (name: string) => result.symbols!.some((symbol) => symbol.name === name);
+      const { program, symbols } = await assembled([{ name: "test.asm", text }, { name: "start_screen.asm", text: START_SCREEN_CODE }], "test.asm");
+      assert.equal(program.length - 2, size, `colour mode ${mode}, START_SCREEN ${on}`);
+      const label = (name: string) => symbols.some((symbol) => symbol.name === name);
       assert.ok(label("loader_start_screen_wait") && label("loader_start_screen_continue"));
     }
   }
@@ -546,14 +525,8 @@ test("with real ACME, a loader with a start screen and the colour RAM assembles 
   const colourRam = Uint8Array.from({ length: 1000 }, (_, index) => (index * 5) & 0x0f);
   const bytes = Array.from({ length: 0x8000 }, (_, offset) => offset & 0xff);
   const source = input(bytes, 0x0800, { regions: [{ start: 0x0800, end: 0x87ff, type: "bytes" }], startScreen: true });
-  const rendered = render(layout(source), new Set(), []);
-  const build = async (text: string) => {
-    const files = [...rendered.files, { name: "loader.asm", text }, { name: "start_screen.asm", text: START_SCREEN_CODE }];
-    const contents = files.map((file) => Buffer.from(file.text));
-    const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "loader.asm", includeDirs: [], defines: {} }, contents, localToolContext());
-    assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
-    return { program: attachments![0]!, symbols: result.symbols! };
-  };
+  const rendered = renderSource(source);
+  const build = (text: string) => assembled([...rendered.files, { name: "loader.asm", text }, { name: "start_screen.asm", text: START_SCREEN_CODE }], "loader.asm");
   for (const row of [koala(), koala({ colours: undefined as never, colour: 3 }), koala({ mode: "hires", colours: undefined as never })]) {
     const plan = planLoader({ segments: [{ start: 0x0800, end: 0x87ff, files: ["segments/segment_0800.asm"] }], byteAt: source.byteAt, state: vicState({ pc: 0x0800, colourRam }), entry: 0x0800, header: [], config: true, startScreen: row });
     const { program, symbols } = await build(plan.text);
@@ -565,15 +538,12 @@ test("with real ACME, a loader with a start screen and the colour RAM assembles 
     assert.ok(at > plan.copier && at < plan.copier + 0x300, "the start screen runs in the copier pages");
   }
   const packedSource: SourceInput = { ...input([], 0x0800, { startScreen: true }), segments: [{ start: 0x0800, end: 0xbfff }, { start: 0xd000, end: 0xdfff }], byteAt: (address) => address & 0xff };
-  const packedRendered = render(layout(packedSource), new Set(), []);
+  const packedRendered = renderSource(packedSource);
   const packed = planLoader({ segments: [{ start: 0x0800, end: 0xbfff, files: ["segments/segment_0800.asm"] }, { start: 0xd000, end: 0xdfff, files: ["segments/segment_d000.asm"] }], byteAt: packedSource.byteAt, state: vicState({ pc: 0x0800, colourRam }), entry: 0x0800, header: [], config: true, startScreen: koala() });
-  const files = [...packedRendered.files, { name: "loader.asm", text: packed.text }, { name: "start_screen.asm", text: START_SCREEN_CODE }];
-  const contents = files.map((file) => Buffer.from(file.text));
-  const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "loader.asm", includeDirs: [], defines: {} }, contents, localToolContext());
-  assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
-  assert.equal(attachments![0]!.length - 2, packed.end - packed.packed!.start + 1, "the packed form has its planned layout");
+  const { program } = await assembled([...packedRendered.files, { name: "loader.asm", text: packed.text }, { name: "start_screen.asm", text: START_SCREEN_CODE }], "loader.asm");
+  assert.equal(program.length - 2, packed.end - packed.packed!.start + 1, "the packed form has its planned layout");
   const offset = 2 + packed.colours!.start - packed.packed!.start;
-  assert.deepEqual(Uint8Array.from(attachments![0]!.subarray(offset, offset + 1000)), colourRam, "the unpack puts the colours where the copier reads them");
+  assert.deepEqual(Uint8Array.from(program.subarray(offset, offset + 1000)), colourRam, "the unpack puts the colours where the copier reads them");
 });
 
 test("an entry state file is read with its flags as PLP reads them, and a wrong one is refused", () => {
@@ -594,15 +564,7 @@ test("with real ACME, data of every kind assembles to the same bytes", { skip: a
     { start: 0x2400, end: 0x24ff, type: "sprite" },
     { start: 0x2500, end: 0x25ff, type: "rts-addresses" },
   ];
-  const rendered = render(layout(input(bytes, 0x2000, { regions })), new Set(), []);
-  const contents = rendered.files.map((file) => Buffer.from(file.text));
-  const { result, attachments } = await assemble(
-    { files: rendered.files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "main.asm", includeDirs: [], defines: {} },
-    contents,
-    localToolContext(),
-  );
-  assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
-  assert.deepEqual([...attachments![0]!.subarray(2)], bytes);
+  assert.deepEqual((await assembleRendered(renderSource(input(bytes, 0x2000, { regions })))).bytes, bytes);
 });
 
 test("with real ACME, zero-page names outside the image assemble to zero-page instructions, and an address inside a platform entry is NAME+n", { skip: acmeSkip }, async () => {
@@ -612,17 +574,10 @@ test("with real ACME, zero-page names outside the image assemble to zero-page in
   const instructions = new Map([[0x1000, 2], [0x1002, 2], [0x1004, 2], [0x1006, 3], [0x1009, 3], [0x100c, 2], [0x100e, 3], [0x1011, 1]]);
   const symbols = [{ address: 0x66, name: "ptr" }, { address: 0x05, name: "small" }];
   const platform = [{ address: 0x03, end: 0x04, name: "ADRAY1" }, { address: 0x0318, end: 0x0319, name: "NMINV" }];
-  const rendered = render(layout(input(bytes, 0x1000, { instructions, symbols, platform })), new Set(), []);
+  const rendered = renderSource(input(bytes, 0x1000, { instructions, symbols, platform }));
   assert.equal(textOf(rendered, "constants.asm"), `${CONSTANTS}ADRAY1 = $03   ; Used: read 2.\nsmall  = $05   ; Used: read 1.\nptr    = $66   ; Used: read 2, pointer 1.\nNMINV  = $0318 ; Used: written 1.\n`);
   assert.match(textOf(rendered, "segments/segment_1000.asm"), /sta \(ptr\),y\n {8}lda ptr,x\n {8}lda\+2 small\n {8}sta NMINV\+1\n {8}lda ADRAY1\+1\n {8}lda\+2 ADRAY1\+1\n/);
-  const contents = rendered.files.map((file) => Buffer.from(file.text));
-  const { result, attachments } = await assemble(
-    { files: rendered.files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "main.asm", includeDirs: [], defines: {} },
-    contents,
-    localToolContext(),
-  );
-  assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
-  assert.deepEqual([...attachments![0]!.subarray(2)], bytes);
+  assert.deepEqual((await assembleRendered(rendered)).bytes, bytes);
 });
 
 /**
@@ -654,10 +609,10 @@ const OPERANDS: SourceInput["operands"] = [
 ];
 
 test("operand expressions are written in place of numbers, with the names of the source", () => {
-  const without = render(layout(operandInput()), new Set(), []);
-  assert.deepEqual(render(layout(operandInput({ operands: [] })), new Set(), []).files, without.files, "no operand expressions, the same source");
+  const without = renderSource(operandInput());
+  assert.deepEqual(renderSource(operandInput({ operands: [] })).files, without.files, "no operand expressions, the same source");
   assert.match(textOf(without, "segments/segment_1000.asm"), /lda l_101f,x/, "without an expression the target gets a label");
-  const rendered = render(layout(operandInput({ operands: OPERANDS })), new Set(), []);
+  const rendered = renderSource(operandInput({ operands: OPERANDS }));
   const text = textOf(rendered, "segments/segment_1000.asm");
   const lines = text.split("\n").map((line) => line.trim());
   const first = lines.indexOf("lda #<table");
@@ -686,26 +641,14 @@ test("operand expressions are written in place of numbers, with the names of the
 
 test("with real ACME, operand expressions assemble to the same bytes", { skip: acmeSkip }, async () => {
   const source = operandInput({ operands: OPERANDS });
-  const rendered = render(layout(source), new Set(), []);
-  const contents = rendered.files.map((file) => Buffer.from(file.text));
-  const { result, attachments } = await assemble(
-    { files: rendered.files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "main.asm", includeDirs: [], defines: {} },
-    contents,
-    localToolContext(),
-  );
-  assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
-  assert.deepEqual([...attachments![0]!.subarray(2)], Array.from({ length: 0x24 }, (_, offset) => source.byteAt(0x1000 + offset)));
+  assert.deepEqual((await assembleRendered(renderSource(source))).bytes, Array.from({ length: 0x24 }, (_, offset) => source.byteAt(0x1000 + offset)));
 });
 
-test("with real ACME, the script writes source that assembles to the program, aliases as bytes", { skip: acmeSkip, timeout: 600_000 }, async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
-  projects.push(project);
+test("with real ACME, the script writes source that assembles to the program, aliases as bytes", { skip: acmeSkip, timeout: 600_000 }, () => {
+  const project = scratchDir("source");
   // LDX #0; LDA $0012 (absolute); SBC #1 as $eb; NOP as $1a; ANC #$0f as $0b and as $2b; STA into the next LDA; BIT skip; RTS.
-  const code = [0xa2, 0x00, 0xad, 0x12, 0x00, 0xeb, 0x01, 0x1a, 0x0b, 0x0f, 0x2b, 0x0f, 0x8d, 0x10, 0x10, 0xa9, 0x00, 0x2c, 0xa9, 0x01, 0x60];
-  writeFileSync(join(project, "test.prg"), Uint8Array.from([0x00, 0x10, ...code]));
-  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
-  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "image", "test.prg"], { cwd: project }).status, 0);
-  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "rename", "$1000", "start", "--kind", "routine"], { cwd: project }).status, 0);
+  importPrg(project, prg(0x1000, [0xa2, 0x00, 0xad, 0x12, 0x00, 0xeb, 0x01, 0x1a, 0x0b, 0x0f, 0x2b, 0x0f, 0x8d, 0x10, 0x10, 0xa9, 0x00, 0x2c, 0xa9, 0x01, 0x60]));
+  writeKnowledge(project, (db, context) => renameSymbol(db, context, { address: 0x1000, name: "start", kind: "routine" }));
   // Files of an earlier run go, files of a person stay, and so does the loader of an earlier run with --loader.
   mkdirSync(join(project, "src"));
   writeFileSync(join(project, "src", "segment_9000.asm"), "; Generated by c64-source. Do not edit: change the knowledge and generate again.\n");
@@ -713,15 +656,7 @@ test("with real ACME, the script writes source that assembles to the program, al
   mkdirSync(join(project, "build"));
   writeFileSync(join(project, "build", "clean_loader.prg"), Uint8Array.from([0x01, 0x08]));
   writeFileSync(join(project, "src", "notes.asm"), "; my notes\n");
-  const child = spawn(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], {
-    cwd: project,
-    env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  let stdout = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  const [status] = (await once(child, "exit")) as [number | null];
-  const json = readEnvelope(stdout, status).json as { result: string; check: { identical: boolean }; asBytes: { listed: Array<{ address: string; instruction: string }> }; files: Array<{ out: string; bytes: number; sha256: string }>; removed: string[] };
+  const { status, stdout, envelope, json } = generate(project);
   assert.equal(status, 0, stdout);
   assert.equal(json.result, "PASS");
   assert.equal(json.check.identical, true);
@@ -730,21 +665,21 @@ test("with real ACME, the script writes source that assembles to the program, al
     { address: "$1007", instruction: "nop" },
     { address: "$100a", instruction: "anc #$0f" },
   ]);
-  assert.deepEqual((json.files.map((file) => file.out).filter((path) => path.startsWith("src/")).map((path) => path.slice(4))), ["segments/segment_1000.asm", "constants.asm", "main.asm"]);
-  assert.ok(json.files.some((file) => file.out === `${REPORTS}/source-map.json`), "the source map is a written file too");
+  const sourceFiles: string[] = json.files.map((file: { out: string }) => file.out).filter((path: string) => path.startsWith("src/")).map((path: string) => path.slice(4));
+  assert.deepEqual(sourceFiles, ["segments/segment_1000.asm", "constants.asm", "main.asm"]);
+  assert.ok(json.files.some((file: { out: string }) => file.out === `${REPORTS}/source-map.json`), "the source map is a written file too");
   const text = readFileSync(join(project, "src", "segments/segment_1000.asm"), "utf8");
   assert.match(text, /^; Generated by c64-source\. /);
   assert.match(text, /^start\n {8}ldx #\$00\n {8}lda\+2 \$0012$/m);
   assert.deepEqual(readdirSync(join(project, "src")).sort(), ["constants.asm", "loader.asm", "main.asm", "notes.asm", "segments"], "the source folder holds only source files");
   assert.deepEqual(json.removed, ["src/segment_9000.asm"], "the result lists each file that the run removed");
   // The kept loader.asm has no knowledge revision, and the knowledge has no entry state to write it again.
-  assert.deepEqual((readEnvelope(stdout, status).json as { staleLoader: unknown }).staleLoader, { files: ["src/loader.asm", "build/clean_loader.prg"], noEntryState: true });
-  const { envelope } = readEnvelope(stdout, status);
+  assert.deepEqual(json.staleLoader, { files: ["src/loader.asm", "build/clean_loader.prg"], noEntryState: true });
   assert.match(envelope.hint!, /The knowledge has no entry state, so --loader cannot write them again\. Remove them when the build does not use them\./);
   assert.doesNotMatch(envelope.nextAction ?? "", /--loader/, "a stale loader without an entry state gets no --loader action");
   // The source map counts the mark line, so each line is the line in the file.
   const map = JSON.parse(readFileSync(join(project, REPORTS, "source-map.json"), "utf8")) as { files: string[]; labels: Array<{ address: string; name: string; file: string; line: number }>; items: Array<{ start: string; file: string; line: number }> };
-  assert.deepEqual(map.files, (json.files.map((file) => file.out).filter((path) => path.startsWith("src/")).map((path) => path.slice(4))));
+  assert.deepEqual(map.files, sourceFiles);
   const startLabel = map.labels.find((label) => label.name === "start")!;
   assert.deepEqual([startLabel.address, startLabel.file, text.split("\n")[startLabel.line - 1]], ["$1000", "segments/segment_1000.asm", "start"]);
   const first = map.items.find((item) => item.start === "$1000")!;
@@ -754,15 +689,10 @@ test("with real ACME, the script writes source that assembles to the program, al
   // With coverage, every range that no run executed is listed, and its mark gives the range.
   const coverage = new Uint8Array(0x10000);
   for (const address of [0x1000, 0x1002]) coverage[address] = COVERAGE.ramExecute;
-  writeFileSync(join(project, "run.bin"), coverage);
-  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "coverage", "run.bin"], { cwd: project }).status, 0);
-  const covered = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], {
-    cwd: project,
-    env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
-    encoding: "utf8",
-  });
+  importCoverage(project, { "run.bin": coverage });
+  const covered = generate(project);
   assert.equal(covered.status, 0, covered.stdout);
-  const notExecuted = (readEnvelope(covered.stdout, covered.status).json as { notExecuted: { count: number; listed: Array<{ start: string; end: string; file?: string; routine?: string }> } }).notExecuted;
+  const notExecuted: { count: number; listed: Array<{ start: string; end: string; file?: string; routine?: string }> } = covered.json.notExecuted;
   assert.equal(notExecuted.listed.length, notExecuted.count);
   assert.equal(notExecuted.listed[0]!.start, "$1005");
   // Each range names its file and the routine before it, so a report can group them.
@@ -771,108 +701,80 @@ test("with real ACME, the script writes source that assembles to the program, al
   assert.deepEqual(marks, notExecuted.listed.map((range) => `; not executed ${range.start}-${range.end}`));
 });
 
-test("with real ACME, generate tells which leftovers changed since the earlier run", { skip: acmeSkip, timeout: 600_000 }, async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
-  projects.push(project);
+test("with real ACME, generate tells which leftovers changed since the earlier run", { skip: acmeSkip, timeout: 600_000 }, () => {
+  const project = scratchDir("source");
   // 10 SYS2061, $080d RTS, then 16 bytes that nothing uses. The BASIC line gives the entry, and it stays.
-  const basic = [0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00];
-  writeFileSync(join(project, "test.prg"), Uint8Array.from([0x01, 0x08, ...basic, 0x60, ...Array.from({ length: 16 }, (_, index) => index + 1)]));
-  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
-  const write = (...args: string[]) => assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, ...args], { cwd: project, encoding: "utf8" }).status, 0, args.join(" "));
-  const coverage = new Uint8Array(0x10000);
-  coverage[0x080d] = COVERAGE.ramExecute;
-  writeFileSync(join(project, "run.bin"), coverage);
-  writeFileSync(
-    join(project, "batch.json"),
-    JSON.stringify([
-      { op: "rename", address: "$080d", name: "start", kind: "routine" },
-      { op: "classify", start: "$0801", end: "$080c", type: "bytes" },
-      { op: "classify", start: "$080e", end: "$081d", type: "bytes" },
+  importPrg(project, prg(0x0801, SYS_2061, [0x60], Array.from({ length: 16 }, (_, index) => index + 1)));
+  writeKnowledge(project, (db, context) =>
+    applyBatch(db, context, [
+      { op: "rename", address: 0x080d, name: "start", kind: "routine" },
+      { op: "classify", start: 0x0801, end: 0x080c, type: "bytes" },
+      { op: "classify", start: 0x080e, end: 0x081d, type: "bytes" },
     ]),
   );
-  write("image", "test.prg");
-  write("apply", "batch.json");
-  write("coverage", "run.bin");
-  const generate = () => {
-    const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, encoding: "utf8" });
-    assert.equal(run.status, 0, run.stdout);
-    return (readEnvelope(run.stdout, run.status).json as { leftovers?: { bytes: number; changed?: unknown } }).leftovers;
-  };
-  // The first run has no earlier run to compare with.
-  assert.deepEqual(generate(), { bytes: 16, count: 1, listed: [{ start: "$080e", end: "$081d", bytes: 16, file: "leftovers/leftover_080e.asm" }] });
-  // A charset stays: the leftovers of the next run lose its bytes.
-  write("classify", "$0816-$081d", "charset");
-  assert.deepEqual(generate()?.changed, { added: [], removed: [{ start: "$0816", end: "$081d" }] });
-  // The same knowledge again: nothing changed.
-  assert.equal(generate()?.changed, undefined);
-});
-
-test("with real ACME, a macro use in code that nothing uses is in the leftover with that code", { skip: acmeSkip, timeout: 600_000 }, async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
-  projects.push(project);
-  // 10 SYS2061, $080d RTS, then code that nothing calls: $080e INC $fb / BNE +2 / INC $fc / RTS.
-  const basic = [0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00];
-  writeFileSync(join(project, "test.prg"), Uint8Array.from([0x01, 0x08, ...basic, 0x60, 0xe6, 0xfb, 0xd0, 0x02, 0xe6, 0xfc, 0x60]));
-  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
-  const write = (...args: string[]) => {
-    const run = spawnSync(process.execPath, [...process.execArgv, knowledge, ...args], { cwd: project, encoding: "utf8" });
-    assert.equal(run.status, 0, `${args.join(" ")}: ${run.stdout}`);
-  };
   const coverage = new Uint8Array(0x10000);
   coverage[0x080d] = COVERAGE.ramExecute;
-  writeFileSync(join(project, "run.bin"), coverage);
-  write("image", "test.prg");
-  write("coverage", "run.bin");
-  writeFileSync(join(project, "batch.json"), JSON.stringify([
-    { op: "rename", address: "$080d", name: "start", kind: "routine" },
-    { op: "rename", address: "$080e", name: "dead_inc", kind: "routine" },
-    { op: "classify", start: "$0801", end: "$080c", type: "bytes" },
-    { op: "classify", start: "$080d", end: "$0814", type: "code" },
-    { op: "macro", name: "inc16", params: ["dst"], body: "inc .dst\nbne +\ninc .dst+1\n+" },
-    { op: "use", start: "$080e", end: "$0813", macro: "inc16", args: ["$fb"] },
-  ]));
-  write("apply", "batch.json");
-  const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, encoding: "utf8" });
-  const json = readEnvelope(run.stdout, run.status).json as { check: { identical: boolean }; leftovers?: { listed: Array<{ start: string; end: string }> } };
-  assert.equal(json.check.identical, true, run.stdout);
-  assert.deepEqual(json.leftovers?.listed.map((range) => [range.start, range.end]), [["$080e", "$0814"]], "the dead code with its macro use is one leftover");
+  importCoverage(project, { "run.bin": coverage });
+  const leftovers = () => {
+    const run = generate(project);
+    assert.equal(run.status, 0, run.stdout);
+    return run.json.leftovers as { bytes: number; changed?: unknown } | undefined;
+  };
+  // The first run has no earlier run to compare with.
+  assert.deepEqual(leftovers(), { bytes: 16, count: 1, listed: [{ start: "$080e", end: "$081d", bytes: 16, file: "leftovers/leftover_080e.asm" }] });
+  // A charset stays: the leftovers of the next run lose its bytes.
+  writeKnowledge(project, (db, context) => classifyRegion(db, context, { start: 0x0816, end: 0x081d, type: "charset" }));
+  assert.deepEqual(leftovers()?.changed, { added: [], removed: [{ start: "$0816", end: "$081d" }] });
+  // The same knowledge again: nothing changed.
+  assert.equal(leftovers()?.changed, undefined);
+});
+
+test("with real ACME, a macro use in code that nothing uses is in the leftover with that code", { skip: acmeSkip, timeout: 600_000 }, () => {
+  const project = scratchDir("source");
+  // 10 SYS2061, $080d RTS, then code that nothing calls: $080e INC $fb / BNE +2 / INC $fc / RTS.
+  importPrg(project, prg(0x0801, SYS_2061, [0x60, 0xe6, 0xfb, 0xd0, 0x02, 0xe6, 0xfc, 0x60]));
+  const coverage = new Uint8Array(0x10000);
+  coverage[0x080d] = COVERAGE.ramExecute;
+  importCoverage(project, { "run.bin": coverage });
+  writeKnowledge(project, (db, context) =>
+    applyBatch(db, context, [
+      { op: "rename", address: 0x080d, name: "start", kind: "routine" },
+      { op: "rename", address: 0x080e, name: "dead_inc", kind: "routine" },
+      { op: "classify", start: 0x0801, end: 0x080c, type: "bytes" },
+      { op: "classify", start: 0x080d, end: 0x0814, type: "code" },
+      { op: "macro", name: "inc16", params: ["dst"], body: "inc .dst\nbne +\ninc .dst+1\n+" },
+      { op: "use", start: 0x080e, end: 0x0813, macro: "inc16", args: ["$fb"] },
+    ]),
+  );
+  const { stdout, json } = generate(project);
+  assert.equal(json.check.identical, true, stdout);
+  assert.deepEqual(json.leftovers?.listed.map((range: { start: string; end: string }) => [range.start, range.end]), [["$080e", "$0814"]], "the dead code with its macro use is one leftover");
   assert.match(readFileSync(join(project, "src", "leftovers", "leftover_080e.asm"), "utf8"), /^ {8}\+inc16 \$fb$/m);
 });
 
 
-test("with real ACME, an operand expression that ACME assembles to other bytes is written as its number", { skip: acmeSkip, timeout: 600_000 }, async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
-  projects.push(project);
+test("with real ACME, an operand expression that ACME assembles to other bytes is written as its number", { skip: acmeSkip, timeout: 600_000 }, () => {
+  const project = scratchDir("source");
   // $1000 LDA #$0b / STA $0314 / LDA #$10 / STA $0315 / RTS, then the handler at $100b: RTS.
   const code = [0xa9, 0x0b, 0x8d, 0x14, 0x03, 0xa9, 0x10, 0x8d, 0x15, 0x03, 0x60, 0x60];
-  writeFileSync(join(project, "test.prg"), Uint8Array.from([0x00, 0x10, ...code]));
-  // An older program with $11 at $1006: an expression that fits it does not fit test.prg.
-  writeFileSync(join(project, "old.prg"), Uint8Array.from([0x00, 0x10, ...code.map((byte, index) => (index === 6 ? 0x11 : byte))]));
-  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
-  const write = (...args: string[]) => assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, ...args], { cwd: project, encoding: "utf8" }).status, 0, args.join(" "));
+  importPrg(project, prg(0x1000, code));
   // An operand expression is for an instruction of a code region.
-  writeFileSync(
-    join(project, "batch.json"),
-    JSON.stringify([
-      { op: "rename", address: "$1000", name: "start", kind: "routine" },
-      { op: "rename", address: "$100b", name: "handler", kind: "routine" },
-      { op: "classify", start: "$1000", end: "$100b", type: "code" },
-      { op: "operand", address: "$1000", select: "lo", symbol: "handler" },
-      { op: "operand", address: "$1002", select: "value", symbol: "CINV" },
+  writeKnowledge(project, (db, context) =>
+    applyBatch(db, context, [
+      { op: "rename", address: 0x1000, name: "start", kind: "routine" },
+      { op: "rename", address: 0x100b, name: "handler", kind: "routine" },
+      { op: "classify", start: 0x1000, end: 0x100b, type: "code" },
+      { op: "operand", address: 0x1000, select: "lo", symbol: "handler" },
+      { op: "operand", address: 0x1002, select: "value", symbol: "CINV" },
     ]),
   );
-  write("image", "test.prg");
-  write("apply", "batch.json");
-  write("image", "old.prg");
-  write("operand", "$1005", "--expr", ">handler+$100");
-  write("image", "test.prg");
-  const generated = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], {
-    cwd: project,
-    env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
-    encoding: "utf8",
-  });
+  // An older program with $11 at $1006: an expression that fits it does not fit the program.
+  importPrg(project, prg(0x1000, code.map((byte, index) => (index === 6 ? 0x11 : byte))));
+  writeKnowledge(project, (db, context) => setOperand(db, context, { address: 0x1005, select: "expr", expression: ">handler+$100" }));
+  importPrg(project, prg(0x1000, code));
+  const generated = generate(project);
   assert.equal(generated.status, 0, generated.stdout);
-  const json = readEnvelope(generated.stdout, generated.status).json as { check: { identical: boolean }; operandExpressions: number; operandsAsNumbers: unknown };
+  const { json } = generated;
   assert.equal(json.check.identical, true);
   assert.equal(json.operandExpressions, 2);
   assert.deepEqual(json.operandsAsNumbers, { count: 1, listed: [{ address: "$1005", expression: ">handler+$100", reason: "ACME assembles it to $11, and the image has $10." }] });
@@ -881,84 +783,44 @@ test("with real ACME, an operand expression that ACME assembles to other bytes i
   assert.deepEqual(lines.slice(first, first + 4), ["lda #<handler", "sta CINV", "lda #$10                        ; = >handler+$100", "sta CINV+1"]);
 });
 
-test("with real ACME, a loader that cannot be planned still gives the checked source and says why", { skip: acmeSkip, timeout: 600_000 }, async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
-  projects.push(project);
+/** The names of the .asm files that a run of generate wrote. */
+const asmFiles = (json: { files: Array<{ out: string }> }) => json.files.map((file) => file.out.split("/").at(-1)!).filter((name) => name.endsWith(".asm"));
+
+test("with real ACME, a loader that cannot be planned still gives the checked source and says why", { skip: acmeSkip, timeout: 600_000 }, () => {
   // One segment of $0400-$ffff: too large for the plain loader, and no free range for the copier of the packed form. $1000 is RTS.
-  const hex = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
-  const segments = [{ start: 0x0400, end: 0xffff }];
-  const memory = new Uint8Array(0x10000);
-  for (const segment of segments) memory.fill(0x11, segment.start, segment.end + 1);
-  memory[0x1000] = 0x60;
-  mkdirSync(join(project, "unpacked"));
-  writeFileSync(join(project, "unpacked", "image.bin"), memory);
-  writeFileSync(join(project, "unpacked", "image.json"), JSON.stringify({ entry: "$1000", image: "image.bin", segments: segments.map((segment) => ({ start: hex(segment.start), end: hex(segment.end) })) }));
-  writeFileSync(
-    join(project, "unpacked", "entry_state.json"),
-    JSON.stringify({
-      registers: { pc: "$1000", a: 0, x: 0, y: 0, sp: 0xf6, flags: { n: false, v: false, b: false, d: false, i: false, z: false, c: false } },
-      cpuPort: { $00: 0x2f, $01: 0x37 },
-      pages: Object.fromEntries([0, 1, 2, 3].map((page) => [hex(page << 8), "00".repeat(256)])),
-    }),
-  );
-  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
-  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "image", "unpacked/image.json"], { cwd: project }).status, 0);
-  const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src", "--loader"], {
-    cwd: project,
-    env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
-    encoding: "utf8",
-  });
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const json = readEnvelope(run.stdout, run.status).json as { result: string; check: { identical: boolean }; files: Array<{ out: string }>; loader: { verified: boolean; reason: string } };
+  const { generate } = capturedProject(0x1000, [{ start: 0x0400, bytes: Uint8Array.from({ length: 0xfc00 }, (_, offset) => (offset === 0x1000 - 0x0400 ? 0x60 : 0x11)) }]);
+  const run = generate("--loader");
+  assert.equal(run.status, 0, run.stdout);
+  const { json } = run;
   assert.equal(json.result, "FAIL");
   assert.equal(json.check.identical, true);
-  assert.ok((json.files.map((file) => file.out.split("/").at(-1)!).filter((name) => name.endsWith(".asm"))).includes("main.asm") && !(json.files.map((file) => file.out.split("/").at(-1)!).filter((name) => name.endsWith(".asm"))).includes("loader.asm"));
+  const asm = asmFiles(json);
+  assert.ok(asm.includes("main.asm") && !asm.includes("loader.asm"));
   assert.equal(json.loader.verified, false);
   assert.match(json.loader.reason, /A packed loader needs one free range of \d+ bytes or more for its copier/);
 });
 
-test("with real ACME, an image whose entry is in no segment gives the checked source and fails", { skip: acmeSkip, timeout: 600_000 }, async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
-  projects.push(project);
+test("with real ACME, an image whose entry is in no segment gives the checked source and fails", { skip: acmeSkip, timeout: 600_000 }, () => {
   // The program at $0801 is missing: the image has only $1000-$1003, which starts with RTS.
-  const memory = new Uint8Array(0x10000);
-  memory.set([0x60, 0xea, 0xea, 0xea], 0x1000);
-  mkdirSync(join(project, "unpacked"));
-  writeFileSync(join(project, "unpacked", "image.bin"), memory);
-  writeFileSync(join(project, "unpacked", "image.json"), JSON.stringify({ entry: "$0801", image: "image.bin", segments: [{ start: "$1000", end: "$1003" }] }));
-  writeFileSync(
-    join(project, "unpacked", "entry_state.json"),
-    JSON.stringify({
-      registers: { pc: "$0801", a: 0, x: 0, y: 0, sp: 0xf6, flags: { n: false, v: false, b: false, d: false, i: false, z: false, c: false } },
-      cpuPort: { $00: 0x2f, $01: 0x37 },
-      pages: Object.fromEntries([0, 1, 2, 3].map((page) => [`$${(page << 8).toString(16).padStart(4, "0")}`, "00".repeat(256)])),
-    }),
-  );
-  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
-  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "image", "unpacked/image.json"], { cwd: project }).status, 0);
-  const generate = (...args: string[]) =>
-    spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src", ...(args.includes("--no-seed") ? [] : ["--entry", "$1000"]), ...args.filter((arg) => arg !== "--no-seed")], {
-      cwd: project,
-      env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
-      encoding: "utf8",
-    });
+  const { generate } = capturedProject(0x0801);
   const reason = /^The entry \$0801 is in no segment of the image: the image does not hold the program\. Capture the program again, so that a segment holds the entry\./;
-  const withLoader = generate("--loader");
-  assert.equal(withLoader.status, 0, withLoader.stdout + withLoader.stderr);
-  const { envelope, json } = readEnvelope(withLoader.stdout, withLoader.status) as { envelope: { hint?: string; nextAction?: string }; json: { result: string; check: { identical: boolean }; files: Array<{ out: string }>; entryOutside: { entry: string; reason: string }; loader: { verified: boolean; reason: string } } };
+  const withLoader = generate("--entry", "$1000", "--loader");
+  assert.equal(withLoader.status, 0, withLoader.stdout);
+  const { envelope, json } = withLoader;
   assert.equal(json.result, "FAIL");
   assert.match(envelope.hint!, /Capture the program again, so that a segment holds the entry/);
   assert.match(envelope.nextAction!, /^node \/.*source\.ts generate --out src --entry '\$1000' --loader --project /, "the same generate command, to run after the capture");
   assert.equal(json.check.identical, true);
-  assert.ok((json.files.map((file) => file.out.split("/").at(-1)!).filter((name) => name.endsWith(".asm"))).includes("main.asm") && !(json.files.map((file) => file.out.split("/").at(-1)!).filter((name) => name.endsWith(".asm"))).includes("loader.asm"));
+  const asm = asmFiles(json);
+  assert.ok(asm.includes("main.asm") && !asm.includes("loader.asm"));
   assert.equal(json.entryOutside.entry, "$0801");
   assert.equal(json.loader.verified, false);
   assert.match(json.loader.reason, reason);
   assert.match(json.entryOutside.reason, reason);
   // With no --entry and no knowledge, the image has no seed for the decompiler: still entryOutside, not a usage error.
-  const unseeded = generate("--no-seed", "--loader");
-  assert.equal(unseeded.status, 0, unseeded.stdout + unseeded.stderr);
-  const data = readEnvelope(unseeded.stdout, unseeded.status).json as { result: string; instructions: number; entryOutside: { reason: string }; loader: { verified: boolean } };
+  const unseeded = generate("--loader");
+  assert.equal(unseeded.status, 0, unseeded.stdout);
+  const data = unseeded.json;
   assert.equal(data.result, "FAIL");
   assert.equal(data.instructions, 0);
   assert.match(data.entryOutside.reason, reason);
@@ -966,21 +828,13 @@ test("with real ACME, an image whose entry is in no segment gives the checked so
 });
 
 test("with real ACME, a space with no known code gives a source of data only, without an entry and without a decompiler run", { skip: acmeSkip, timeout: 120_000 }, () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
-  projects.push(project);
+  const project = scratchDir("source");
   // A key page in a cartridge bank: 256 bytes of data, no entry, no routine and no code region.
-  writeFileSync(join(project, "keys.prg"), Buffer.from([0x00, 0xcf, ...Array.from({ length: 256 }, (_, index) => (index * 7) & 0xff)]));
-  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
-  for (const args of [["image", "keys.prg", "--space", "bank3"], ["classify", "$cf00-$cf7f", "bytes", "--space", "bank3"]]) {
-    assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, ...args], { cwd: project }).status, 0, args.join(" "));
-  }
-  const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--space", "bank3", "--out", "src"], {
-    cwd: project,
-    env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
-    encoding: "utf8",
-  });
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const { envelope, json } = readEnvelope(run.stdout, run.status) as { envelope: { hint?: string; nextAction?: string }; json: { result: string; instructions: number; dataBytes: number; dataOnly: string; check: { identical: boolean } } };
+  importPrg(project, prg(0xcf00, Array.from({ length: 256 }, (_, index) => (index * 7) & 0xff)), "bank3");
+  writeKnowledge(project, (db, context) => classifyRegion(db, context, { space: "bank3", start: 0xcf00, end: 0xcf7f, type: "bytes" }));
+  const run = generate(project, "--space", "bank3");
+  assert.equal(run.status, 0, run.stdout);
+  const { envelope, json } = run;
   assert.deepEqual([json.result, json.instructions, json.dataBytes, json.check.identical], ["PASS", 0, 256, true]);
   assert.match(json.dataOnly, /^The knowledge has no entry, routine, code region or executed address in this space\. Thus the source has only data\. For instructions, give --entry, or record a code region in the project knowledge\./);
   assert.match(envelope.hint!, /record a code region in the project knowledge\. Then generate again\.$/);
@@ -994,10 +848,10 @@ test("with coverage, each run of instructions that no run executed is marked and
   coverage[0x1000] = 0x04;
   const instructions = new Map([[0x1000, 1], [0x1001, 1], [0x1002, 1], [0x1005, 1]]);
   const regions: SourceInput["regions"] = [{ start: 0x1003, end: 0x1004, type: "bytes" }];
-  const rendered = render(layout(input(bytes, 0x1000, { instructions, regions, coverage })), new Set(), []);
+  const rendered = renderSource(input(bytes, 0x1000, { instructions, regions, coverage }));
   assert.deepEqual(rendered.notExecuted, { instructions: 3, ranges: [{ start: 0x1001, end: 0x1002 }, { start: 0x1005, end: 0x1005 }] });
   assert.match(textOf(rendered, "segments/segment_1000.asm"), /^ {8}nop\n; not executed \$1001-\$1002\n {8}nop\n {8}nop\n {8}!byte \$00,\$00\n; not executed \$1005-\$1005\n {8}rts\n$/m);
-  assert.equal(render(layout(input(bytes, 0x1000, { instructions, regions })), new Set(), []).notExecuted, undefined);
+  assert.equal(renderSource(input(bytes, 0x1000, { instructions, regions })).notExecuted, undefined);
 });
 
 test("an address without a knowledge name gets its platform name; a knowledge name wins, and a taken platform name is not used", () => {
@@ -1005,8 +859,7 @@ test("an address without a knowledge name gets its platform name; a knowledge na
   const bytes = [0x8d, 0x20, 0xd0, 0x8d, 0x21, 0xd0, 0x20, 0xd2, 0xff, 0x60];
   const instructions = new Map([[0x1000, 3], [0x1003, 3], [0x1006, 3], [0x1009, 1]]);
   const platform = [{ address: 0xd020, end: 0xd020, name: "EXTCOL" }, { address: 0xd021, end: 0xd021, name: "BGCOL0" }, { address: 0xffd2, end: 0xffd4, name: "CHROUT" }];
-  const laid = layout(input(bytes, 0x1000, { instructions, platform, symbols: [{ address: 0xd021, name: "background" }, { address: 0x2000, name: "CHROUT" }] }));
-  const rendered = render(laid, new Set(), []);
+  const rendered = renderSource(input(bytes, 0x1000, { instructions, platform, symbols: [{ address: 0xd021, name: "background" }, { address: 0x2000, name: "CHROUT" }] }));
   assert.match(textOf(rendered, "segments/segment_1000.asm"), / {8}sta EXTCOL\n {8}sta background\n {8}jsr \$ffd2\n/);
   assert.equal(textOf(rendered, "constants.asm"), `${CONSTANTS}EXTCOL     = $d020 ; Used: written 1.\nbackground = $d021 ; Used: written 1.\n`);
 });
@@ -1022,7 +875,7 @@ test("an analyzer name gives way to the platform name, and a user or LLM name st
     { address: 0x0314, name: "l0314", origin: "decompiler" },
     { address: 0x3000, name: "l3000", origin: "dxa" },
   ];
-  const rendered = render(layout(input(bytes, 0x1000, { instructions, platform, symbols })), new Set(), []);
+  const rendered = renderSource(input(bytes, 0x1000, { instructions, platform, symbols }));
   assert.match(textOf(rendered, "segments/segment_1000.asm"), / {8}sta EXTCOL\n {8}sta background\n {8}sta CINV\n/);
   assert.equal(textOf(rendered, "constants.asm"), `${CONSTANTS}CINV       = $0314 ; Used: written 1.\nEXTCOL     = $d020 ; Used: written 1.\nbackground = $d021 ; Used: written 1.\n`);
 });
@@ -1034,7 +887,7 @@ test("an address inside a platform entry gets NAME+n only when it has no name of
   const platform = [{ address: 0x0314, end: 0x0315, name: "CINV" }, { address: 0x0316, end: 0x0317, name: "CBINV" }, { address: 0x0318, end: 0x0319, name: "NMINV" }];
   // $0315 has a knowledge name; $0316 has a knowledge name too, so $0317 is that name +1; NMINV is taken by another address.
   const symbols = [{ address: 0x0315, name: "irqHigh" }, { address: 0x0316, name: "brkVector" }, { address: 0x2000, name: "NMINV" }];
-  const rendered = render(layout(input(bytes, 0x1000, { instructions, platform, symbols })), new Set(), []);
+  const rendered = renderSource(input(bytes, 0x1000, { instructions, platform, symbols }));
   assert.match(textOf(rendered, "segments/segment_1000.asm"), / {8}sta \$0319\n {8}sta irqHigh\n {8}sta brkVector\+1\n/);
   assert.equal(textOf(rendered, "constants.asm"), `${CONSTANTS}irqHigh   = $0315 ; Used: written 1.\nbrkVector = $0316 ; Used: written 1.\n`);
 });
@@ -1047,7 +900,7 @@ test("constants.asm groups its names by platform area, and says what each name i
   const regions: SourceInput["regions"] = [{ start: 0x1013, end: 0x1014, type: "addresses" }];
   // A knowledge comment wins over the platform meaning.
   const comments: SourceInput["comments"] = [{ address: 0x0c, placement: "side", text: "Joystick 2 bits,\nlow active." }, { address: 0xd020, placement: "line", text: "Flashes on a hit." }];
-  const rendered = render(layout(input(bytes, 0x1000, { instructions, symbols, regions, comments, platform: platformNames(), describe: describeAddress })), new Set(), []);
+  const rendered = renderSource(input(bytes, 0x1000, { instructions, symbols, regions, comments, platform: platformNames(), describe: describeAddress }));
   assert.equal(
     textOf(rendered, "constants.asm"),
     [
@@ -1100,14 +953,10 @@ function entryCia(timerA: number, timerB: number, controlA: number, controlB: nu
   return { registers, ...hidden };
 }
 
-function ciaState(cia1: EntryCia, cia2: EntryCia): EntryState {
-  return { pc: 0x1000, a: 0, x: 0, y: 0, sp: 0xff, flags: 0x20, port: [0x2f, 0x37], pages: new Uint8Array(0x400), vic: { registers: new Uint8Array(0x2f), bank: 3 }, cia: [cia1, cia2] };
-}
-
 const KERNAL_CIA2 = () => entryCia(0xffff, 0xffff, 0x08, 0x08, { latchA: 0xffff, latchB: 0xffff, interruptMask: 0 });
 
 test("the loader sets only the CIA timers that differ from the KERNAL's, and a running one counts to its entry value", () => {
-  const section = ciaSection(ciaState(entryCia(0x1234, 0xffff, 0x01, 0x08, { latchA: 0x4025, latchB: 0xffff, interruptMask: 0x01 }), KERNAL_CIA2()))!;
+  const section = ciaSection(vicState({ cia: [entryCia(0x1234, 0xffff, 0x01, 0x08, { latchA: 0x4025, latchB: 0xffff, interruptMask: 0x01 }), KERNAL_CIA2()] }))!;
   // Stop, load, start, latch, and read the flags away; after the start come 12 + 4 cycles and the tail of 33, less the start delay of 1.
   assert.deepEqual(section.ops.map((op) => op.text), [
     "lda #$00", "sta $dc0e",
@@ -1116,7 +965,6 @@ test("the loader sets only the CIA timers that differ from the KERNAL's, and a r
     "lda #$25", "sta $dc04", "lda #$40", "sta $dc05",
     "lda $dc0d",
   ]);
-  assert.equal(0x1264 - 0x1234, 12 + 4 + 33 - 1);
   assert.deepEqual(section.plan.timers[0], { cia: 1, timer: "A", control: 0x01, latch: 0x4025, counterAtJump: 0x1237 });
   assert.deepEqual(section.plan.limits, []);
   assert.deepEqual(loaderLimits({ cia: section.plan }), []);
@@ -1125,7 +973,7 @@ test("the loader sets only the CIA timers that differ from the KERNAL's, and a r
 
 test("a CIA timer that the loader cannot set as it was is a named limit", () => {
   // CIA 1 timer A runs so near $ffff that the cycles to the entry do not fit; timer B is stopped with a counter that is not its latch.
-  const near = ciaSection(ciaState(entryCia(0xfff0, 0x1000, 0x01, 0x08, { latchA: 0xffff, latchB: 0x2000, interruptMask: 0x01 }, 0x01), KERNAL_CIA2()))!;
+  const near = ciaSection(vicState({ cia: [entryCia(0xfff0, 0x1000, 0x01, 0x08, { latchA: 0xffff, latchB: 0x2000, interruptMask: 0x01 }, 0x01), KERNAL_CIA2()] }))!;
   assert.equal(near.plan.timers[0]!.counterAtJump, undefined);
   assert.equal(near.plan.timers[1]!.counterAtJump, 0x2000, "a stopped timer loads its latch");
   assert.equal(near.plan.limits.length, 3);
@@ -1133,28 +981,17 @@ test("a CIA timer that the loader cannot set as it was is a named limit", () => 
   assert.match(near.plan.limits.join("\n"), /CIA 1 timer B is stopped with the counter \$1000 and the latch \$2000/);
   assert.match(near.plan.limits.join("\n"), /CIA 1 has the interrupt flags \$01 at the entry/);
   // A latch with the high byte of the counter needs only its low byte: no limit.
-  const low = ciaSection(ciaState(entryCia(0x1234, 0x1210, 0x01, 0x08, { latchA: 0x4025, latchB: 0x1280, interruptMask: 0x01 }), KERNAL_CIA2()))!;
+  const low = ciaSection(vicState({ cia: [entryCia(0x1234, 0x1210, 0x01, 0x08, { latchA: 0x4025, latchB: 0x1280, interruptMask: 0x01 }), KERNAL_CIA2()] }))!;
   assert.deepEqual(low.plan.limits, []);
   assert.equal(low.plan.timers[1]!.counterAtJump, 0x1210);
   // Without the CIA state, the loader sets nothing.
-  assert.equal(ciaSection({ ...ciaState(KERNAL_CIA2(), KERNAL_CIA2()), cia: undefined } as unknown as EntryState), undefined);
+  assert.equal(ciaSection(state()), undefined);
 });
 
 /** The rendered files with each value set in config.asm, as a user edits it. */
-function withConfig(rendered: ReturnType<typeof render>, values: Record<string, number>): ReturnType<typeof render> {
+function withConfig(rendered: Rendered, values: Record<string, number>): Rendered {
   const set = (text: string) => Object.entries(values).reduce((out, [name, value]) => out.replace(new RegExp(`^(${name} *= )[01]`, "m"), `$1${value}`), text);
   return { ...rendered, files: rendered.files.map((file) => (file.name === "config.asm" ? { ...file, text: set(file.text) } : file)) };
-}
-
-/** Assembles rendered files with ACME; the program bytes after the load address, or the diagnostics. */
-async function assembleRendered(rendered: ReturnType<typeof render>, defines: Record<string, number> = {}): Promise<{ bytes?: number[]; messages: string[] }> {
-  const contents = rendered.files.map((file) => Buffer.from(file.text));
-  const { result, attachments } = await assemble(
-    { files: rendered.files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "main.asm", includeDirs: [], defines },
-    contents,
-    localToolContext(),
-  );
-  return { ...(result.assembled ? { bytes: [...attachments![0]!.subarray(2)] } : {}), messages: result.diagnostics.map((diagnostic) => diagnostic.message) };
 }
 
 test("a range of leftovers is a file of its own that only LEFTOVERS = 1 builds; the module that it cuts goes on in a file of its own", () => {
@@ -1162,7 +999,7 @@ test("a range of leftovers is a file of its own that only LEFTOVERS = 1 builds; 
   const laid = layout(source);
   assert.deepEqual(laid.pieces.map((piece) => [piece.file, piece.start, piece.end, piece.leftover]), [["game.asm", 0x1000, 0x1007, false], ["leftovers/leftover_1008.asm", 0x1008, 0x100b, true], ["game_100c.asm", 0x100c, 0x1013, false]]);
   assert.equal(laid.pieces[2]!.title, "The game, from $100c");
-  const rendered = render(laid, new Set(), []);
+  const rendered = renderSource(laid);
   assert.match(textOf(rendered, "main.asm"), /!source "game\.asm"\n!if LEFTOVERS \{ !source "leftovers\/leftover_1008\.asm" \} else \{ !skip 4 \}\n!source "game_100c\.asm"\n/);
   assert.match(textOf(rendered, "main.asm"), /!source "switches\.asm"/, "main.asm gets LEFTOVERS from switches.asm");
   assert.match(textOf(rendered, "config.asm"), /\n; Leftovers: off by default\nLEFTOVERS = 0 ; 4 bytes in 1 file in leftovers\/ that nothing uses\./);
@@ -1173,29 +1010,26 @@ test("a range of leftovers is a file of its own that only LEFTOVERS = 1 builds; 
   assert.deepEqual(inside.pieces.map((piece) => [piece.file, piece.start, piece.end]), [["game.asm", 0x1000, 0x1007], ["leftovers/leftover_1008.asm", 0x1008, 0x100b], ["table_100c.asm", 0x100c, 0x1013]]);
   assert.equal(inside.pieces[2]!.title, "The table, from $100c");
   // Without releases and switches, switches.asm only includes config.asm.
-  const alone = render(layout(patchInput([], { leftovers: [{ start: 0x1008, end: 0x100b }] })), new Set(), []);
+  const alone = renderSource(patchInput([], { leftovers: [{ start: 0x1008, end: 0x100b }] }));
   assert.equal(textOf(alone, "switches.asm").trimEnd().split("\n").at(-1), '!source "config.asm"');
-  assert.equal(render(layout(patchInput([])), new Set(), []).files.some((file) => file.name === "config.asm"), false, "no leftovers, no config.asm");
+  assert.equal(renderSource(patchInput([])).files.some((file) => file.name === "config.asm"), false, "no leftovers, no config.asm");
 });
 
 test("with real ACME, a module file in a folder keeps its folder, also for the part after leftovers, and the source assembles to the program", { skip: acmeSkip }, async () => {
   const source = patchInput([], { modules: [{ start: 0x1000, file: "game/main_loop.asm", title: "The main loop" }], leftovers: [{ start: 0x1008, end: 0x100b }] });
   const laid = layout(source);
   assert.deepEqual(laid.pieces.map((piece) => piece.file), ["game/main_loop.asm", "leftovers/leftover_1008.asm", "game/main_loop_100c.asm"]);
-  const rendered = render(laid, new Set(), []);
+  const rendered = renderSource(laid);
   assert.match(textOf(rendered, "main.asm"), /!source "game\/main_loop\.asm"\n/);
-  const withLeftovers = { ...rendered, files: rendered.files.map((file) => (file.name === "config.asm" ? { ...file, text: configText(laid, new Map([["LEFTOVERS", 1]])) } : file)) };
-  assert.deepEqual((await assembleRendered(withLeftovers)).bytes, Array.from({ length: 20 }, (_, offset) => source.byteAt(0x1000 + offset)));
+  assert.deepEqual((await assembleRendered(withConfig(rendered, { LEFTOVERS: 1 }))).bytes, Array.from({ length: 20 }, (_, offset) => source.byteAt(0x1000 + offset)));
 });
 
 
 test("with real ACME, the source with LEFTOVERS = 1 gives the program, and with 0 it leaves out the leftovers and keeps every address", { skip: acmeSkip }, async () => {
   const source = patchInput([], { leftovers: [{ start: 0x1008, end: 0x100b }] });
-  const laid = layout(source);
-  const rendered = render(laid, new Set(), []);
+  const rendered = renderSource(source);
   const original = Array.from({ length: 20 }, (_, offset) => source.byteAt(0x1000 + offset));
-  const withLeftovers = { ...rendered, files: rendered.files.map((file) => (file.name === "config.asm" ? { ...file, text: configText(laid, new Map([["LEFTOVERS", 1]])) } : file)) };
-  assert.deepEqual((await assembleRendered(withLeftovers)).bytes, original);
+  assert.deepEqual((await assembleRendered(withConfig(rendered, { LEFTOVERS: 1 }))).bytes, original);
   const clean = (await assembleRendered(rendered)).bytes!;
   assert.equal(clean.length, original.length);
   assert.deepEqual([...clean.slice(0, 8), ...clean.slice(12)], [...original.slice(0, 8), ...original.slice(12)], "the bytes after the leftovers keep their addresses");
@@ -1235,15 +1069,9 @@ test("with real ACME, the show stage builds when its code is high and the parts 
   const plan = planStage(input);
   assert.ok(plan.code >= 0xc000, "the code is high");
   assert.doesNotMatch(plan.text, /!pseudopc/);
-  const files = [
-    { name: START_SCREEN_FILE, text: START_SCREEN_CODE },
-    { name: STAGE_FILE, text: plan.text },
-  ];
-  const contents = files.map((file) => Buffer.from(file.text));
-  const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: STAGE_FILE, includeDirs: [], defines: {} }, contents, localToolContext());
-  assert.equal(result.assembled, true, result.diagnostics.map((diagnostic) => diagnostic.message).join("; "));
-  const labels = new Map((result.symbols ?? []).map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]));
-  const parts = stageParts(input, plan, attachments![0]!, (name) => labels.get(name)!);
+  const { program, symbols } = await assembled([{ name: START_SCREEN_FILE, text: START_SCREEN_CODE }, { name: STAGE_FILE, text: plan.text }], STAGE_FILE);
+  const labels = new Map(symbols.map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]));
+  const parts = stageParts(input, plan, program, (name) => labels.get(name)!);
   for (const part of stage) assert.deepEqual([...parts.find((item) => item.start === part.start)!.body], [...part.body], `the part at ${part.start.toString(16)}`);
   assert.equal(parts.at(-1)!.start, plan.code);
   assert.equal(parts.at(-1)!.body.length, labels.get(STAGE_CODE_END)! - plan.code);
@@ -1265,7 +1093,7 @@ const CRACK = { start: 0x1000, end: 0x1004, switch: "CRACK", code: "        lda 
 test("a patch is written as !if SWITCH { code, NOP } else { base code }, with its inner names before it", () => {
   const laid = layout(patchInput([CRACK, { start: 0x1008, end: 0x100b, switch: "DEBUG", code: "" }]));
   assert.deepEqual(laid.patchesNotWritten, []);
-  const rendered = render(laid, new Set(), []);
+  const rendered = renderSource(laid);
   assert.equal(rendered.patches, 2);
   const text = textOf(rendered, "segments/segment_1000.asm");
   assert.match(
@@ -1308,7 +1136,7 @@ test("a patch that cuts an instruction, leaves its file or has the name of a lab
 test("with real ACME, a switch off gives the image, on changes only its range, and a patch too long stops ACME", { skip: acmeSkip }, async () => {
   const source = patchInput([CRACK, { start: 0x1008, end: 0x100b, switch: "DEBUG", code: "" }]);
   const image = Array.from({ length: 20 }, (_, offset) => source.byteAt(0x1000 + offset));
-  const rendered = render(layout(source), new Set(), []);
+  const rendered = renderSource(source);
   assert.deepEqual((await assembleRendered(rendered)).bytes, image);
   const on = [...image];
   on.splice(0, 5, 0xa9, 0x01, 0x8d, 0x21, 0xd0);
@@ -1316,7 +1144,7 @@ test("with real ACME, a switch off gives the image, on changes only its range, a
   const nop = [...image];
   nop.splice(8, 4, 0xea, 0xea, 0xea, 0xea);
   assert.deepEqual((await assembleRendered(withConfig(rendered, { DEBUG: 1 }))).bytes, nop, "empty code is only NOP");
-  const long = render(layout(patchInput([{ ...CRACK, code: "        lda #1\n        sta $d021\n        rts" }])), new Set(), []);
+  const long = renderSource(patchInput([{ ...CRACK, code: "        lda #1\n        sta $d021\n        rts" }]));
   assert.deepEqual((await assembleRendered(long)).bytes, image, "off, the code is not assembled");
   const refused = await assembleRendered(withConfig(long, { CRACK: 1 }));
   assert.equal(refused.bytes, undefined);
@@ -1328,12 +1156,12 @@ test("with real ACME, a patch that ends at $ffff assembles, and one too long the
   const bytes = [0xa9, 0x00, 0x4c, 0xf8, 0xff, 0x01, 0x48, 0xff];
   const at = (patches: NonNullable<SourceInput["patches"]>) =>
     input(bytes, 0xfff8, { instructions: new Map([[0xfff8, 2], [0xfffa, 3]]), regions: [{ start: 0xfffd, end: 0xffff, type: "bytes" }], patches, switches: [offSwitch("TRAINER")] });
-  const vector = render(layout(at([{ start: 0xfffe, end: 0xffff, switch: "TRAINER", code: "        !word $1234" }])), new Set(), []);
+  const vector = renderSource(at([{ start: 0xfffe, end: 0xffff, switch: "TRAINER", code: "        !word $1234" }]));
   assert.deepEqual((await assembleRendered(vector)).bytes, bytes);
   assert.deepEqual((await assembleRendered(withConfig(vector, { TRAINER: 1 }))).bytes, [...bytes.slice(0, 6), 0x34, 0x12]);
-  const short = render(layout(at([{ start: 0xfffd, end: 0xffff, switch: "TRAINER", code: "        !byte 0" }])), new Set(), []);
+  const short = renderSource(at([{ start: 0xfffd, end: 0xffff, switch: "TRAINER", code: "        !byte 0" }]));
   assert.deepEqual((await assembleRendered(withConfig(short, { TRAINER: 1 }))).bytes, [...bytes.slice(0, 5), 0x00, 0xea, 0xea], "NOP fills to $ffff");
-  const long = render(layout(at([{ start: 0xfffd, end: 0xfffe, switch: "TRAINER", code: "        !byte 0, 0, 0" }])), new Set(), []);
+  const long = renderSource(at([{ start: 0xfffd, end: 0xfffe, switch: "TRAINER", code: "        !byte 0, 0, 0" }]));
   // The bytes after the patch then go past $ffff, so ACME also stops on its own.
   assert.equal((await assembleRendered(withConfig(long, { TRAINER: 1 }))).messages[0], "!error: The patch TRAINER at $fffd has 3 (0x3) bytes; the range has 2.");
 });
@@ -1341,10 +1169,9 @@ test("with real ACME, a patch that ends at $ffff assembles, and one too long the
 test("with real ACME, a patch of a captured stage whose code ends at $ffff assembles to its range", { skip: acmeSkip }, async () => {
   // After the byte at $ffff, ACME sets * to $0000.
   const text = stagePatchText([{ name: "irq", address: 0x1234 }], { start: 0xfffc, end: 0xffff, code: "        !byte $ea, $ea\n        !word irq" });
-  const contents = [Buffer.from(text)];
-  const { result, attachments } = await assemble({ files: [{ path: "patch.asm", size: contents[0]!.length }], entrySource: "patch.asm", includeDirs: [], defines: {} }, contents, localToolContext());
-  assert.deepEqual(result.diagnostics, []);
-  assert.deepEqual([...attachments![0]!], [0xfc, 0xff, 0xea, 0xea, 0x34, 0x12]);
+  const { program, diagnostics } = await acme([{ name: "patch.asm", text }], "patch.asm");
+  assert.deepEqual(diagnostics, []);
+  assert.deepEqual([...program!], [0xfc, 0xff, 0xea, 0xea, 0x34, 0x12]);
 });
 
 /**
@@ -1375,7 +1202,7 @@ function releaseInput(): SourceInput {
 }
 
 test("config.asm has the value of every switch by kind, switches.asm each release; a patch of a switch that the program has on holds its off state", () => {
-  const rendered = render(layout(releaseInput()), new Set(), []);
+  const rendered = renderSource(releaseInput());
   assert.equal(
     textOf(rendered, "config.asm"),
     [
@@ -1439,7 +1266,7 @@ test("config.asm has the value of every switch by kind, switches.asm each releas
 test("with real ACME, each release builds its bytes, the default build is the clean program, config.asm sets the switches, and two alternatives stop ACME", { skip: acmeSkip }, async () => {
   const source = releaseInput();
   const image = Array.from({ length: 20 }, (_, offset) => source.byteAt(0x1000 + offset));
-  const rendered = render(layout(source), new Set(), []);
+  const rendered = renderSource(source);
   const bytes = (changes: Array<[number, number[]]>) => {
     const out = [...image];
     for (const [at, values] of changes) out.splice(at, values.length, ...values);
@@ -1459,32 +1286,30 @@ test("with real ACME, each release builds its bytes, the default build is the cl
 });
 
 
-test("with real ACME, the script builds each switch on and reports it; a patch too long fails the run", { skip: acmeSkip, timeout: 600_000 }, async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
-  projects.push(project);
+/** The bytes of a PRG as the rows of a release, as release --file reads them. */
+function releaseRows(file: Uint8Array): Map<number, string> {
+  const { start, end, body } = prgRange(file);
+  return memoryRows([{ start, end }], (address) => body[address - start]!);
+}
+
+test("with real ACME, the script builds each switch on and reports it; a patch too long fails the run", { skip: acmeSkip, timeout: 600_000 }, () => {
+  const project = scratchDir("source");
   // $1000 LDA #$00; STA $d020; JMP $1000.
-  writeFileSync(join(project, "test.prg"), Uint8Array.from([0x00, 0x10, 0xa9, 0x00, 0x8d, 0x20, 0xd0, 0x4c, 0x00, 0x10]));
-  const knowledge = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts"), ...args], { cwd: project, encoding: "utf8" });
-  assert.equal(knowledge("image", "test.prg").status, 0);
-  // V2 is the release with a grey border: its file is the program with the code of the CRACK patch.
-  writeFileSync(join(project, "v2.prg"), Uint8Array.from([0x00, 0x10, 0xa9, 0x01, 0x8d, 0x21, 0xd0, 0x4c, 0x00, 0x10]));
-  assert.equal(knowledge("release", "FIRESTAR", "--file", "test.prg", "--base").status, 0);
-  assert.equal(knowledge("release", "V2", "--file", "v2.prg").status, 0);
-  // The knowledge keeps the bytes of V2: the check does not read its file.
-  rmSync(join(project, "v2.prg"));
-  assert.equal(knowledge("switch", "CRACK", "--kind", "crack", "--releases", "V2").status, 0);
-  assert.equal(knowledge("switch", "BIG", "--kind", "change", "--default", "0").status, 0);
-  // Code with a label is checked only by the build: the write cannot count its bytes.
-  writeFileSync(
-    join(project, "batch.json"),
-    JSON.stringify([
-      { op: "rename", address: "$1000", name: "start", kind: "routine" },
-      { op: "patch", start: "$1000", end: "$1004", switch: "CRACK", code: "        lda #1\n        sta $d021" },
-      { op: "patch", start: "$1005", end: "$1007", switch: "BIG", code: "        nop\n.more   nop\n        nop\n        nop" },
-    ]),
-  );
-  assert.equal(knowledge("apply", "batch.json").status, 0);
-  const generate = () => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], { cwd: project, encoding: "utf8" });
+  importPrg(project, prg(0x1000, [0xa9, 0x00, 0x8d, 0x20, 0xd0, 0x4c, 0x00, 0x10]));
+  writeKnowledge(project, (db, context) => {
+    setRelease(db, context, { label: "FIRESTAR", base: true });
+    // V2 is the release with a grey border: its file is the program with the code of the CRACK patch.
+    // The knowledge keeps the bytes of V2: the check does not read its file, which is not in the project.
+    setRelease(db, context, { label: "V2", file: "v2.prg", rows: releaseRows(prg(0x1000, [0xa9, 0x01, 0x8d, 0x21, 0xd0, 0x4c, 0x00, 0x10])) });
+    setSwitch(db, context, { name: "CRACK", kind: "crack", releases: ["V2"] });
+    setSwitch(db, context, { name: "BIG", kind: "change", default: 0 });
+    // Code with a label is checked only by the build: the write cannot count its bytes.
+    applyBatch(db, context, [
+      { op: "rename", address: 0x1000, name: "start", kind: "routine" },
+      { op: "patch", start: 0x1000, end: 0x1004, switch: "CRACK", code: "        lda #1\n        sta $d021" },
+      { op: "patch", start: 0x1005, end: 0x1007, switch: "BIG", code: "        nop\n.more   nop\n        nop\n        nop" },
+    ]);
+  });
   type Result = {
     check: { identical: boolean };
     switches: Array<{ name: string; result: string; changedBytes?: number; overflow?: Array<{ start: string; message: string }> }>;
@@ -1492,9 +1317,9 @@ test("with real ACME, the script builds each switch on and reports it; a patch t
     default: { in: string[]; result: string; changedBytes?: number };
     releases: Array<{ label: string; result: string }>;
   };
-  const first = generate();
+  const first = generate(project);
   assert.equal(first.status, 0, first.stdout);
-  const json = readEnvelope(first.stdout, first.status).json as Result & { result: string };
+  const json: Result & { result: string } = first.json;
   assert.equal(json.result, "FAIL", "a switch that does not fit fails the run");
   assert.equal(json.check.identical, true, "the build of the base release gives the image");
   assert.deepEqual(json.switches.map((item) => [item.name, item.result]), [["BIG", "overflow"], ["CRACK", "fits"]]);
@@ -1502,13 +1327,13 @@ test("with real ACME, the script builds each switch on and reports it; a patch t
   assert.deepEqual(json.releases.map((item) => [item.label, item.result]), [["FIRESTAR", "identical"], ["V2", "identical"]], "each release builds to its bytes");
   assert.deepEqual(json.switches[0]!.overflow, [{ start: "$1005", message: "The patch BIG at $1005 has 4 (0x4) bytes; the range has 3." }]);
   assert.equal(json.switches[1]!.changedBytes, 2);
-  assert.equal(knowledge("unpatch", "$1005").status, 0);
+  writeKnowledge(project, (db, context) => removePatch(db, context, { start: 0x1005 }));
   // The user turns CRACK on in config.asm: generate keeps the value and says so, and the checks still build from the knowledge.
   const config = join(project, "src", "config.asm");
   writeFileSync(config, readFileSync(config, "utf8").replace(/^CRACK = 0/m, "CRACK = 1"));
-  const second = generate();
+  const second = generate(project);
   assert.equal(second.status, 0, second.stdout);
-  const again = readEnvelope(second.stdout, second.status).json as Result;
+  const again: Result = second.json;
   assert.deepEqual(again.switches.map((item) => [item.name, item.result]), [["CRACK", "fits"]]);
   assert.deepEqual(again.config, { file: "src/config.asm", notDefault: [{ name: "CRACK", value: 1, default: 0 }] });
   assert.match(readFileSync(config, "utf8"), /^CRACK = 1 ; on in V2\. \$1000-\$1004$/m);
@@ -1526,18 +1351,18 @@ function macroInput(macroUses: NonNullable<SourceInput["macroUses"]>, overrides:
 test("a macro use is one +name args line, and macros.asm holds the macros", () => {
   const laid = layout(macroInput([{ start: 0x1000, end: 0x1005, macro: "inc16", args: ["ptr"] }, { start: 0x1006, end: 0x100b, macro: "inc16", args: ["ptr+2"] }], { comments: [{ address: 0x1004, placement: "side", text: "high byte" }] }));
   assert.deepEqual(laid.macrosAsInstructions, []);
-  const rendered = render(laid, new Set(), []);
+  const rendered = renderSource(laid);
   assert.equal(textOf(rendered, "segments/segment_1000.asm"), `; Segment $1000-$100c\n; $1000-$100c\n\nstart\n        +inc16 ptr                      ; high byte\n        +inc16 ptr+2\n        rts\n`);
   assert.equal(textOf(rendered, "macros.asm"), "; Macros of the knowledge. The source writes a use as +name args.\n\n; Adds 1 to a 16-bit value.\n!macro inc16 .dst {\n        inc .dst\n        bne +\n        inc .dst+1\n+\n}\n");
   assert.deepEqual(rendered.macroLines, new Map([["inc16", { first: 4, last: 9 }]]));
   assert.match(textOf(rendered, "main.asm"), /!source "constants\.asm"\n!source "macros\.asm"\n/);
   assert.match(textOf(rendered, "constants.asm"), /^ptr = \$fb ; Used: macro argument 2\.$/m);
   // An operand expression inside a written use counts for no name: the macro line names only its args.
-  const withOperand = render(layout(macroInput([{ start: 0x1000, end: 0x1005, macro: "inc16", args: ["ptr"] }], { operands: [{ address: 0x1004, select: "value", symbol: "ptr", offset: 1 }] })), new Set(), []);
+  const withOperand = renderSource(macroInput([{ start: 0x1000, end: 0x1005, macro: "inc16", args: ["ptr"] }], { operands: [{ address: 0x1004, select: "value", symbol: "ptr", offset: 1 }] }));
   assert.match(textOf(withOperand, "constants.asm"), /^ptr = \$fb ; Used: macro argument 1\.$/m);
   assert.equal(rendered.instructions, 7);
   assert.deepEqual(rendered.uses.map((use) => [use.start, use.line]), [[0x1000, 5], [0x1006, 6]]);
-  const without = render(layout(macroInput([], { macros: [] })), new Set(), []);
+  const without = renderSource(macroInput([], { macros: [] }));
   assert.equal(without.files.some((file) => file.name === "macros.asm"), false, "no macros, no macros.asm");
 });
 
@@ -1575,7 +1400,7 @@ test("a macro use with a label inside it, in a patch, of a missing macro or not 
   );
   const cut = layout(macroInput([{ start: 0x1001, end: 0x1005, macro: "inc16", args: ["ptr"] }, { start: 0x1006, end: 0x100b, macro: "inc16", args: ["$fd"] }], { patches: [{ start: 0x1008, end: 0x1009, switch: "SKIP", code: "" }] }));
   assert.deepEqual(cut.macrosAsInstructions.map((row) => [row.start, row.reason]), [[0x1001, "The range is not a run of whole instructions of one file."], [0x1006, "The use lies in a patch."]]);
-  const text = textOf(render(laid, new Set(), []), "segments/segment_1000.asm");
+  const text = textOf(renderSource(laid), "segments/segment_1000.asm");
   assert.match(text, /^ {8}inc ptr\n {8}bne l_1006\nhigh\n {8}inc \$fc\nl_1006\n/m, "a use written as instructions names its targets");
   const blamed = render(layout(macroInput([{ start: 0x1000, end: 0x1005, macro: "inc16", args: ["ptr"] }])), new Set(), [], new Map(), new Map([[0x1000, "ACME refuses it."]]));
   assert.deepEqual(blamed.uses, []);
@@ -1584,33 +1409,30 @@ test("a macro use with a label inside it, in a patch, of a missing macro or not 
 
 test("with real ACME, macro uses assemble to the same bytes", { skip: acmeSkip }, async () => {
   const source = macroInput([{ start: 0x1000, end: 0x1005, macro: "inc16", args: ["ptr"] }, { start: 0x1006, end: 0x100b, macro: "inc16", args: ["$fd"] }]);
-  const rendered = render(layout(source), new Set(), []);
+  const rendered = renderSource(source);
   assert.equal(rendered.uses.length, 2);
   assert.deepEqual((await assembleRendered(rendered)).bytes, Array.from({ length: 13 }, (_, offset) => source.byteAt(0x1000 + offset)));
 });
 
-test("with real ACME, a macro use that ACME refuses or assembles to other bytes is written as its instructions, and the source stays identical", { skip: acmeSkip, timeout: 600_000 }, async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
-  projects.push(project);
+test("with real ACME, a macro use that ACME refuses or assembles to other bytes is written as its instructions, and the source stays identical", { skip: acmeSkip, timeout: 600_000 }, () => {
+  const project = scratchDir("source");
   // $1000, $1006 and $100c INC $fb/$fd/$02; BNE +2; INC $fc/$fe/$03; $1012 RTS.
-  const code = [0xe6, 0xfb, 0xd0, 0x02, 0xe6, 0xfc, 0xe6, 0xfd, 0xd0, 0x02, 0xe6, 0xfe, 0xe6, 0x02, 0xd0, 0x02, 0xe6, 0x03, 0x60];
-  writeFileSync(join(project, "test.prg"), Uint8Array.from([0x00, 0x10, ...code]));
-  const knowledge = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts"), ...args], { cwd: project, encoding: "utf8" });
-  writeFileSync(join(project, "batch.json"), JSON.stringify([
-    { op: "rename", address: "$1000", name: "start", kind: "routine" },
-    { op: "rename", address: "$00fb", name: "ptr" },
-    { op: "macro", name: "inc16", params: ["dst"], body: "        inc .dst\n        bne +\n        inc .dst+1\n+" },
-    { op: "macro", name: "short", params: ["dst"], body: "        inc .dst" },
-    { op: "macro", name: "broken", params: ["dst"], body: "        lda .dst\n        lda no_such_name" },
-    { op: "use", start: "$1000", end: "$1005", macro: "inc16", args: ["ptr"] },
-    { op: "use", start: "$1006", end: "$100b", macro: "short", args: ["$fd"] },
-    { op: "use", start: "$100c", end: "$1011", macro: "broken", args: ["$02"] },
-  ]));
-  assert.equal(knowledge("image", "test.prg").status, 0);
-  assert.equal(knowledge("apply", "batch.json").status, 0);
-  const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], { cwd: project, encoding: "utf8" });
+  importPrg(project, prg(0x1000, [0xe6, 0xfb, 0xd0, 0x02, 0xe6, 0xfc, 0xe6, 0xfd, 0xd0, 0x02, 0xe6, 0xfe, 0xe6, 0x02, 0xd0, 0x02, 0xe6, 0x03, 0x60]));
+  writeKnowledge(project, (db, context) =>
+    applyBatch(db, context, [
+      { op: "rename", address: 0x1000, name: "start", kind: "routine" },
+      { op: "rename", address: 0x00fb, name: "ptr" },
+      { op: "macro", name: "inc16", params: ["dst"], body: "        inc .dst\n        bne +\n        inc .dst+1\n+" },
+      { op: "macro", name: "short", params: ["dst"], body: "        inc .dst" },
+      { op: "macro", name: "broken", params: ["dst"], body: "        lda .dst\n        lda no_such_name" },
+      { op: "use", start: 0x1000, end: 0x1005, macro: "inc16", args: ["ptr"] },
+      { op: "use", start: 0x1006, end: 0x100b, macro: "short", args: ["$fd"] },
+      { op: "use", start: 0x100c, end: 0x1011, macro: "broken", args: ["$02"] },
+    ]),
+  );
+  const run = generate(project);
   assert.equal(run.status, 0, run.stdout);
-  const json = readEnvelope(run.stdout, run.status).json as { check: { identical: boolean }; files: Array<{ out: string }>; macroUses: number; macrosAsInstructions: { listed: Array<{ start: string; macro: string; reason: string }> } };
+  const json: { check: { identical: boolean }; files: Array<{ out: string }>; macroUses: number; macrosAsInstructions: { listed: Array<{ start: string; macro: string; reason: string }> } } = run.json;
   assert.equal(json.check.identical, true);
   assert.deepEqual(json.files.map((file) => file.out), ["src/segments/segment_1000.asm", "src/constants.asm", "src/macros.asm", "src/main.asm", `${REPORTS}/source-map.json`]);
   assert.equal(json.macroUses, 1);
@@ -1632,7 +1454,7 @@ test("an operand inside a named table without its own name is the table's name p
       referenceTargets: [0x1018, 0x1003],
     }),
   );
-  const text = textOf(render(laid, new Set(), []), "segments/segment_1000.asm");
+  const text = textOf(renderSource(laid), "segments/segment_1000.asm");
   assert.match(text, / {8}lda room_colours\+5\nl_1003\n {8}lda room_colours\+8\n/);
   assert.doesNotMatch(text, /l_1015|l_1018/);
   // The table data has no label line at the offset: ACME refuses a label room_colours+5 (found on Bruce Lee).
@@ -1645,7 +1467,7 @@ test("an immediate stored to a register with a decoder gets the decoded value as
   const bytes = [0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0xa2, 0x15, 0x8e, 0x18, 0xd0, 0xa9, 0x00, 0x8d, 0x20, 0xd0];
   const instructions = new Map([[0x1000, 2], [0x1002, 3], [0x1005, 2], [0x1007, 3], [0x100a, 2], [0x100c, 3]]);
   const laid = layout(input(bytes, 0x1000, { instructions, decode, comments: [{ address: 0x1007, placement: "side", text: "Charset at $1000." }] }));
-  const text = textOf(render(laid, new Set(), []), "segments/segment_1000.asm");
+  const text = textOf(renderSource(laid), "segments/segment_1000.asm");
   assert.match(text, /sta \$d011 +; \$d011: yScroll 3, rows 25, displayEnabled, rasterBit8 0\n/);
   assert.match(text, /stx \$d018 +; Charset at \$1000\.\n/);
   assert.match(text, /sta \$d020\n/);
@@ -1678,10 +1500,10 @@ function ioInput(overrides: Partial<SourceInput> = {}): SourceInput {
 }
 
 /** The code lines of segments/segment_1000.asm without their side comments. */
-const ioCode = (rendered: ReturnType<typeof render>) => textOf(rendered, "segments/segment_1000.asm").split("\n").filter((line) => line.startsWith(" ")).map((line) => line.split(";")[0]!.trim());
+const ioCode = (rendered: Rendered) => textOf(rendered, "segments/segment_1000.asm").split("\n").filter((line) => line.startsWith(" ")).map((line) => line.split(";")[0]!.trim());
 
 test("a read or write in the I/O area names the register, also where the image holds RAM; the data label of the RAM stays", () => {
-  const rendered = render(layout(ioInput()), new Set(), []);
+  const rendered = renderSource(ioInput());
   assert.deepEqual(ioCode(rendered), ["lda CI2CRA", "lda #$1b", "sta SCROLY", "sta RASTER", "sta $d800,x", "sta RASTER", "lda $d040", "jsr under_io", "rts"]);
   // The register gets its decoded value, as a register outside the image does.
   assert.match(textOf(rendered, "segments/segment_1000.asm"), /sta SCROLY +; \$d011: yScroll 3, rows 25, displayEnabled, rasterBit8 0\n/);
@@ -1698,23 +1520,23 @@ test("a read or write in the I/O area names the register, also where the image h
 
 test("a platform name of a knowledge operand expression stays as written and is a constant, also where the image holds RAM or a knowledge name", () => {
   const operands: SourceInput["operands"] = [{ address: 0x100e, select: "value", symbol: "RASTER" }];
-  assert.deepEqual(ioCode(render(layout(ioInput({ operands })), new Set(), [])).slice(3, 6), ["sta RASTER", "sta $d800,x", "sta RASTER"]);
+  assert.deepEqual(ioCode(renderSource(ioInput({ operands }))).slice(3, 6), ["sta RASTER", "sta $d800,x", "sta RASTER"]);
   // A knowledge name at $d012 names the RAM: the plain operand is that label, the expression keeps the register.
   const symbols = [...ioInput().symbols, { address: 0xd012, name: "sprite_row", origin: "llm" as const }];
-  const rendered = render(layout(ioInput({ operands, symbols })), new Set(), []);
+  const rendered = renderSource(ioInput({ operands, symbols }));
   assert.deepEqual(ioCode(rendered).slice(3, 6), ["sta sprite_row", "sta $d800,x", "sta RASTER"]);
   assert.match(textOf(rendered, "segments/segment_d000.asm"), /^sprite_row\n/m);
   assert.match(textOf(rendered, "constants.asm"), /^RASTER += \$d012 ; .* Used: written 1\.$/m);
   // Without the I/O area (drive code, a bank), the RAM of the image keeps its data label.
   const { io: _io, describe: _describe, ...plain } = ioInput({ platform: [] });
-  assert.deepEqual(ioCode(render(layout(plain), new Set(), [])).slice(0, 5), ["lda l_dd0e", "lda #$1b", "sta fighter_extra_sprites+17", "sta fighter_extra_sprites+18", "sta l_d800,x"]);
+  assert.deepEqual(ioCode(renderSource(plain)).slice(0, 5), ["lda l_dd0e", "lda #$1b", "sta fighter_extra_sprites+17", "sta fighter_extra_sprites+18", "sta l_d800,x"]);
 });
 
 test("with real ACME, registers named over the RAM of the image assemble to the same bytes", { skip: acmeSkip }, async () => {
   const operands: SourceInput["operands"] = [{ address: 0x100e, select: "value", symbol: "RASTER" }];
   const symbols = [...ioInput().symbols, { address: 0xd012, name: "sprite_row", origin: "llm" as const }];
   for (const source of [ioInput(), ioInput({ operands }), ioInput({ operands, symbols })]) {
-    const { bytes, messages } = await assembleRendered(render(layout(source), new Set(), []));
+    const { bytes, messages } = await assembleRendered(renderSource(source));
     assert.ok(bytes !== undefined, messages.join("; "));
     const at = (address: number) => bytes[address - 0x1000];
     assert.deepEqual([0x1000, 0x1017, 0xd000, 0xd012, 0xd100, 0xdfff].map(at), [0x1000, 0x1017, 0xd000, 0xd012, 0xd100, 0xdfff].map(source.byteAt));
@@ -1724,39 +1546,11 @@ test("with real ACME, registers named over the RAM of the image assemble to the 
   }
 });
 
-/** A project with a captured program at $1000-$1003 (RTS first), its entry and its entry state. */
-function capturedProject(entry: string): { project: string; generate: (...args: string[]) => SpawnSyncReturns<string> } {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
-  projects.push(project);
-  const memory = new Uint8Array(0x10000);
-  memory.set([0x60, 0xea, 0xea, 0xea], 0x1000);
-  mkdirSync(join(project, "unpacked"));
-  writeFileSync(join(project, "unpacked", "image.bin"), memory);
-  writeFileSync(join(project, "unpacked", "image.json"), JSON.stringify({ entry, image: "image.bin", segments: [{ start: "$1000", end: "$1003" }] }));
-  writeFileSync(
-    join(project, "unpacked", "entry_state.json"),
-    JSON.stringify({
-      registers: { pc: entry, a: 0, x: 0, y: 0, sp: 0xf6, flags: { n: false, v: false, b: false, d: false, i: false, z: false, c: false } },
-      cpuPort: { $00: 0x2f, $01: 0x37 },
-      pages: Object.fromEntries([0, 1, 2, 3].map((page) => [`$${(page << 8).toString(16).padStart(4, "0")}`, "00".repeat(256)])),
-    }),
-  );
-  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
-  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "image", "unpacked/image.json"], { cwd: project }).status, 0);
-  const generate = (...args: string[]) =>
-    spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src", ...args], {
-      cwd: project,
-      env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
-      encoding: "utf8",
-    });
-  return { project, generate };
-}
-
 /** A loader.asm as generate writes it, of a knowledge revision and a toolkit version. */
 const loaderOf = (revision: string, version = PACKAGE.version) => `; Generated by c64-source. Do not edit: change the knowledge and generate again.\n; Loader generated by c64-source ${version} from knowledge revision ${revision}.\n`;
 
 test("with real ACME, a run names each reference of the project that is from an earlier revision of this source", { skip: acmeSkip, timeout: 120_000 }, () => {
-  const { project, generate } = capturedProject("$0801");
+  const { project, generate } = capturedProject(0x0801);
   const page = (folder: string, revision: string, map: string) => {
     mkdirSync(join(project, folder), { recursive: true });
     writeFileSync(join(project, folder, "index.md"), `${referenceHeader(revision, map)}\n# Reference\n`);
@@ -1764,24 +1558,23 @@ test("with real ACME, a run names each reference of the project that is from an 
   page("docs/reference", "1", `${REPORTS}/source-map.json`);
   page("docs/other", "1", ".c64-re-tools/local/generated/drive/source-map.json");
   const run = generate();
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const { json } = readEnvelope(run.stdout, run.status) as { json: { revision: string; staleReference?: unknown } };
+  assert.equal(run.status, 0, run.stdout);
+  const { json } = run;
   assert.deepEqual(json.staleReference, [{ folder: "docs/reference", revision: "1" }], "a reference of another source is not of this source");
   page("docs/reference", json.revision, `${REPORTS}/source-map.json`);
-  const again = generate();
-  assert.equal((readEnvelope(again.stdout, again.status).json as { staleReference?: unknown }).staleReference, undefined);
+  assert.equal(generate().json.staleReference, undefined);
 });
 
 test("with real ACME, a run without --loader says when the loader that it keeps is of another knowledge revision", { skip: acmeSkip, timeout: 120_000 }, () => {
   // The entry $0801 is in no segment: the decompiler does not run, and the knowledge has an entry state.
-  const { project, generate } = capturedProject("$0801");
+  const { project, generate } = capturedProject(0x0801);
   mkdirSync(join(project, "src"));
   writeFileSync(join(project, "src", "loader.asm"), loaderOf("1"));
   mkdirSync(join(project, "build"));
   writeFileSync(join(project, "build", "clean_loader.prg"), Uint8Array.from([0x01, 0x08]));
   const run = generate();
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const { envelope, json } = readEnvelope(run.stdout, run.status) as { envelope: { hint?: string; nextAction?: string }; json: { revision: string; staleLoader?: unknown } };
+  assert.equal(run.status, 0, run.stdout);
+  const { envelope, json } = run;
   assert.deepEqual(json.staleLoader, { files: ["src/loader.asm", "build/clean_loader.prg"], revision: "1", version: PACKAGE.version });
   assert.match(envelope.hint!, /The loader files in staleLoader\.files are of another knowledge revision or toolkit version, and the run kept them\. To write the loader of this revision, generate with --loader\.$/);
   assert.match(envelope.nextAction!, /^node \/.*source\.ts generate --out src --loader --project /);
@@ -1789,27 +1582,22 @@ test("with real ACME, a run without --loader says when the loader that it keeps 
   // A loader of this revision, and a loader.asm of the user, are not stale.
   for (const text of [loaderOf(json.revision), "; my loader\n"]) {
     writeFileSync(join(project, "src", "loader.asm"), text);
-    const again = generate();
-    assert.equal((readEnvelope(again.stdout, again.status).json as { staleLoader?: unknown }).staleLoader, undefined, text);
+    assert.equal(generate().json.staleLoader, undefined, text);
   }
   // A loader of another toolkit version is stale: the toolkit can make other bytes from the same knowledge.
   writeFileSync(join(project, "src", "loader.asm"), loaderOf(json.revision, "0.9.0"));
-  const update = generate();
-  assert.equal((readEnvelope(update.stdout, update.status).json as { staleLoader?: { version: string } }).staleLoader?.version, "0.9.0");
+  assert.equal(generate().json.staleLoader?.version, "0.9.0");
   // A change in another space is not in the loader: the loader stays of this revision.
   writeFileSync(join(project, "src", "loader.asm"), loaderOf(json.revision));
-  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
-  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "rename", "$0500", "drive_loop", "--space", "drive8"], { cwd: project }).status, 0);
-  const other = generate();
-  assert.equal((readEnvelope(other.stdout, other.status).json as { staleLoader?: unknown }).staleLoader, undefined, "a change in drive8");
+  writeKnowledge(project, (db, context) => renameSymbol(db, context, { space: "drive8", address: 0x0500, name: "drive_loop" }));
+  assert.equal(generate().json.staleLoader, undefined, "a change in drive8");
   // A change in the space of the loader is.
-  assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, "rename", "$1001", "after_rts"], { cwd: project }).status, 0);
-  const own = generate();
-  assert.deepEqual((readEnvelope(own.stdout, own.status).json as { staleLoader?: { revision: string } }).staleLoader?.revision, json.revision);
+  writeKnowledge(project, (db, context) => renameSymbol(db, context, { address: 0x1001, name: "after_rts" }));
+  assert.deepEqual(generate().json.staleLoader?.revision, json.revision);
 });
 
 test("with real ACME, generate keeps the generated source of another space in a folder of --out, and removes an old module file in a folder", { skip: acmeSkip, timeout: 120_000 }, () => {
-  const { project, generate } = capturedProject("$0801");
+  const { project, generate } = capturedProject(0x0801);
   const mark = "; Generated by c64-source. Do not edit: change the knowledge and generate again.\n";
   // The source of the loading stage, generated into src/loading_stage/ with --space.
   mkdirSync(join(project, "src", "loading_stage", "segments"), { recursive: true });
@@ -1819,46 +1607,35 @@ test("with real ACME, generate keeps the generated source of another space in a 
   mkdirSync(join(project, "src", "music"));
   writeFileSync(join(project, "src", "music", "driver.asm"), mark);
   const run = generate();
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const json = readEnvelope(run.stdout, run.status).json as { removed?: string[] };
+  assert.equal(run.status, 0, run.stdout);
   assert.deepEqual(readdirSync(join(project, "src", "loading_stage")).sort(), ["config.asm", "constants.asm", "main.asm", "segments", "switches.asm"], "the other source stays complete");
-  assert.deepEqual(json.removed, ["src/music/driver.asm"]);
+  assert.deepEqual(run.json.removed, ["src/music/driver.asm"]);
   assert.equal(existsSync(join(project, "src", "music")), false, "the folder that the run left empty goes");
 });
 
 
 test("with real ACME, a release that lacks a segment of the program is identical in its own segments, and lists the rest", { skip: acmeSkip, timeout: 120_000 }, () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
-  projects.push(project);
   // The program has two segments; the entry $0801 is in neither, so the decompiler does not run.
-  const memory = new Uint8Array(0x10000);
-  memory.set([0x60, 0xea, 0xea, 0xea], 0x1000);
-  memory.set([0x01, 0x02, 0x03, 0x04], 0x2000);
-  mkdirSync(join(project, "unpacked"));
-  writeFileSync(join(project, "unpacked", "image.bin"), memory);
-  writeFileSync(join(project, "unpacked", "image.json"), JSON.stringify({ entry: "$0801", image: "image.bin", segments: [{ start: "$1000", end: "$1003" }, { start: "$2000", end: "$2003" }] }));
+  const { project, generate } = capturedProject(0x0801, [{ start: 0x1000, bytes: [0x60, 0xea, 0xea, 0xea] }, { start: 0x2000, bytes: [0x01, 0x02, 0x03, 0x04] }]);
   // DEMO has only the first segment; BAD has it with a byte that no patch gives.
-  writeFileSync(join(project, "demo.prg"), Uint8Array.from([0x00, 0x10, 0x60, 0xea, 0xea, 0xea]));
-  writeFileSync(join(project, "bad.prg"), Uint8Array.from([0x00, 0x10, 0x60, 0xea, 0xea, 0x00]));
-  const knowledge = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts"), ...args], { cwd: project, encoding: "utf8" });
-  for (const args of [["image", "unpacked/image.json"], ["release", "FIRESTAR", "--file", "unpacked/image.json", "--base"], ["release", "DEMO", "--file", "demo.prg"], ["release", "BAD", "--file", "bad.prg"]]) assert.equal(knowledge(...args).status, 0, args.join(" "));
-  const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts"), "generate", "--out", "src"], {
-    cwd: project,
-    env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
-    encoding: "utf8",
+  writeKnowledge(project, (db, context) => {
+    setRelease(db, context, { label: "FIRESTAR", base: true });
+    setRelease(db, context, { label: "DEMO", rows: releaseRows(prg(0x1000, [0x60, 0xea, 0xea, 0xea])) });
+    setRelease(db, context, { label: "BAD", rows: releaseRows(prg(0x1000, [0x60, 0xea, 0xea, 0x00])) });
   });
-  const json = readEnvelope(run.stdout, run.status).json as { releases: Array<{ label: string; result: string; notInRelease?: Array<{ start: string; end: string }> }> };
+  const run = generate();
   // The run fails only because the entry is in no segment.
   assert.equal(run.status, 0, run.stdout);
+  const releases: Array<{ label: string; result: string; notInRelease?: Array<{ start: string; end: string }> }> = run.json.releases;
   assert.deepEqual(
-    json.releases.map((item) => [item.label, item.result, item.notInRelease]),
+    releases.map((item) => [item.label, item.result, item.notInRelease]),
     [["FIRESTAR", "identical", undefined], ["BAD", "different", [{ start: "$2000", end: "$2003" }]], ["DEMO", "identical", [{ start: "$2000", end: "$2003" }]]],
   );
 });
 
 
 test("with real ACME, a --loader run whose check cannot run keeps the loader program of an earlier run and says why", { skip: acmeSkip, timeout: 600_000 }, async () => {
-  const { project, generate } = capturedProject("$1000");
+  const { project, generate } = capturedProject(0x1000);
   mkdirSync(join(project, "build"));
   writeFileSync(join(project, "build", "clean_loader.prg"), Uint8Array.from([0x01, 0x08]));
   // The show stage of the earlier loader: the kept loader program needs its source.
@@ -1867,8 +1644,8 @@ test("with real ACME, a --loader run whose check cannot run keeps the loader pro
   for (const name of stageFiles) writeFileSync(join(project, "src", name), "; Generated by c64-source.\n");
   // C64RT_HOST names a port where no host runs.
   const run = generate("--loader");
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const json = readEnvelope(run.stdout, run.status).json as { result: string; check: { identical: boolean }; files: Array<{ out: string }>; removed: string[]; loader: { verified: boolean; reason: string; kept?: string[] } };
+  assert.equal(run.status, 0, run.stdout);
+  const json: { result: string; check: { identical: boolean }; files: Array<{ out: string }>; removed: string[]; loader: { verified: boolean; reason: string; kept?: string[] } } = run.json;
   assert.equal(json.result, "FAIL");
   assert.equal(json.check.identical, true);
   assert.equal(json.loader.verified, false);

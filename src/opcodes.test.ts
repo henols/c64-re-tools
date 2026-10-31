@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { accessedValue, instructionText } from "./opcodes.ts";
+import { instructionLength } from "./c64.ts";
+import { accessedValue, instructionText, MODE_LENGTH, OPCODES } from "./opcodes.ts";
+
+test("the ACME table has every opcode, with the 6502 length of each", () => {
+  for (let opcode = 0; opcode < 0x100; opcode++) {
+    const entry = OPCODES[opcode];
+    assert.ok(entry !== undefined, `opcode ${opcode.toString(16)}`);
+    assert.equal(MODE_LENGTH[entry.mode], instructionLength(opcode), `opcode ${opcode.toString(16)} ${entry.mnemonic}`);
+  }
+});
 
 test("the byte of an access: a store gives its register, a load the register after it, else the memory", () => {
   const before = { a: 0x1b, x: 0x02, y: 0x03 };

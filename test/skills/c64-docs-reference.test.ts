@@ -8,6 +8,22 @@ import type { SourceMap } from "../../skills/c64-docs/scripts/lib/source-map.ts"
 
 const row = { space: "c64", origin: "llm", revision: "1" } as const;
 
+/** The source map of revision 1 of the source in src/: the label lines, and the lines that write each range. */
+function sourceMap(files: string[], labels: SourceMap["labels"], items: Array<{ start: number; end: number; file: string; line: number }>, more: Pick<SourceMap, "textOf"> = {}): SourceMap {
+  return {
+    directory: "src",
+    mapPath: ".c64-re-tools/local/generated/src/source-map.json",
+    space: "c64",
+    revision: "1",
+    files,
+    labels,
+    labelOf: (name) => labels.find((label) => label.name === name),
+    lineOf: (address) => items.find((item) => address >= item.start && address <= item.end),
+    pathOf: (file) => `src/${file}`,
+    ...more,
+  };
+}
+
 test("the code of an I/O register is no reader or writer of the data in RAM under it at $d000-$dfff", () => {
   // play_sound writes SIGVOL $d418, copy_sprites reads the sprites at $d400; the sprites are in RAM under the SID.
   const items = [
@@ -20,17 +36,7 @@ test("the code of an I/O register is no reader or writer of the data in RAM unde
     { address: 0x1010, name: "copy_sprites", file: "game.asm", line: 3 },
     { address: 0xd400, name: "sprites", file: "sprites.asm", line: 1 },
   ];
-  const map: SourceMap = {
-    directory: "src",
-    mapPath: ".c64-re-tools/local/generated/src/source-map.json",
-    space: "c64",
-    revision: "1",
-    files: ["game.asm", "sprites.asm"],
-    labels,
-    labelOf: (name) => labels.find((label) => label.name === name),
-    lineOf: (address) => items.find((item) => address >= item.start && address <= item.end),
-    pathOf: (file) => `src/${file}`,
-  };
+  const map = sourceMap(["game.asm", "sprites.asm"], labels, items);
   const { files } = buildReference({
     out: "docs/reference",
     map,
@@ -70,17 +76,7 @@ test("a platform name in the memory map covers only its register: RANDOM is no w
     { address: 0xd001, name: "SP0Y", file: "constants.asm", line: 1 },
     { address: 0xd41b, name: "RANDOM", file: "constants.asm", line: 2 },
   ];
-  const map: SourceMap = {
-    directory: "src",
-    mapPath: ".c64-re-tools/local/generated/src/source-map.json",
-    space: "c64",
-    revision: "1",
-    files: ["constants.asm", "game.asm"],
-    labels,
-    labelOf: (name) => labels.find((label) => label.name === name),
-    lineOf: (address) => items.find((item) => address >= item.start && address <= item.end),
-    pathOf: (file) => `src/${file}`,
-  };
+  const map = sourceMap(["constants.asm", "game.asm"], labels, items);
   const { files } = buildReference({
     out: "docs/reference",
     map,
@@ -122,18 +118,7 @@ test("a platform name has a reader where the source line names it or uses a macr
     { address: 0xd012, name: "RASTER", file: "constants.asm", line: 3 },
     { address: 0xdc00, name: "CIAPRA", file: "constants.asm", line: 2 },
   ];
-  const map: SourceMap = {
-    directory: "src",
-    mapPath: ".c64-re-tools/local/generated/src/source-map.json",
-    space: "c64",
-    revision: "1",
-    files: ["constants.asm", "game.asm"],
-    labels,
-    labelOf: (name) => labels.find((label) => label.name === name),
-    lineOf: (address) => items.find((item) => address >= item.start && address <= item.end),
-    pathOf: (file) => `src/${file}`,
-    textOf: (line) => (line.file === "game.asm" ? text[line.line - 1]?.replace(/;.*$/, "") : undefined),
-  };
+  const map = sourceMap(["constants.asm", "game.asm"], labels, items, { textOf: (line) => (line.file === "game.asm" ? text[line.line - 1]?.replace(/;.*$/, "") : undefined) });
   const { files } = buildReference({
     out: "docs/reference",
     map,
@@ -175,17 +160,7 @@ test("a label that another file reaches only by a pointer keeps its entry: the C
     { address: 0x1108, name: "game_loop", file: "game.asm", line: 3 },
     { address: 0x1110, name: "irq_handler", file: "game.asm", line: 5 },
   ];
-  const map: SourceMap = {
-    directory: "src",
-    mapPath: ".c64-re-tools/local/generated/src/source-map.json",
-    space: "c64",
-    revision: "1",
-    files: ["init.asm", "game.asm"],
-    labels,
-    labelOf: (name) => labels.find((label) => label.name === name),
-    lineOf: (address) => items.find((item) => address >= item.start && address <= item.end),
-    pathOf: (file) => `src/${file}`,
-  };
+  const map = sourceMap(["init.asm", "game.asm"], labels, items);
   const { files } = buildReference({
     out: "docs/reference",
     map,
@@ -228,17 +203,7 @@ test("the gaps are the routines of the module pages without a comment, the modul
     { address: 0x3010, name: "levels", file: "tables.asm", line: 1 },
     { address: 0x4000, name: "load", file: "loader.asm", line: 1 },
   ];
-  const map: SourceMap = {
-    directory: "src",
-    mapPath: ".c64-re-tools/local/generated/src/source-map.json",
-    space: "c64",
-    revision: "1",
-    files: ["game.asm", "states.asm", "music.asm", "tables.asm", "loader.asm"],
-    labels,
-    labelOf: (name) => labels.find((label) => label.name === name),
-    lineOf: (address) => items.find((item) => address >= item.start && address <= item.end),
-    pathOf: (file) => `src/${file}`,
-  };
+  const map = sourceMap(["game.asm", "states.asm", "music.asm", "tables.asm", "loader.asm"], labels, items);
   const { gaps } = buildReference({
     out: "docs/reference",
     map,
