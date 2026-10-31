@@ -1,7 +1,7 @@
 // The VICE-session operations of the Host Runtime wire: their vocabulary, shapes and validators.
 
 import { MAX_PRESS_FRAMES, MAX_PRESS_TAPS, MAX_TAP_KEYS, type KeyTap } from "../c64-keys.ts";
-import { invalid, isInteger, isObject, isOneOf, onlyFields, ProtocolError, VIDEO_STANDARDS, type VideoStandard } from "./messages.ts";
+import { type Fields, invalid, isInteger, isObject, isOneOf, onlyFields, ProtocolError, VIDEO_STANDARDS, type VideoStandard } from "./messages.ts";
 
 export const SPACES = ["c64", "drive8"] as const;
 export type Space = (typeof SPACES)[number];
@@ -423,6 +423,9 @@ export interface CpuFlags {
   c: boolean;
 }
 
+/** The bit of each flag in the 6502 status register; bit 5 always reads as 1. */
+export const FLAG_BITS: Record<keyof CpuFlags, number> = { n: 0x80, v: 0x40, b: 0x10, d: 0x08, i: 0x04, z: 0x02, c: 0x01 };
+
 export interface Registers {
   pc: number;
   a: number;
@@ -589,47 +592,6 @@ export interface ViceOperations {
   window: { params: { action: (typeof WINDOW_ACTIONS)[number] }; result: WindowResult };
 }
 export type ViceOperation = keyof ViceOperations;
-export const VICE_OPERATIONS = [
-  "status",
-  "memoryRead",
-  "registersGet",
-  "memoryWrite",
-  "memorySearch",
-  "memoryCompare",
-  "disassemble",
-  "registersSet",
-  "execution",
-  "runUntil",
-  "programLoad",
-  "autostart",
-  "diskAttach",
-  "reset",
-  "keyboard",
-  "joystick",
-  "press",
-  "breakpoint",
-  "watchpoint",
-  "screenCapture",
-  "screenCompare",
-  "screenBaselines",
-  "screenDiscard",
-  "snapshot",
-  "snapshotFile",
-  "ioRead",
-  "cpuHistory",
-  "trace",
-  "backtrace",
-  "timing",
-  "profile",
-  "memmap",
-  "vicii",
-  "sprites",
-  "cia",
-  "sid",
-  "observe",
-  "warp",
-  "window",
-] as const satisfies readonly ViceOperation[];
 
 /** How many attachments an operation takes; a snapshotFile restore takes the .vsf. */
 export function attachmentCount(op: ViceOperation, params?: unknown): number {
@@ -637,374 +599,382 @@ export function attachmentCount(op: ViceOperation, params?: unknown): number {
   return op === "programLoad" || op === "autostart" || op === "diskAttach" ? 1 : 0;
 }
 
+/** A space field. `what` names the field in the refusal. */
+function validSpace(value: unknown, what = "space"): Space {
+  if (!isOneOf(SPACES, value)) invalid(`${what} must be c64 or drive8`);
+  return value;
+}
+
+/** A view field. `what` names the field in the refusal. */
+function validView(value: unknown, what = "view"): MemoryView {
+  if (!isOneOf(MEMORY_VIEWS, value)) invalid(`${what} must be cpu or ram`);
+  return value;
+}
+
+/** An address field. `what` names the field in the refusal. */
+function validAddress(value: unknown, what = "address"): number {
+  if (!isInteger(value, 0, 0xffff)) invalid(`${what} must be an integer from 0 to 65535`);
+  return value;
+}
+
+function noParams(params: Fields): Record<string, never> {
+  onlyFields(params, []);
+  return {};
+}
+
+/** The parameters of a breakpoint or watchpoint action other than add; undefined for add. */
+function pointAction(params: Fields): { action: "list" } | { action: "remove" | "enable" | "disable"; id: number } | undefined {
+  if (!isOneOf(CHECKPOINT_ACTIONS, params.action)) invalid(`action must be one of ${CHECKPOINT_ACTIONS.join(", ")}`);
+  if (params.action === "list") {
+    onlyFields(params, ["action"]);
+    return { action: "list" };
+  }
+  if (params.action === "add") return undefined;
+  onlyFields(params, ["action", "id"]);
+  if (!isInteger(params.id, 1, 0xffff_ffff)) invalid("id must be a positive integer");
+  return { action: params.action, id: params.id };
+}
+
+/** The parameter check of each operation: refuses with invalid-input, else returns the checked parameters. */
+const PARAMS: { [O in ViceOperation]: (params: Fields) => ViceOperations[O]["params"] } = {
+  status: noParams,
+  vicii: noParams,
+  sid: noParams,
+  screenBaselines: noParams,
+  screenCapture: (params) => {
+    onlyFields(params, ["baseline"]);
+    return params.baseline === undefined ? {} : { baseline: validName(params.baseline, "baseline") };
+  },
+  screenDiscard: (params) => {
+    onlyFields(params, ["baseline"]);
+    return { baseline: validName(params.baseline, "baseline") };
+  },
+  snapshot: (params) => {
+    onlyFields(params, params.action === "list" ? ["action"] : ["action", "name"]);
+    if (params.action === "list") return { action: "list" };
+    if (params.action !== "save" && params.action !== "restore" && params.action !== "remove") {
+      invalid("action must be save, restore, list or remove");
+    }
+    return { action: params.action, name: validName(params.name, "name") };
+  },
+  snapshotFile: (params) => {
+    if (params.action === "restore") {
+      onlyFields(params, ["action"]);
+      return { action: "restore" };
+    }
+    if (params.action !== "export") invalid("action must be export or restore");
+    onlyFields(params, ["action", "name"]);
+    return { action: "export", name: validName(params.name, "name") };
+  },
+  screenCompare: (params) => {
+    onlyFields(params, ["baseline", "maxMismatchRatio", "mask", "includeDiff"]);
+    const ratio = params.maxMismatchRatio;
+    if (typeof ratio !== "number" || !(ratio >= 0 && ratio <= 1)) invalid("maxMismatchRatio must be a number from 0 to 1");
+    if (!Array.isArray(params.mask) || params.mask.length > MAX_MASK_RECTANGLES) invalid(`mask must be a list of at most ${MAX_MASK_RECTANGLES} rectangles`);
+    const mask = params.mask.map((rectangle): Rectangle => {
+      if (!isObject(rectangle)) invalid("each mask entry must be a rectangle");
+      onlyFields(rectangle, ["x", "y", "width", "height"], "a mask rectangle");
+      const ok = isInteger(rectangle.x, 0, 4095) && isInteger(rectangle.y, 0, 4095) && isInteger(rectangle.width, 1, 4096) && isInteger(rectangle.height, 1, 4096);
+      if (!ok) invalid("a mask rectangle needs integer x, y, width and height, with width and height at least 1");
+      return { x: rectangle.x as number, y: rectangle.y as number, width: rectangle.width as number, height: rectangle.height as number };
+    });
+    if (typeof params.includeDiff !== "boolean") invalid("includeDiff must be true or false");
+    return { baseline: validName(params.baseline, "baseline"), maxMismatchRatio: ratio, mask, includeDiff: params.includeDiff };
+  },
+  cpuHistory: (params) => {
+    onlyFields(params, ["limit", "space"]);
+    if (!isInteger(params.limit, 1, MAX_HISTORY)) invalid(`limit must be an integer from 1 to ${MAX_HISTORY}`);
+    return { limit: params.limit, space: validSpace(params.space) };
+  },
+  trace: (params) => {
+    onlyFields(params, ["points", "frames", "maxHits"]);
+    if (!Array.isArray(params.points) || params.points.length === 0 || params.points.length > MAX_TRACE_POINTS) invalid(`points must be a list of 1 to ${MAX_TRACE_POINTS} points`);
+    const points = (params.points as unknown[]).map((point) => {
+      if (!isObject(point)) return invalid("a point is an object with kind, start and end");
+      onlyFields(point, ["kind", "start", "end"]);
+      if (!isOneOf(TRACE_KINDS, point.kind)) invalid("a point kind must be exec, read or write");
+      if (!isInteger(point.start, 0, 0xffff) || !isInteger(point.end, point.start as number, 0xffff)) invalid("a point needs start and end from $0000 to $ffff, the end not before the start");
+      return { kind: point.kind, start: point.start, end: point.end } as TracePoint;
+    });
+    if (!isInteger(params.frames, 1, MAX_TRACE_FRAMES)) invalid(`frames must be an integer from 1 to ${MAX_TRACE_FRAMES}`);
+    if (!isInteger(params.maxHits, 1, MAX_TRACE_HITS)) invalid(`maxHits must be an integer from 1 to ${MAX_TRACE_HITS}`);
+    return { points, frames: params.frames, maxHits: params.maxHits };
+  },
+  backtrace: (params) => {
+    onlyFields(params, ["depth", "space"]);
+    if (!isInteger(params.depth, 1, MAX_BACKTRACE)) invalid(`depth must be an integer from 1 to ${MAX_BACKTRACE}`);
+    return { depth: params.depth, space: validSpace(params.space) };
+  },
+  timing: (params) => {
+    onlyFields(params, ["action"]);
+    if (!isOneOf(TIMING_ACTIONS, params.action)) invalid("action must be start or read");
+    return { action: params.action };
+  },
+  observe: (params) => {
+    onlyFields(params, ["registers", "memory", "vicii", "sprites", "cia", "sid", "screen", "timing"]);
+    const result: ObserveParams = {};
+    if (params.registers !== undefined) result.registers = validSpace(params.registers, "registers");
+    if (params.memory !== undefined) {
+      const ranges = params.memory;
+      if (!Array.isArray(ranges) || ranges.length === 0 || ranges.length > MAX_OBSERVE_RANGES) {
+        invalid(`memory must hold 1 to ${MAX_OBSERVE_RANGES} ranges`);
+      }
+      result.memory = ranges.map((range) => validateViceParams("memoryRead", range));
+      if (result.memory.reduce((sum, range) => sum + range.size, 0) > MAX_OBSERVE_BYTES) {
+        invalid(`the memory ranges must hold at most ${MAX_OBSERVE_BYTES} bytes together`);
+      }
+    }
+    for (const flag of ["vicii", "sid", "screen", "timing"] as const) {
+      if (params[flag] === undefined) continue;
+      if (typeof params[flag] !== "boolean") invalid(`${flag} must be true or false`);
+      if (params[flag]) result[flag] = true;
+    }
+    if (params.sprites !== undefined) result.sprites = validateViceParams("sprites", { indexes: params.sprites }).indexes;
+    if (params.cia !== undefined) result.cia = validateViceParams("cia", { which: params.cia }).which;
+    if (Object.keys(result).length === 0) invalid("ask for at least one observation");
+    return result;
+  },
+  profile: (params) => {
+    onlyFields(params, params.action === "clear" ? ["action"] : ["action", "limit"]);
+    if (params.action === "clear") return { action: "clear" };
+    if (params.action !== "read") invalid("action must be read or clear");
+    if (!isInteger(params.limit, 1, MAX_PROFILE)) invalid(`limit must be an integer from 1 to ${MAX_PROFILE}`);
+    return { action: "read", limit: params.limit };
+  },
+  memmap: (params) => {
+    onlyFields(params, params.action === "clear" ? ["action"] : ["action", "start", "end", "maxRanges"]);
+    if (params.action === "clear") return { action: "clear" };
+    if (params.action !== "read") invalid("action must be read or clear");
+    if (!isInteger(params.start, 0, 0xffff) || !isInteger(params.end, 0, 0xffff)) invalid("start and end must be integers from 0 to 65535");
+    if (params.end < params.start) invalid("end must not be before start");
+    if (!isInteger(params.maxRanges, 1, MAX_MEMMAP_RANGES)) invalid(`maxRanges must be an integer from 1 to ${MAX_MEMMAP_RANGES}`);
+    return { action: "read", start: params.start, end: params.end, maxRanges: params.maxRanges };
+  },
+  sprites: (params) => {
+    onlyFields(params, ["indexes"]);
+    const indexes = params.indexes;
+    if (!Array.isArray(indexes) || !indexes.every((index) => isInteger(index, 0, 7))) invalid("sprites holds sprite numbers 0 to 7");
+    if (new Set(indexes).size !== indexes.length) invalid("sprites holds each sprite number once");
+    return { indexes: indexes as number[] };
+  },
+  cia: (params) => {
+    onlyFields(params, ["which"]);
+    if (!isOneOf(CIA_SELECTIONS, params.which)) invalid("cia must be 1, 2 or both");
+    return { which: params.which };
+  },
+  memoryRead: (params) => {
+    onlyFields(params, ["address", "size", "space", "view"]);
+    const address = validAddress(params.address);
+    if (!isInteger(params.size, 1, MAX_MEMORY_READ)) invalid(`size must be an integer from 1 to ${MAX_MEMORY_READ}`);
+    if (address + params.size > 0x10000) invalid("the range runs past $ffff");
+    return { address, size: params.size, space: validSpace(params.space), view: validView(params.view) };
+  },
+  ioRead: (params) => {
+    onlyFields(params, ["address", "size"]);
+    if (!isInteger(params.address, 0xd000, 0xdfff)) invalid("address must be in the I/O area $d000-$dfff");
+    if (!isInteger(params.size, 1, 0x1000) || params.address + params.size > 0xe000) invalid("the range must stay inside $d000-$dfff");
+    return { address: params.address, size: params.size };
+  },
+  registersGet: (params) => {
+    onlyFields(params, ["space"]);
+    return { space: validSpace(params.space) };
+  },
+  memoryWrite: (params) => {
+    onlyFields(params, ["address", "data", "space", "view"]);
+    const address = validAddress(params.address);
+    if (!isHexData(params.data) || params.data.length === 0) invalid("data must be lowercase hex bytes");
+    const size = params.data.length / 2;
+    if (size > MAX_MEMORY_WRITE) invalid(`data must be at most ${MAX_MEMORY_WRITE} bytes`);
+    if (address + size > 0x10000) invalid("the range runs past $ffff");
+    return { address, data: params.data, space: validSpace(params.space), view: validView(params.view) };
+  },
+  memorySearch: (params) => {
+    onlyFields(params, ["start", "end", "pattern", "space", "view", "maxResults"]);
+    if (!isInteger(params.start, 0, 0xffff) || !isInteger(params.end, 0, 0xffff)) invalid("start and end must be integers from 0 to 65535");
+    if (params.end < params.start) invalid("end must not be before start");
+    const pattern = params.pattern;
+    if (!Array.isArray(pattern) || pattern.length === 0 || pattern.length > MAX_SEARCH_PATTERN) {
+      invalid(`pattern must have 1 to ${MAX_SEARCH_PATTERN} bytes`);
+    }
+    if (!pattern.every((token) => token === null || isInteger(token, 0, 0xff))) invalid("pattern holds bytes 0 to 255 or null wildcards");
+    if (pattern.every((token) => token === null)) invalid("pattern needs at least one byte that is not a wildcard");
+    const space = validSpace(params.space);
+    const view = validView(params.view);
+    if (!isInteger(params.maxResults, 1, MAX_SEARCH_RESULTS)) invalid(`maxResults must be an integer from 1 to ${MAX_SEARCH_RESULTS}`);
+    return { start: params.start, end: params.end, pattern: pattern as Array<number | null>, space, view, maxResults: params.maxResults };
+  },
+  memoryCompare: (params) => {
+    onlyFields(params, ["left", "right", "size"]);
+    const size = params.size;
+    if (!isInteger(size, 1, MAX_COMPARE_SIZE)) invalid(`size must be an integer from 1 to ${MAX_COMPARE_SIZE}`);
+    const location = (value: unknown, name: string): MemoryLocation => {
+      if (!isObject(value)) invalid(`${name} must be an object`);
+      onlyFields(value, ["address", "space", "view"], name);
+      const address = validAddress(value.address, `${name} address`);
+      if (address + size > 0x10000) invalid(`the ${name} range runs past $ffff`);
+      return { address, space: validSpace(value.space, `${name} space`), view: validView(value.view, `${name} view`) };
+    };
+    return { left: location(params.left, "left"), right: location(params.right, "right"), size };
+  },
+  disassemble: (params) => {
+    onlyFields(params, ["address", "count", "space", "view"]);
+    const address = validAddress(params.address);
+    if (!isInteger(params.count, 1, MAX_DISASSEMBLE)) invalid(`count must be an integer from 1 to ${MAX_DISASSEMBLE}`);
+    return { address, count: params.count, space: validSpace(params.space), view: validView(params.view) };
+  },
+  registersSet: (params) => {
+    onlyFields(params, ["space", "values"]);
+    const space = validSpace(params.space);
+    const values = params.values;
+    if (!isObject(values)) invalid("values must be an object");
+    const known = ["pc", "a", "x", "y", "sp", "flags"];
+    for (const key of Object.keys(values)) if (!known.includes(key)) invalid(`values has an unknown register: ${key}`);
+    if (Object.keys(values).length === 0) invalid("values must name at least one register");
+    const result: RegisterValues = {};
+    if (values.pc !== undefined) result.pc = validAddress(values.pc, "pc");
+    for (const name of ["a", "x", "y", "sp"] as const) {
+      if (values[name] === undefined) continue;
+      if (!isInteger(values[name], 0, 0xff)) invalid(`${name} must be an integer from 0 to 255`);
+      result[name] = values[name];
+    }
+    if (values.flags !== undefined) {
+      const flags = values.flags;
+      if (!isObject(flags)) invalid("flags must be an object");
+      const set: Partial<CpuFlags> = {};
+      for (const [flag, value] of Object.entries(flags)) {
+        if (!Object.hasOwn(FLAG_BITS, flag)) invalid(`flags has an unknown flag: ${flag}`);
+        if (typeof value !== "boolean") invalid(`flag ${flag} must be true or false`);
+        set[flag as keyof CpuFlags] = value;
+      }
+      result.flags = set;
+    }
+    return { space, values: result };
+  },
+  execution: (params) => {
+    onlyFields(params, ["action", "space", "count", "anchor"]);
+    if (!isOneOf(EXECUTION_ACTIONS, params.action)) invalid(`action must be one of ${EXECUTION_ACTIONS.join(", ")}`);
+    const result: ExecutionParams = { action: params.action, space: validSpace(params.space) };
+    const counted = params.action === "step" || params.action === "next" || params.action === "advance-frames";
+    if (params.count !== undefined) {
+      if (!counted) invalid(`count is not used with action ${params.action}`);
+      if (!isInteger(params.count, 1, MAX_EXECUTION_COUNT)) invalid(`count must be an integer from 1 to ${MAX_EXECUTION_COUNT}`);
+    } else if (params.action === "advance-frames") {
+      invalid("advance-frames needs count, the number of frames");
+    }
+    if (counted) result.count = (params.count as number | undefined) ?? 1;
+    if (params.anchor !== undefined) {
+      if (params.action !== "advance-frames") invalid(`anchor is not used with action ${params.action}`);
+      const anchor = params.anchor;
+      if (!isObject(anchor) || !isInteger(anchor.line, 0, 511) || !isInteger(anchor.cycle, 0, 127)) invalid("anchor needs line from 0 to 511 and cycle from 0 to 127");
+      onlyFields(anchor as Record<string, unknown>, ["line", "cycle"]);
+      result.anchor = { line: anchor.line as number, cycle: anchor.cycle as number };
+    }
+    return result;
+  },
+  runUntil: (params) => {
+    onlyFields(params, ["target", "timeoutFrames"]);
+    if (!isInteger(params.timeoutFrames, 1, MAX_TIMEOUT_FRAMES)) invalid(`timeoutFrames must be an integer from 1 to ${MAX_TIMEOUT_FRAMES}`);
+    return { target: validateRunTarget(params.target), timeoutFrames: params.timeoutFrames };
+  },
+  programLoad: (params) => {
+    onlyFields(params, ["address"]);
+    return params.address === undefined ? {} : { address: validAddress(params.address) };
+  },
+  autostart: (params) => {
+    onlyFields(params, ["type", "index", "run"]);
+    if (!isOneOf(AUTOSTART_TYPES, params.type)) invalid(`the file must be one of: ${AUTOSTART_TYPES.map((type) => `.${type}`).join(", ")}`);
+    if (!isInteger(params.index, 0, 0xffff)) invalid("index must be an integer from 0 to 65535");
+    if (typeof params.run !== "boolean") invalid("run must be true or false");
+    return { type: params.type, index: params.index, run: params.run };
+  },
+  diskAttach: (params) => {
+    onlyFields(params, ["type"]);
+    if (!isOneOf(DISK_TYPES, params.type)) invalid(`the disk image must be one of: ${DISK_TYPES.map((type) => `.${type}`).join(", ")}`);
+    return { type: params.type };
+  },
+  keyboard: (params) => {
+    onlyFields(params, ["data"]);
+    if (!isHexData(params.data) || params.data.length === 0) invalid("data must be PETSCII bytes as lowercase hex");
+    if (params.data.length / 2 > MAX_KEYBOARD_BYTES) invalid(`at most ${MAX_KEYBOARD_BYTES} bytes can be queued at once`);
+    // VICE feeds a C string, so a zero byte would end the text early.
+    if (/^(?:..)*?00/.test(params.data)) invalid("PETSCII byte 0 cannot be typed");
+    return { data: params.data };
+  },
+  press: (params) => {
+    onlyFields(params, ["taps", "frames"]);
+    if (!Array.isArray(params.taps) || params.taps.length === 0 || params.taps.length > MAX_PRESS_TAPS) invalid(`taps must be a list of 1 to ${MAX_PRESS_TAPS} taps`);
+    const taps = (params.taps as unknown[]).map((tap): KeyTap => {
+      if (!isObject(tap)) invalid("each tap must be an object with keys and restore");
+      onlyFields(tap, ["keys", "restore"], "a tap");
+      const { keys, restore } = tap;
+      if (!Array.isArray(keys) || !keys.every((key, index) => isInteger(key, 0, 63) && (index === 0 || key > (keys[index - 1] as number)))) {
+        invalid("keys of a tap must be matrix places from 0 to 63, each once, in rising order");
+      }
+      if (typeof restore !== "boolean") invalid("restore of a tap must be true or false");
+      const count = keys.length + (restore ? 1 : 0);
+      if (count === 0 || count > MAX_TAP_KEYS) invalid(`a tap holds 1 to ${MAX_TAP_KEYS} keys, RESTORE included`);
+      return { keys: keys as number[], restore };
+    });
+    if (!isInteger(params.frames, 1, MAX_PRESS_FRAMES)) invalid(`frames must be a whole number from 1 to ${MAX_PRESS_FRAMES}`);
+    return { taps, frames: params.frames };
+  },
+  joystick: (params) => {
+    onlyFields(params, ["port", "direction", "fire"]);
+    if (params.port !== 1 && params.port !== 2) invalid("port must be 1 or 2");
+    if (!isOneOf(JOYSTICK_DIRECTIONS, params.direction)) invalid(`direction must be one of ${JOYSTICK_DIRECTIONS.join(", ")}`);
+    if (typeof params.fire !== "boolean") invalid("fire must be true or false");
+    return { port: params.port, direction: params.direction, fire: params.fire };
+  },
+  breakpoint: (params) => {
+    const other = pointAction(params);
+    if (other !== undefined) return other;
+    onlyFields(params, ["action", "address", "space", "size", "condition"]);
+    const added: Extract<BreakpointParams, { action: "add" }> = { action: "add", address: validAddress(params.address), space: validSpace(params.space) };
+    if (params.size !== undefined) {
+      if (!isInteger(params.size, 1, 0x10000) || added.address + params.size > 0x10000) invalid("size must keep the range inside $0000-$ffff");
+      added.size = params.size;
+    }
+    if (params.condition !== undefined) added.condition = validateCondition(params.condition);
+    return added;
+  },
+  watchpoint: (params) => {
+    const other = pointAction(params);
+    if (other !== undefined) return other;
+    onlyFields(params, ["action", "address", "space", "size", "access", "condition"]);
+    const address = validAddress(params.address);
+    const space = validSpace(params.space);
+    if (!isInteger(params.size, 1, MAX_WATCH_SIZE)) invalid(`size must be an integer from 1 to ${MAX_WATCH_SIZE}`);
+    if (address + params.size > 0x10000) invalid("the range runs past $ffff");
+    if (!isOneOf(WATCH_ACCESS, params.access)) invalid("access must be read, write or read-write");
+    const added: Extract<WatchpointParams, { action: "add" }> = { action: "add", address, space, size: params.size, access: params.access };
+    if (params.condition !== undefined) added.condition = validateCondition(params.condition);
+    return added;
+  },
+  reset: (params) => {
+    onlyFields(params, ["mode", "run"]);
+    if (!isOneOf(RESET_MODES, params.mode)) invalid("mode must be soft or hard");
+    if (typeof params.run !== "boolean") invalid("run must be true or false");
+    return { mode: params.mode, run: params.run };
+  },
+  warp: (params) => {
+    onlyFields(params, ["enabled"]);
+    if (typeof params.enabled !== "boolean") invalid("enabled must be true or false");
+    return { enabled: params.enabled };
+  },
+  window: (params) => {
+    onlyFields(params, ["action"]);
+    if (!isOneOf(WINDOW_ACTIONS, params.action)) invalid("action must be open or close");
+    return { action: params.action };
+  },
+};
+
+export const VICE_OPERATIONS = Object.keys(PARAMS) as readonly ViceOperation[];
+
 /** Validates request parameters on the host. Throws WireFailure(invalid-input). */
 export function validateViceParams<O extends ViceOperation>(op: O, params: unknown): ViceOperations[O]["params"] {
   if (!isObject(params)) invalid("parameters must be an object");
-  switch (op) {
-    case "status":
-    case "vicii":
-    case "sid":
-    case "screenBaselines":
-      onlyFields(params, []);
-      return {} as ViceOperations[O]["params"];
-    case "screenCapture": {
-      onlyFields(params, ["baseline"]);
-      if (params.baseline === undefined) return {} as ViceOperations[O]["params"];
-      return { baseline: validName(params.baseline, "baseline") } as ViceOperations[O]["params"];
-    }
-    case "screenDiscard":
-      onlyFields(params, ["baseline"]);
-      return { baseline: validName(params.baseline, "baseline") } as ViceOperations[O]["params"];
-    case "snapshot": {
-      onlyFields(params, params.action === "list" ? ["action"] : ["action", "name"]);
-      if (params.action === "list") return { action: "list" } as ViceOperations[O]["params"];
-      if (params.action !== "save" && params.action !== "restore" && params.action !== "remove") {
-        invalid("action must be save, restore, list or remove");
-      }
-      return { action: params.action, name: validName(params.name, "name") } as ViceOperations[O]["params"];
-    }
-    case "snapshotFile": {
-      if (params.action === "restore") {
-        onlyFields(params, ["action"]);
-        return { action: "restore" } as ViceOperations[O]["params"];
-      }
-      if (params.action !== "export") invalid("action must be export or restore");
-      onlyFields(params, ["action", "name"]);
-      return { action: "export", name: validName(params.name, "name") } as ViceOperations[O]["params"];
-    }
-    case "screenCompare": {
-      onlyFields(params, ["baseline", "maxMismatchRatio", "mask", "includeDiff"]);
-      const ratio = params.maxMismatchRatio;
-      if (typeof ratio !== "number" || !(ratio >= 0 && ratio <= 1)) invalid("maxMismatchRatio must be a number from 0 to 1");
-      if (!Array.isArray(params.mask) || params.mask.length > MAX_MASK_RECTANGLES) invalid(`mask must be a list of at most ${MAX_MASK_RECTANGLES} rectangles`);
-      const mask = params.mask.map((rectangle): Rectangle => {
-        if (!isObject(rectangle)) invalid("each mask entry must be a rectangle");
-        onlyFields(rectangle, ["x", "y", "width", "height"], "a mask rectangle");
-        const ok = isInteger(rectangle.x, 0, 4095) && isInteger(rectangle.y, 0, 4095) && isInteger(rectangle.width, 1, 4096) && isInteger(rectangle.height, 1, 4096);
-        if (!ok) invalid("a mask rectangle needs integer x, y, width and height, with width and height at least 1");
-        return { x: rectangle.x as number, y: rectangle.y as number, width: rectangle.width as number, height: rectangle.height as number };
-      });
-      if (typeof params.includeDiff !== "boolean") invalid("includeDiff must be true or false");
-      return { baseline: validName(params.baseline, "baseline"), maxMismatchRatio: ratio, mask, includeDiff: params.includeDiff } as ViceOperations[O]["params"];
-    }
-    case "cpuHistory": {
-      onlyFields(params, ["limit", "space"]);
-      if (!isInteger(params.limit, 1, MAX_HISTORY)) invalid(`limit must be an integer from 1 to ${MAX_HISTORY}`);
-      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
-      return { limit: params.limit, space: params.space } as ViceOperations[O]["params"];
-    }
-    case "trace": {
-      onlyFields(params, ["points", "frames", "maxHits"]);
-      if (!Array.isArray(params.points) || params.points.length === 0 || params.points.length > MAX_TRACE_POINTS) invalid(`points must be a list of 1 to ${MAX_TRACE_POINTS} points`);
-      const points = (params.points as unknown[]).map((point) => {
-        if (!isObject(point)) return invalid("a point is an object with kind, start and end");
-        onlyFields(point, ["kind", "start", "end"]);
-        if (!isOneOf(TRACE_KINDS, point.kind)) invalid("a point kind must be exec, read or write");
-        if (!isInteger(point.start, 0, 0xffff) || !isInteger(point.end, point.start as number, 0xffff)) invalid("a point needs start and end from $0000 to $ffff, the end not before the start");
-        return { kind: point.kind, start: point.start, end: point.end } as TracePoint;
-      });
-      if (!isInteger(params.frames, 1, MAX_TRACE_FRAMES)) invalid(`frames must be an integer from 1 to ${MAX_TRACE_FRAMES}`);
-      if (!isInteger(params.maxHits, 1, MAX_TRACE_HITS)) invalid(`maxHits must be an integer from 1 to ${MAX_TRACE_HITS}`);
-      return { points, frames: params.frames, maxHits: params.maxHits } as ViceOperations[O]["params"];
-    }
-    case "backtrace": {
-      onlyFields(params, ["depth", "space"]);
-      if (!isInteger(params.depth, 1, MAX_BACKTRACE)) invalid(`depth must be an integer from 1 to ${MAX_BACKTRACE}`);
-      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
-      return { depth: params.depth, space: params.space } as ViceOperations[O]["params"];
-    }
-    case "timing": {
-      onlyFields(params, ["action"]);
-      if (!isOneOf(TIMING_ACTIONS, params.action)) invalid("action must be start or read");
-      return { action: params.action } as ViceOperations[O]["params"];
-    }
-    case "observe": {
-      onlyFields(params, ["registers", "memory", "vicii", "sprites", "cia", "sid", "screen", "timing"]);
-      const result: ObserveParams = {};
-      if (params.registers !== undefined) {
-        if (!isOneOf(SPACES, params.registers)) invalid("registers must be c64 or drive8");
-        result.registers = params.registers;
-      }
-      if (params.memory !== undefined) {
-        const ranges = params.memory;
-        if (!Array.isArray(ranges) || ranges.length === 0 || ranges.length > MAX_OBSERVE_RANGES) {
-          invalid(`memory must hold 1 to ${MAX_OBSERVE_RANGES} ranges`);
-        }
-        result.memory = ranges.map((range) => validateViceParams("memoryRead", range));
-        if (result.memory.reduce((sum, range) => sum + range.size, 0) > MAX_OBSERVE_BYTES) {
-          invalid(`the memory ranges must hold at most ${MAX_OBSERVE_BYTES} bytes together`);
-        }
-      }
-      for (const flag of ["vicii", "sid", "screen", "timing"] as const) {
-        if (params[flag] === undefined) continue;
-        if (typeof params[flag] !== "boolean") invalid(`${flag} must be true or false`);
-        if (params[flag]) result[flag] = true;
-      }
-      if (params.sprites !== undefined) result.sprites = validateViceParams("sprites", { indexes: params.sprites }).indexes;
-      if (params.cia !== undefined) result.cia = validateViceParams("cia", { which: params.cia }).which;
-      if (Object.keys(result).length === 0) invalid("ask for at least one observation");
-      return result as ViceOperations[O]["params"];
-    }
-    case "profile": {
-      onlyFields(params, params.action === "clear" ? ["action"] : ["action", "limit"]);
-      if (params.action === "clear") return { action: "clear" } as ViceOperations[O]["params"];
-      if (params.action !== "read") invalid("action must be read or clear");
-      if (!isInteger(params.limit, 1, MAX_PROFILE)) invalid(`limit must be an integer from 1 to ${MAX_PROFILE}`);
-      return { action: "read", limit: params.limit } as ViceOperations[O]["params"];
-    }
-    case "memmap": {
-      onlyFields(params, params.action === "clear" ? ["action"] : ["action", "start", "end", "maxRanges"]);
-      if (params.action === "clear") return { action: "clear" } as ViceOperations[O]["params"];
-      if (params.action !== "read") invalid("action must be read or clear");
-      if (!isInteger(params.start, 0, 0xffff) || !isInteger(params.end, 0, 0xffff)) invalid("start and end must be integers from 0 to 65535");
-      if (params.end < params.start) invalid("end must not be before start");
-      if (!isInteger(params.maxRanges, 1, MAX_MEMMAP_RANGES)) invalid(`maxRanges must be an integer from 1 to ${MAX_MEMMAP_RANGES}`);
-      return { action: "read", start: params.start, end: params.end, maxRanges: params.maxRanges } as ViceOperations[O]["params"];
-    }
-    case "sprites": {
-      onlyFields(params, ["indexes"]);
-      const indexes = params.indexes;
-      if (!Array.isArray(indexes) || !indexes.every((index) => isInteger(index, 0, 7))) invalid("sprites holds sprite numbers 0 to 7");
-      if (new Set(indexes).size !== indexes.length) invalid("sprites holds each sprite number once");
-      return { indexes: indexes as number[] } as ViceOperations[O]["params"];
-    }
-    case "cia": {
-      onlyFields(params, ["which"]);
-      if (!isOneOf(CIA_SELECTIONS, params.which)) invalid("cia must be 1, 2 or both");
-      return { which: params.which } as ViceOperations[O]["params"];
-    }
-    case "memoryRead": {
-      onlyFields(params, ["address", "size", "space", "view"]);
-      if (!isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
-      if (!isInteger(params.size, 1, MAX_MEMORY_READ)) invalid(`size must be an integer from 1 to ${MAX_MEMORY_READ}`);
-      if (params.address + params.size > 0x10000) invalid("the range runs past $ffff");
-      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
-      if (!isOneOf(MEMORY_VIEWS, params.view)) invalid("view must be cpu or ram");
-      const result: MemoryReadParams = { address: params.address, size: params.size, space: params.space, view: params.view };
-      return result as ViceOperations[O]["params"];
-    }
-    case "ioRead": {
-      onlyFields(params, ["address", "size"]);
-      if (!isInteger(params.address, 0xd000, 0xdfff)) invalid("address must be in the I/O area $d000-$dfff");
-      if (!isInteger(params.size, 1, 0x1000) || params.address + params.size > 0xe000) invalid("the range must stay inside $d000-$dfff");
-      return { address: params.address, size: params.size } as ViceOperations[O]["params"];
-    }
-    case "registersGet": {
-      onlyFields(params, ["space"]);
-      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
-      return { space: params.space } as ViceOperations[O]["params"];
-    }
-    case "memoryWrite": {
-      onlyFields(params, ["address", "data", "space", "view"]);
-      if (!isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
-      if (!isHexData(params.data) || params.data.length === 0) invalid("data must be lowercase hex bytes");
-      const size = params.data.length / 2;
-      if (size > MAX_MEMORY_WRITE) invalid(`data must be at most ${MAX_MEMORY_WRITE} bytes`);
-      if (params.address + size > 0x10000) invalid("the range runs past $ffff");
-      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
-      if (!isOneOf(MEMORY_VIEWS, params.view)) invalid("view must be cpu or ram");
-      const result: MemoryWriteParams = { address: params.address, data: params.data, space: params.space, view: params.view };
-      return result as ViceOperations[O]["params"];
-    }
-    case "memorySearch": {
-      onlyFields(params, ["start", "end", "pattern", "space", "view", "maxResults"]);
-      if (!isInteger(params.start, 0, 0xffff) || !isInteger(params.end, 0, 0xffff)) invalid("start and end must be integers from 0 to 65535");
-      if (params.end < params.start) invalid("end must not be before start");
-      const pattern = params.pattern;
-      if (!Array.isArray(pattern) || pattern.length === 0 || pattern.length > MAX_SEARCH_PATTERN) {
-        invalid(`pattern must have 1 to ${MAX_SEARCH_PATTERN} bytes`);
-      }
-      if (!pattern.every((token) => token === null || isInteger(token, 0, 0xff))) invalid("pattern holds bytes 0 to 255 or null wildcards");
-      if (pattern.every((token) => token === null)) invalid("pattern needs at least one byte that is not a wildcard");
-      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
-      if (!isOneOf(MEMORY_VIEWS, params.view)) invalid("view must be cpu or ram");
-      if (!isInteger(params.maxResults, 1, MAX_SEARCH_RESULTS)) invalid(`maxResults must be an integer from 1 to ${MAX_SEARCH_RESULTS}`);
-      return {
-        start: params.start,
-        end: params.end,
-        pattern: pattern as Array<number | null>,
-        space: params.space,
-        view: params.view,
-        maxResults: params.maxResults,
-      } as ViceOperations[O]["params"];
-    }
-    case "memoryCompare": {
-      onlyFields(params, ["left", "right", "size"]);
-      if (!isInteger(params.size, 1, MAX_COMPARE_SIZE)) invalid(`size must be an integer from 1 to ${MAX_COMPARE_SIZE}`);
-      const location = (value: unknown, name: string): MemoryLocation => {
-        if (!isObject(value)) invalid(`${name} must be an object`);
-        onlyFields(value, ["address", "space", "view"], name);
-        if (!isInteger(value.address, 0, 0xffff)) invalid(`${name} address must be an integer from 0 to 65535`);
-        if ((value.address as number) + (params.size as number) > 0x10000) invalid(`the ${name} range runs past $ffff`);
-        if (!isOneOf(SPACES, value.space)) invalid(`${name} space must be c64 or drive8`);
-        if (!isOneOf(MEMORY_VIEWS, value.view)) invalid(`${name} view must be cpu or ram`);
-        return { address: value.address as number, space: value.space, view: value.view };
-      };
-      return { left: location(params.left, "left"), right: location(params.right, "right"), size: params.size } as ViceOperations[O]["params"];
-    }
-    case "disassemble": {
-      onlyFields(params, ["address", "count", "space", "view"]);
-      if (!isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
-      if (!isInteger(params.count, 1, MAX_DISASSEMBLE)) invalid(`count must be an integer from 1 to ${MAX_DISASSEMBLE}`);
-      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
-      if (!isOneOf(MEMORY_VIEWS, params.view)) invalid("view must be cpu or ram");
-      return { address: params.address, count: params.count, space: params.space, view: params.view } as ViceOperations[O]["params"];
-    }
-    case "registersSet": {
-      onlyFields(params, ["space", "values"]);
-      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
-      const values = params.values;
-      if (!isObject(values)) invalid("values must be an object");
-      const known = ["pc", "a", "x", "y", "sp", "flags"];
-      for (const key of Object.keys(values)) if (!known.includes(key)) invalid(`values has an unknown register: ${key}`);
-      if (Object.keys(values).length === 0) invalid("values must name at least one register");
-      const result: RegisterValues = {};
-      if (values.pc !== undefined) {
-        if (!isInteger(values.pc, 0, 0xffff)) invalid("pc must be an integer from 0 to 65535");
-        result.pc = values.pc;
-      }
-      for (const name of ["a", "x", "y", "sp"] as const) {
-        if (values[name] === undefined) continue;
-        if (!isInteger(values[name], 0, 0xff)) invalid(`${name} must be an integer from 0 to 255`);
-        result[name] = values[name];
-      }
-      if (values.flags !== undefined) {
-        const flags = values.flags;
-        if (!isObject(flags)) invalid("flags must be an object");
-        const set: Partial<CpuFlags> = {};
-        for (const [flag, value] of Object.entries(flags)) {
-          if (!["n", "v", "b", "d", "i", "z", "c"].includes(flag)) invalid(`flags has an unknown flag: ${flag}`);
-          if (typeof value !== "boolean") invalid(`flag ${flag} must be true or false`);
-          set[flag as keyof CpuFlags] = value;
-        }
-        result.flags = set;
-      }
-      return { space: params.space, values: result } as ViceOperations[O]["params"];
-    }
-    case "execution": {
-      onlyFields(params, ["action", "space", "count", "anchor"]);
-      if (!isOneOf(EXECUTION_ACTIONS, params.action)) invalid(`action must be one of ${EXECUTION_ACTIONS.join(", ")}`);
-      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
-      const counted = params.action === "step" || params.action === "next" || params.action === "advance-frames";
-      if (params.count !== undefined) {
-        if (!counted) invalid(`count is not used with action ${params.action}`);
-        if (!isInteger(params.count, 1, MAX_EXECUTION_COUNT)) invalid(`count must be an integer from 1 to ${MAX_EXECUTION_COUNT}`);
-      } else if (params.action === "advance-frames") {
-        invalid("advance-frames needs count, the number of frames");
-      }
-      const result: ExecutionParams = { action: params.action, space: params.space };
-      if (counted) result.count = (params.count as number | undefined) ?? 1;
-      if (params.anchor !== undefined) {
-        if (params.action !== "advance-frames") invalid(`anchor is not used with action ${params.action}`);
-        const anchor = params.anchor;
-        if (!isObject(anchor) || !isInteger(anchor.line, 0, 511) || !isInteger(anchor.cycle, 0, 127)) invalid("anchor needs line from 0 to 511 and cycle from 0 to 127");
-        onlyFields(anchor as Record<string, unknown>, ["line", "cycle"]);
-        result.anchor = { line: anchor.line as number, cycle: anchor.cycle as number };
-      }
-      return result as ViceOperations[O]["params"];
-    }
-    case "runUntil": {
-      onlyFields(params, ["target", "timeoutFrames"]);
-      if (!isInteger(params.timeoutFrames, 1, MAX_TIMEOUT_FRAMES)) invalid(`timeoutFrames must be an integer from 1 to ${MAX_TIMEOUT_FRAMES}`);
-      return { target: validateRunTarget(params.target), timeoutFrames: params.timeoutFrames } as ViceOperations[O]["params"];
-    }
-    case "programLoad": {
-      onlyFields(params, ["address"]);
-      if (params.address !== undefined && !isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
-      return (params.address === undefined ? {} : { address: params.address }) as ViceOperations[O]["params"];
-    }
-    case "autostart": {
-      onlyFields(params, ["type", "index", "run"]);
-      if (!isOneOf(AUTOSTART_TYPES, params.type)) invalid(`the file must be one of: ${AUTOSTART_TYPES.map((type) => `.${type}`).join(", ")}`);
-      if (!isInteger(params.index, 0, 0xffff)) invalid("index must be an integer from 0 to 65535");
-      if (typeof params.run !== "boolean") invalid("run must be true or false");
-      return { type: params.type, index: params.index, run: params.run } as ViceOperations[O]["params"];
-    }
-    case "diskAttach": {
-      onlyFields(params, ["type"]);
-      if (!isOneOf(DISK_TYPES, params.type)) invalid(`the disk image must be one of: ${DISK_TYPES.map((type) => `.${type}`).join(", ")}`);
-      return { type: params.type } as ViceOperations[O]["params"];
-    }
-    case "keyboard": {
-      onlyFields(params, ["data"]);
-      if (!isHexData(params.data) || params.data.length === 0) invalid("data must be PETSCII bytes as lowercase hex");
-      if (params.data.length / 2 > MAX_KEYBOARD_BYTES) invalid(`at most ${MAX_KEYBOARD_BYTES} bytes can be queued at once`);
-      // VICE feeds a C string, so a zero byte would end the text early.
-      if (/^(?:..)*?00/.test(params.data)) invalid("PETSCII byte 0 cannot be typed");
-      return { data: params.data } as ViceOperations[O]["params"];
-    }
-    case "press": {
-      onlyFields(params, ["taps", "frames"]);
-      if (!Array.isArray(params.taps) || params.taps.length === 0 || params.taps.length > MAX_PRESS_TAPS) invalid(`taps must be a list of 1 to ${MAX_PRESS_TAPS} taps`);
-      const taps = (params.taps as unknown[]).map((tap): KeyTap => {
-        if (!isObject(tap)) invalid("each tap must be an object with keys and restore");
-        onlyFields(tap, ["keys", "restore"], "a tap");
-        const { keys, restore } = tap;
-        if (!Array.isArray(keys) || !keys.every((key, index) => isInteger(key, 0, 63) && (index === 0 || key > (keys[index - 1] as number)))) {
-          invalid("keys of a tap must be matrix places from 0 to 63, each once, in rising order");
-        }
-        if (typeof restore !== "boolean") invalid("restore of a tap must be true or false");
-        const count = keys.length + (restore ? 1 : 0);
-        if (count === 0 || count > MAX_TAP_KEYS) invalid(`a tap holds 1 to ${MAX_TAP_KEYS} keys, RESTORE included`);
-        return { keys: keys as number[], restore };
-      });
-      if (!isInteger(params.frames, 1, MAX_PRESS_FRAMES)) invalid(`frames must be a whole number from 1 to ${MAX_PRESS_FRAMES}`);
-      return { taps, frames: params.frames } as ViceOperations[O]["params"];
-    }
-    case "joystick": {
-      onlyFields(params, ["port", "direction", "fire"]);
-      if (params.port !== 1 && params.port !== 2) invalid("port must be 1 or 2");
-      if (!isOneOf(JOYSTICK_DIRECTIONS, params.direction)) invalid(`direction must be one of ${JOYSTICK_DIRECTIONS.join(", ")}`);
-      if (typeof params.fire !== "boolean") invalid("fire must be true or false");
-      return { port: params.port, direction: params.direction, fire: params.fire } as ViceOperations[O]["params"];
-    }
-    case "breakpoint":
-    case "watchpoint": {
-      if (!isOneOf(CHECKPOINT_ACTIONS, params.action)) invalid(`action must be one of ${CHECKPOINT_ACTIONS.join(", ")}`);
-      if (params.action === "list") {
-        onlyFields(params, ["action"]);
-        return { action: "list" } as ViceOperations[O]["params"];
-      }
-      if (params.action !== "add") {
-        onlyFields(params, ["action", "id"]);
-        if (!isInteger(params.id, 1, 0xffff_ffff)) invalid("id must be a positive integer");
-        return { action: params.action, id: params.id } as ViceOperations[O]["params"];
-      }
-      onlyFields(params, op === "watchpoint" ? ["action", "address", "space", "size", "access", "condition"] : ["action", "address", "space", "size", "condition"]);
-      if (!isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
-      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
-      const added: Record<string, unknown> = { action: "add", address: params.address, space: params.space };
-      if (op === "watchpoint") {
-        if (!isInteger(params.size, 1, MAX_WATCH_SIZE)) invalid(`size must be an integer from 1 to ${MAX_WATCH_SIZE}`);
-        if (params.address + params.size > 0x10000) invalid("the range runs past $ffff");
-        if (!isOneOf(WATCH_ACCESS, params.access)) invalid("access must be read, write or read-write");
-        added.size = params.size;
-        added.access = params.access;
-      } else if (params.size !== undefined) {
-        if (!isInteger(params.size, 1, 0x10000) || params.address + params.size > 0x10000) invalid("size must keep the range inside $0000-$ffff");
-        added.size = params.size;
-      }
-      if (params.condition !== undefined) added.condition = validateCondition(params.condition);
-      return added as ViceOperations[O]["params"];
-    }
-    case "reset": {
-      onlyFields(params, ["mode", "run"]);
-      if (!isOneOf(RESET_MODES, params.mode)) invalid("mode must be soft or hard");
-      if (typeof params.run !== "boolean") invalid("run must be true or false");
-      return { mode: params.mode, run: params.run } as ViceOperations[O]["params"];
-    }
-    case "warp": {
-      onlyFields(params, ["enabled"]);
-      if (typeof params.enabled !== "boolean") invalid("enabled must be true or false");
-      return { enabled: params.enabled } as ViceOperations[O]["params"];
-    }
-    case "window": {
-      onlyFields(params, ["action"]);
-      if (!isOneOf(WINDOW_ACTIONS, params.action)) invalid("action must be open or close");
-      return { action: params.action } as ViceOperations[O]["params"];
-    }
-  }
-  return invalid(`unknown operation: ${String(op)}`);
+  if (!Object.hasOwn(PARAMS, op)) invalid(`unknown operation: ${String(op)}`);
+  return PARAMS[op](params);
 }
 
 /**
@@ -1026,18 +996,11 @@ export function validateCondition(value: unknown): Condition {
     }
     case "memory": {
       onlyFields(value, ["kind", "address", "operator", "value", "space", "view"], "the condition");
-      if (!isInteger(value.address, 0, 0xffff)) invalid("condition address must be an integer from 0 to 65535");
+      const address = validAddress(value.address, "condition address");
       if (!isOneOf(COMPARISONS, value.operator)) invalid(`condition operator must be one of ${COMPARISONS.join(", ")}`);
-      if (!isOneOf(SPACES, value.space)) invalid("condition space must be c64 or drive8");
-      if (!isOneOf(MEMORY_VIEWS, value.view)) invalid("condition view must be cpu or ram");
-      return {
-        kind: "memory",
-        address: value.address,
-        operator: value.operator,
-        value: byte(value.value, "value"),
-        space: value.space,
-        view: value.view,
-      };
+      const space = validSpace(value.space, "condition space");
+      const view = validView(value.view, "condition view");
+      return { kind: "memory", address, operator: value.operator, value: byte(value.value, "value"), space, view };
     }
     case "raster": {
       onlyFields(value, ["kind", "line", "cycle"], "the condition");
@@ -1056,22 +1019,16 @@ function validateRunTarget(value: unknown): RunTarget {
   switch (value.kind) {
     case "address": {
       onlyFields(value, ["kind", "address", "space", "condition"], "the target");
-      if (!isInteger(value.address, 0, 0xffff)) invalid("target address must be an integer from 0 to 65535");
-      if (!isOneOf(SPACES, value.space)) invalid("target space must be c64 or drive8");
-      const target: RunTarget = { kind: "address", address: value.address, space: value.space };
+      const target: Extract<RunTarget, { kind: "address" }> = { kind: "address", address: validAddress(value.address, "target address"), space: validSpace(value.space, "target space") };
       if (value.condition !== undefined) target.condition = validateCondition(value.condition);
       return target;
     }
-    case "memory": {
+    case "memory":
       onlyFields(value, ["kind", "address", "operator", "value", "space", "view"], "the target");
-      const { kind: _kind, ...condition } = validateCondition({ ...value, kind: "memory" }) as Extract<Condition, { kind: "memory" }>;
-      return { kind: "memory", ...condition };
-    }
-    case "raster": {
+      return validateCondition(value) as Extract<Condition, { kind: "memory" }>;
+    case "raster":
       onlyFields(value, ["kind", "line", "cycle"], "the target");
-      const raster = validateCondition(value) as Extract<Condition, { kind: "raster" }>;
-      return raster;
-    }
+      return validateCondition(value) as Extract<Condition, { kind: "raster" }>;
   }
   return invalid("target kind must be address, memory or raster");
 }
@@ -1116,236 +1073,127 @@ function isHexData(value: unknown): value is string {
   return typeof value === "string" && /^(?:[0-9a-f]{2})*$/.test(value);
 }
 
-function isFlags(value: unknown): value is CpuFlags {
-  return isObject(value) && (["n", "v", "b", "d", "i", "z", "c"] as const).every((flag) => typeof value[flag] === "boolean");
+function isRegisters(value: Fields): boolean {
+  return (
+    isInteger(value.pc, 0, 0xffff) &&
+    (["a", "x", "y", "sp"] as const).every((name) => isInteger(value[name], 0, 0xff)) &&
+    isObject(value.flags) &&
+    Object.keys(FLAG_BITS).every((flag) => typeof (value.flags as Fields)[flag] === "boolean")
+  );
 }
 
-/** Validates a reply result on the client. Throws ProtocolError on a malformed result. */
-export function validateViceResult<O extends ViceOperation>(op: O, value: unknown): ViceOperations[O]["result"] {
-  if (!isObject(value)) throw new ProtocolError(`${op} result is not an object`);
-  switch (op) {
-    case "status": {
-      const ok =
-        isOneOf(RUN_STATES, value.state) &&
-        isOneOf(VIDEO_STANDARDS, value.videoStandard) &&
-        typeof value.warp === "boolean" &&
-        typeof value.window === "boolean" &&
-        (value.pc === undefined || isInteger(value.pc, 0, 0xffff)) &&
-        typeof value.cartridge === "boolean" &&
-        (value.stopReason === undefined || isOneOf(POINT_STOP_REASONS, value.stopReason)) &&
-        (value.pointId === undefined || isInteger(value.pointId, 1, Number.MAX_SAFE_INTEGER)) &&
-        (value.space === undefined || isOneOf(SPACES, value.space));
-      if (!ok) throw new ProtocolError("status result is malformed");
-      break;
-    }
-    case "memoryRead":
-    case "ioRead": {
-      if (!isInteger(value.address, 0, 0xffff) || !isHexData(value.data)) {
-        throw new ProtocolError(`${op} result is malformed`);
-      }
-      break;
-    }
-    case "registersGet": {
-      const ok =
-        isInteger(value.pc, 0, 0xffff) &&
-        (["a", "x", "y", "sp"] as const).every((name) => isInteger(value[name], 0, 0xff)) &&
-        isFlags(value.flags);
-      if (!ok) throw new ProtocolError("registersGet result is malformed");
-      break;
-    }
-    case "memoryWrite": {
-      if (!isInteger(value.address, 0, 0xffff) || !isInteger(value.bytesWritten, 1, MAX_MEMORY_WRITE)) {
-        throw new ProtocolError("memoryWrite result is malformed");
-      }
-      break;
-    }
-    case "registersSet": {
-      return validateViceResult("registersGet", value) as unknown as ViceOperations[O]["result"];
-    }
-    case "memorySearch": {
-      if (!Array.isArray(value.matches) || !value.matches.every((match) => isInteger(match, 0, 0xffff))) {
-        throw new ProtocolError("memorySearch result is malformed");
-      }
-      break;
-    }
-    case "memoryCompare": {
-      const ok =
-        typeof value.equal === "boolean" &&
-        isInteger(value.differentBytes, 0, MAX_COMPARE_SIZE) &&
-        Array.isArray(value.firstDifferences) &&
-        value.firstDifferences.length <= MAX_COMPARE_DIFFERENCES &&
-        value.firstDifferences.every(
-          (difference) =>
-            isObject(difference) &&
-            isInteger(difference.offset, 0, MAX_COMPARE_SIZE - 1) &&
-            isInteger(difference.left, 0, 0xff) &&
-            isInteger(difference.right, 0, 0xff),
-        );
-      if (!ok) throw new ProtocolError("memoryCompare result is malformed");
-      break;
-    }
-    case "disassemble": {
-      const ok =
-        Array.isArray(value.instructions) &&
-        value.instructions.every(
-          (instruction) =>
-            isObject(instruction) &&
-            isInteger(instruction.address, 0, 0xffff) &&
-            isHexData(instruction.bytes) &&
-            typeof instruction.text === "string",
-        );
-      if (!ok) throw new ProtocolError("disassemble result is malformed");
-      break;
-    }
-    case "runUntil": {
-      const ok =
-        typeof value.reached === "boolean" &&
-        isOneOf(STOP_REASONS, value.stopReason) &&
-        isOneOf(RUN_STATES, value.state) &&
-        isInteger(value.pc, 0, 0xffff) &&
-        isOneOf(SPACES, value.space) &&
-        (value.pointId === undefined || isInteger(value.pointId, 1, Number.MAX_SAFE_INTEGER));
-      if (!ok) throw new ProtocolError("runUntil result is malformed");
-      break;
-    }
-    case "execution": {
-      const ok =
-        isOneOf(RUN_STATES, value.state) &&
-        (value.pc === undefined || isInteger(value.pc, 0, 0xffff)) &&
-        (value.executed === undefined || isInteger(value.executed, 0, MAX_EXECUTION_COUNT)) &&
-        (value.advancedFrames === undefined || isInteger(value.advancedFrames, 0, MAX_EXECUTION_COUNT)) &&
-        (value.stopReason === undefined || value.stopReason === "frames" || isOneOf(POINT_STOP_REASONS, value.stopReason)) &&
-        (value.pointId === undefined || isInteger(value.pointId, 1, Number.MAX_SAFE_INTEGER)) &&
-        (value.space === undefined || isOneOf(SPACES, value.space));
-      if (!ok) throw new ProtocolError("execution result is malformed");
-      break;
-    }
-    case "reset":
-    case "autostart": {
-      if (!isOneOf(RUN_STATES, value.state)) throw new ProtocolError(`${op} result is malformed`);
-      if (op === "reset" && value.pc !== undefined && !isInteger(value.pc, 0, 0xffff)) throw new ProtocolError("reset result is malformed");
-      if (op === "autostart" && !(value.joysticksCentred === undefined || (Array.isArray(value.joysticksCentred) && value.joysticksCentred.every((port) => port === 1 || port === 2)))) {
-        throw new ProtocolError("autostart result is malformed");
-      }
-      break;
-    }
-    case "programLoad": {
-      const ok = isOneOf(RUN_STATES, value.state) && isInteger(value.loadAddress, 0, 0xffff) && isInteger(value.size, 1, 0x10000);
-      if (!ok) throw new ProtocolError("programLoad result is malformed");
-      break;
-    }
-    case "diskAttach": {
-      if (typeof value.attached !== "boolean") throw new ProtocolError("diskAttach result is malformed");
-      break;
-    }
-    case "keyboard": {
-      if (!isInteger(value.queuedBytes, 1, MAX_KEYBOARD_BYTES)) throw new ProtocolError("keyboard result is malformed");
-      break;
-    }
-    case "press": {
-      const ok =
-        isInteger(value.taps, 0, MAX_PRESS_TAPS) &&
-        isOneOf(RUN_STATES, value.state) &&
-        (value.stopReason === undefined || isOneOf(POINT_STOP_REASONS, value.stopReason)) &&
-        (value.pc === undefined || isInteger(value.pc, 0, 0xffff)) &&
-        (value.pointId === undefined || isInteger(value.pointId, 1, Number.MAX_SAFE_INTEGER)) &&
-        (value.space === undefined || isOneOf(SPACES, value.space));
-      if (!ok) throw new ProtocolError("press result is malformed");
-      break;
-    }
-    case "breakpoint": {
-      const ok = Array.isArray(value.breakpoints) ? value.breakpoints.every(isBreakpoint) : isRemoved(value) || isBreakpoint(value);
-      if (!ok) throw new ProtocolError("breakpoint result is malformed");
-      break;
-    }
-    case "watchpoint": {
-      const ok = Array.isArray(value.watchpoints) ? value.watchpoints.every(isWatchpoint) : isRemoved(value) || isWatchpoint(value);
-      if (!ok) throw new ProtocolError("watchpoint result is malformed");
-      break;
-    }
-    case "screenCompare": {
-      const bounds = value.bounds;
-      const ok =
-        typeof value.match === "boolean" &&
-        isInteger(value.mismatchingPixels, 0, 1 << 20) &&
-        isInteger(value.comparedPixels, 1, 1 << 20) &&
-        (value.mismatchingPixels as number) <= (value.comparedPixels as number) &&
-        typeof value.mismatchRatio === "number" &&
-        value.mismatchRatio >= 0 &&
-        value.mismatchRatio <= 1 &&
-        (bounds === undefined ||
-          (isObject(bounds) && (["x", "y", "width", "height"] as const).every((field) => isInteger(bounds[field], 0, 4096)))) &&
-        (value.diffPng === undefined || (typeof value.diffPng === "string" && /^[A-Za-z0-9+/]+={0,2}$/.test(value.diffPng)));
-      if (!ok) throw new ProtocolError("screenCompare result is malformed");
-      break;
-    }
-    case "screenBaselines": {
-      if (!Array.isArray(value.baselines) || !value.baselines.every((name) => typeof name === "string")) {
-        throw new ProtocolError("screenBaselines result is malformed");
-      }
-      break;
-    }
-    case "screenDiscard": {
-      if (value.removed !== true) throw new ProtocolError("screenDiscard result is malformed");
-      break;
-    }
-    case "snapshot": {
-      const ok =
-        (value.saved === true && typeof value.name === "string") ||
-        (value.restored === true && isOneOf(RUN_STATES, value.state)) ||
-        (Array.isArray(value.snapshots) && value.snapshots.every((name) => typeof name === "string")) ||
-        value.removed === true;
-      if (!ok) throw new ProtocolError("snapshot result is malformed");
-      break;
-    }
-    case "snapshotFile": {
-      const ok = (value.exported === true && isInteger(value.bytes, 1, 0xffff_ffff)) || (value.restored === true && isOneOf(RUN_STATES, value.state));
-      if (!ok) throw new ProtocolError("snapshotFile result is malformed");
-      break;
-    }
-    case "cpuHistory": {
-      const ok =
-        Array.isArray(value.entries) &&
-        value.entries.every(
-          (entry) =>
-            isObject(entry) &&
-            isInteger(entry.address, 0, 0xffff) &&
-            isHexData(entry.bytes) &&
-            typeof entry.text === "string" &&
-            (["a", "x", "y", "sp"] as const).every((name) => isInteger(entry[name], 0, 0xff)) &&
-            (entry.rasterLine === undefined || isInteger(entry.rasterLine, 0, 511)) &&
-            (entry.rasterCycle === undefined || isInteger(entry.rasterCycle, 0, 127)),
-        );
-      if (!ok) throw new ProtocolError("cpuHistory result is malformed");
-      break;
-    }
-    case "trace": {
-      const ok = isInteger(value.hits, 0, MAX_TRACE_HITS) && isInteger(value.frames, 0, MAX_TRACE_FRAMES) && isOneOf(TRACE_ENDS, value.end) && isInteger(value.pc, 0, 0xffff);
-      if (!ok) throw new ProtocolError("trace result is malformed");
-      break;
-    }
-    case "backtrace": {
-      const ok =
-        Array.isArray(value.frames) &&
-        value.frames.every(
-          (frame) =>
-            isObject(frame) && isInteger(frame.address, 0, 0xffff) && (frame.returnAddress === undefined || isInteger(frame.returnAddress, 0, 0xffff)),
-        );
-      if (!ok) throw new ProtocolError("backtrace result is malformed");
-      break;
-    }
-    case "timing": {
-      const ok = "cycles" in value ? typeof value.cycles === "string" && /^\d+$/.test(value.cycles) : value.started === true;
-      if (!ok) throw new ProtocolError("timing result is malformed");
-      break;
-    }
-    case "profile": {
-      if ("cleared" in value) {
-        if (value.cleared !== true) throw new ProtocolError("profile result is malformed");
-        break;
-      }
-      const ok =
-        Array.isArray(value.entries) &&
+/** The fields that a stop can add to a result: the pc, the point that stopped the machine, and the CPU that stopped. */
+function hasStopFields(value: Fields): boolean {
+  return (
+    (value.pc === undefined || isInteger(value.pc, 0, 0xffff)) &&
+    (value.pointId === undefined || isInteger(value.pointId, 1, Number.MAX_SAFE_INTEGER)) &&
+    (value.space === undefined || isOneOf(SPACES, value.space))
+  );
+}
+
+function isMemoryRead(value: Fields): boolean {
+  return isInteger(value.address, 0, 0xffff) && isHexData(value.data);
+}
+
+/** The shape check of each operation's result. A check can also throw its own ProtocolError. */
+const RESULTS: Record<ViceOperation, (value: Fields) => boolean> = {
+  status: (value) =>
+    isOneOf(RUN_STATES, value.state) &&
+    isOneOf(VIDEO_STANDARDS, value.videoStandard) &&
+    typeof value.warp === "boolean" &&
+    typeof value.window === "boolean" &&
+    typeof value.cartridge === "boolean" &&
+    (value.stopReason === undefined || isOneOf(POINT_STOP_REASONS, value.stopReason)) &&
+    hasStopFields(value),
+  memoryRead: isMemoryRead,
+  ioRead: isMemoryRead,
+  registersGet: isRegisters,
+  // A registersSet result is the full register set, and is refused as one.
+  registersSet: (value) => (validateViceResult("registersGet", value), true),
+  memoryWrite: (value) => isInteger(value.address, 0, 0xffff) && isInteger(value.bytesWritten, 1, MAX_MEMORY_WRITE),
+  memorySearch: (value) => Array.isArray(value.matches) && value.matches.every((match) => isInteger(match, 0, 0xffff)),
+  memoryCompare: (value) =>
+    typeof value.equal === "boolean" &&
+    isInteger(value.differentBytes, 0, MAX_COMPARE_SIZE) &&
+    Array.isArray(value.firstDifferences) &&
+    value.firstDifferences.length <= MAX_COMPARE_DIFFERENCES &&
+    value.firstDifferences.every(
+      (difference) =>
+        isObject(difference) && isInteger(difference.offset, 0, MAX_COMPARE_SIZE - 1) && isInteger(difference.left, 0, 0xff) && isInteger(difference.right, 0, 0xff),
+    ),
+  disassemble: (value) =>
+    Array.isArray(value.instructions) &&
+    value.instructions.every((instruction) => isObject(instruction) && isInteger(instruction.address, 0, 0xffff) && isHexData(instruction.bytes) && typeof instruction.text === "string"),
+  runUntil: (value) =>
+    typeof value.reached === "boolean" &&
+    isOneOf(STOP_REASONS, value.stopReason) &&
+    isOneOf(RUN_STATES, value.state) &&
+    isInteger(value.pc, 0, 0xffff) &&
+    isOneOf(SPACES, value.space) &&
+    hasStopFields(value),
+  execution: (value) =>
+    isOneOf(RUN_STATES, value.state) &&
+    (value.executed === undefined || isInteger(value.executed, 0, MAX_EXECUTION_COUNT)) &&
+    (value.advancedFrames === undefined || isInteger(value.advancedFrames, 0, MAX_EXECUTION_COUNT)) &&
+    (value.stopReason === undefined || value.stopReason === "frames" || isOneOf(POINT_STOP_REASONS, value.stopReason)) &&
+    hasStopFields(value),
+  reset: (value) => isOneOf(RUN_STATES, value.state) && (value.pc === undefined || isInteger(value.pc, 0, 0xffff)),
+  autostart: (value) =>
+    isOneOf(RUN_STATES, value.state) &&
+    (value.joysticksCentred === undefined || (Array.isArray(value.joysticksCentred) && value.joysticksCentred.every((port) => port === 1 || port === 2))),
+  programLoad: (value) => isOneOf(RUN_STATES, value.state) && isInteger(value.loadAddress, 0, 0xffff) && isInteger(value.size, 1, 0x10000),
+  diskAttach: (value) => typeof value.attached === "boolean",
+  keyboard: (value) => isInteger(value.queuedBytes, 1, MAX_KEYBOARD_BYTES),
+  press: (value) =>
+    isInteger(value.taps, 0, MAX_PRESS_TAPS) &&
+    isOneOf(RUN_STATES, value.state) &&
+    (value.stopReason === undefined || isOneOf(POINT_STOP_REASONS, value.stopReason)) &&
+    hasStopFields(value),
+  breakpoint: (value) => (Array.isArray(value.breakpoints) ? value.breakpoints.every(isBreakpoint) : isRemoved(value) || isBreakpoint(value)),
+  watchpoint: (value) => (Array.isArray(value.watchpoints) ? value.watchpoints.every(isWatchpoint) : isRemoved(value) || isWatchpoint(value)),
+  screenCompare: (value) => {
+    const bounds = value.bounds;
+    return (
+      typeof value.match === "boolean" &&
+      isInteger(value.mismatchingPixels, 0, 1 << 20) &&
+      isInteger(value.comparedPixels, 1, 1 << 20) &&
+      (value.mismatchingPixels as number) <= (value.comparedPixels as number) &&
+      typeof value.mismatchRatio === "number" &&
+      value.mismatchRatio >= 0 &&
+      value.mismatchRatio <= 1 &&
+      (bounds === undefined || (isObject(bounds) && (["x", "y", "width", "height"] as const).every((field) => isInteger(bounds[field], 0, 4096)))) &&
+      (value.diffPng === undefined || (typeof value.diffPng === "string" && /^[A-Za-z0-9+/]+={0,2}$/.test(value.diffPng)))
+    );
+  },
+  screenBaselines: (value) => Array.isArray(value.baselines) && value.baselines.every((name) => typeof name === "string"),
+  screenDiscard: (value) => value.removed === true,
+  snapshot: (value) =>
+    (value.saved === true && typeof value.name === "string") ||
+    (value.restored === true && isOneOf(RUN_STATES, value.state)) ||
+    (Array.isArray(value.snapshots) && value.snapshots.every((name) => typeof name === "string")) ||
+    value.removed === true,
+  snapshotFile: (value) => (value.exported === true && isInteger(value.bytes, 1, 0xffff_ffff)) || (value.restored === true && isOneOf(RUN_STATES, value.state)),
+  cpuHistory: (value) =>
+    Array.isArray(value.entries) &&
+    value.entries.every(
+      (entry) =>
+        isObject(entry) &&
+        isInteger(entry.address, 0, 0xffff) &&
+        isHexData(entry.bytes) &&
+        typeof entry.text === "string" &&
+        (["a", "x", "y", "sp"] as const).every((name) => isInteger(entry[name], 0, 0xff)) &&
+        (entry.rasterLine === undefined || isInteger(entry.rasterLine, 0, 511)) &&
+        (entry.rasterCycle === undefined || isInteger(entry.rasterCycle, 0, 127)),
+    ),
+  trace: (value) => isInteger(value.hits, 0, MAX_TRACE_HITS) && isInteger(value.frames, 0, MAX_TRACE_FRAMES) && isOneOf(TRACE_ENDS, value.end) && isInteger(value.pc, 0, 0xffff),
+  backtrace: (value) =>
+    Array.isArray(value.frames) &&
+    value.frames.every((frame) => isObject(frame) && isInteger(frame.address, 0, 0xffff) && (frame.returnAddress === undefined || isInteger(frame.returnAddress, 0, 0xffff))),
+  timing: (value) => ("cycles" in value ? typeof value.cycles === "string" && /^\d+$/.test(value.cycles) : value.started === true),
+  profile: (value) =>
+    "cleared" in value
+      ? value.cleared === true
+      : Array.isArray(value.entries) &&
         value.entries.every(
           (entry) =>
             isObject(entry) &&
@@ -1355,71 +1203,59 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
             typeof entry.selfCycles === "string" &&
             /^\d+$/.test(entry.selfCycles) &&
             typeof entry.percent === "number",
-        );
-      if (!ok) throw new ProtocolError("profile result is malformed");
-      break;
+        ),
+  memmap: (value) =>
+    Array.isArray(value.ranges)
+      ? value.ranges.every((range) => isObject(range) && isInteger(range.start, 0, 0xffff) && isInteger(range.end, 0, 0xffff) && isInteger(range.flags, 1, 0xff)) &&
+        (value.next === undefined || isInteger(value.next, 0, 0xffff))
+      : value.cleared === true,
+  observe: (value) => {
+    // Each present section must have the shape of the single-purpose result.
+    if (value.registers !== undefined) validateViceResult("registersGet", value.registers);
+    if (value.memory !== undefined) {
+      const ok = Array.isArray(value.memory) && value.memory.every((range) => isObject(range) && isMemoryRead(range));
+      if (!ok) throw new ProtocolError("observe memory is malformed");
     }
-    case "memmap": {
-      const isRange = (range: unknown) =>
-        isObject(range) &&
-        isInteger(range.start, 0, 0xffff) &&
-        isInteger(range.end, 0, 0xffff) &&
-        isInteger(range.flags, 1, 0xff);
-      const ok = Array.isArray(value.ranges)
-        ? value.ranges.every(isRange) && (value.next === undefined || isInteger(value.next, 0, 0xffff))
-        : value.cleared === true;
-      if (!ok) throw new ProtocolError("memmap result is malformed");
-      break;
-    }
-    case "observe": {
-      // Each present section must have the shape of the single-purpose result.
-      if (value.registers !== undefined) validateViceResult("registersGet", value.registers);
-      if (value.memory !== undefined) {
-        const ok = Array.isArray(value.memory) && value.memory.every((range) => isObject(range) && isInteger(range.address, 0, 0xffff) && isHexData(range.data));
-        if (!ok) throw new ProtocolError("observe memory is malformed");
+    if (value.vicii !== undefined) validateViceResult("vicii", value.vicii);
+    if (value.sprites !== undefined) validateViceResult("sprites", { sprites: value.sprites });
+    if (value.cia !== undefined) validateViceResult("cia", { chips: value.cia });
+    if (value.sid !== undefined) validateViceResult("sid", value.sid);
+    if (value.timing !== undefined) {
+      const timing = value.timing;
+      if (!isObject(timing) || !isInteger(timing.rasterLine, 0, 511) || !isInteger(timing.rasterCycle, 0, 127)) {
+        throw new ProtocolError("observe timing is malformed");
       }
-      if (value.vicii !== undefined) validateViceResult("vicii", value.vicii);
-      if (value.sprites !== undefined) validateViceResult("sprites", { sprites: value.sprites });
-      if (value.cia !== undefined) validateViceResult("cia", { chips: value.cia });
-      if (value.sid !== undefined) validateViceResult("sid", value.sid);
-      if (value.timing !== undefined) {
-        const timing = value.timing;
-        if (!isObject(timing) || !isInteger(timing.rasterLine, 0, 511) || !isInteger(timing.rasterCycle, 0, 127)) {
-          throw new ProtocolError("observe timing is malformed");
-        }
-      }
-      if (value.screen !== undefined) validateViceResult("screenCapture", value.screen);
-      break;
     }
-    case "vicii": {
-      const ok =
-        isInteger(value.rasterLine, 0, 511) &&
-        isOneOf(VICII_MODES, value.mode) &&
-        isInteger(value.screenAddress, 0, 0xffff) &&
-        isInteger(value.graphicsAddress, 0, 0xffff) &&
-        isInteger(value.scrollX, 0, 7) &&
-        isInteger(value.scrollY, 0, 7) &&
-        isInteger(value.borderColor, 0, 15) &&
-        Array.isArray(value.backgroundColors) &&
-        value.backgroundColors.length === 4 &&
-        value.backgroundColors.every((color) => isInteger(color, 0, 15));
-      if (!ok) throw new ProtocolError("vicii result is malformed");
-      break;
-    }
-    case "sprites": {
-      const isSprite = (sprite: unknown) =>
+    if (value.screen !== undefined) validateViceResult("screenCapture", value.screen);
+    return true;
+  },
+  vicii: (value) =>
+    isInteger(value.rasterLine, 0, 511) &&
+    isOneOf(VICII_MODES, value.mode) &&
+    isInteger(value.screenAddress, 0, 0xffff) &&
+    isInteger(value.graphicsAddress, 0, 0xffff) &&
+    isInteger(value.scrollX, 0, 7) &&
+    isInteger(value.scrollY, 0, 7) &&
+    isInteger(value.borderColor, 0, 15) &&
+    Array.isArray(value.backgroundColors) &&
+    value.backgroundColors.length === 4 &&
+    value.backgroundColors.every((color) => isInteger(color, 0, 15)),
+  sprites: (value) =>
+    Array.isArray(value.sprites) &&
+    value.sprites.every(
+      (sprite) =>
         isObject(sprite) &&
         isInteger(sprite.index, 0, 7) &&
         isInteger(sprite.x, 0, 511) &&
         isInteger(sprite.y, 0, 255) &&
         isInteger(sprite.color, 0, 15) &&
         isInteger(sprite.dataAddress, 0, 0xffff) &&
-        (["enabled", "multicolor", "expandX", "expandY", "behindBackground"] as const).every((flag) => typeof sprite[flag] === "boolean");
-      if (!Array.isArray(value.sprites) || !value.sprites.every(isSprite)) throw new ProtocolError("sprites result is malformed");
-      break;
-    }
-    case "cia": {
-      const isCia = (chip: unknown) =>
+        (["enabled", "multicolor", "expandX", "expandY", "behindBackground"] as const).every((flag) => typeof sprite[flag] === "boolean"),
+    ),
+  cia: (value) =>
+    Array.isArray(value.chips) &&
+    value.chips.every(
+      (chip) =>
         isObject(chip) &&
         (chip.id === 1 || chip.id === 2) &&
         (["portA", "portB", "ddrA", "ddrB", "controlA", "controlB", "interruptStatus"] as const).every((name) => isInteger(chip[name], 0, 0xff)) &&
@@ -1429,66 +1265,44 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         isInteger(chip.tod.hours, 0, 23) &&
         isInteger(chip.tod.minutes, 0, 99) &&
         isInteger(chip.tod.seconds, 0, 99) &&
-        isInteger(chip.tod.tenths, 0, 15);
-      if (!Array.isArray(value.chips) || !value.chips.every(isCia)) throw new ProtocolError("cia result is malformed");
-      break;
-    }
-    case "sid": {
-      const voices = value.voices;
-      const ok =
-        Array.isArray(voices) &&
-        voices.length === 3 &&
-        voices.every(
-          (voice) =>
-            isObject(voice) &&
-            isInteger(voice.index, 1, 3) &&
-            isInteger(voice.frequency, 0, 0xffff) &&
-            isInteger(voice.pulseWidth, 0, 0x0fff) &&
-            (["control", "attackDecay", "sustainRelease"] as const).every((name) => isInteger(voice[name], 0, 0xff)),
-        ) &&
-        isObject(value.filter) &&
-        isInteger(value.filter.cutoff, 0, 0x7ff) &&
-        isInteger(value.filter.resonance, 0, 15) &&
-        isInteger(value.filter.routing, 0, 15) &&
-        isInteger(value.filter.mode, 0, 15) &&
-        isInteger(value.volume, 0, 15);
-      if (!ok) throw new ProtocolError("sid result is malformed");
-      break;
-    }
-    case "screenCapture": {
-      const ok =
-        isInteger(value.width, 1, 1024) &&
-        isInteger(value.height, 1, 1024) &&
-        typeof value.png === "string" &&
-        /^[A-Za-z0-9+/]+={0,2}$/.test(value.png) &&
-        (value.baseline === undefined || (typeof value.baseline === "string" && TRANSIENT_NAME.test(value.baseline)));
-      if (!ok) throw new ProtocolError("screenCapture result is malformed");
-      break;
-    }
-    case "joystick": {
-      const ok =
-        (value.port === 1 || value.port === 2) &&
-        isOneOf(JOYSTICK_DIRECTIONS, value.direction) &&
-        typeof value.fire === "boolean";
-      if (!ok) throw new ProtocolError("joystick result is malformed");
-      break;
-    }
-    case "warp": {
-      if (typeof value.enabled !== "boolean") throw new ProtocolError("warp result is malformed");
-      break;
-    }
-    case "window": {
-      const ok =
-        typeof value.window === "boolean" &&
-        isOneOf(RUN_STATES, value.state) &&
-        Array.isArray(value.notCarried) &&
-        value.notCarried.every((entry) => typeof entry === "string");
-      if (!ok) throw new ProtocolError("window result is malformed");
-      break;
-    }
-    default:
-      throw new ProtocolError(`unknown operation: ${String(op)}`);
-  }
+        isInteger(chip.tod.tenths, 0, 15),
+    ),
+  sid: (value) => {
+    const voices = value.voices;
+    return (
+      Array.isArray(voices) &&
+      voices.length === 3 &&
+      voices.every(
+        (voice) =>
+          isObject(voice) &&
+          isInteger(voice.index, 1, 3) &&
+          isInteger(voice.frequency, 0, 0xffff) &&
+          isInteger(voice.pulseWidth, 0, 0x0fff) &&
+          (["control", "attackDecay", "sustainRelease"] as const).every((name) => isInteger(voice[name], 0, 0xff)),
+      ) &&
+      isObject(value.filter) &&
+      isInteger(value.filter.cutoff, 0, 0x7ff) &&
+      isInteger(value.filter.resonance, 0, 15) &&
+      isInteger(value.filter.routing, 0, 15) &&
+      isInteger(value.filter.mode, 0, 15) &&
+      isInteger(value.volume, 0, 15)
+    );
+  },
+  screenCapture: (value) =>
+    isInteger(value.width, 1, 1024) &&
+    isInteger(value.height, 1, 1024) &&
+    typeof value.png === "string" &&
+    /^[A-Za-z0-9+/]+={0,2}$/.test(value.png) &&
+    (value.baseline === undefined || (typeof value.baseline === "string" && TRANSIENT_NAME.test(value.baseline))),
+  joystick: (value) => (value.port === 1 || value.port === 2) && isOneOf(JOYSTICK_DIRECTIONS, value.direction) && typeof value.fire === "boolean",
+  warp: (value) => typeof value.enabled === "boolean",
+  window: (value) => typeof value.window === "boolean" && isOneOf(RUN_STATES, value.state) && Array.isArray(value.notCarried) && value.notCarried.every((entry) => typeof entry === "string"),
+};
+
+/** Validates a reply result on the client. Throws ProtocolError on a malformed result. */
+export function validateViceResult<O extends ViceOperation>(op: O, value: unknown): ViceOperations[O]["result"] {
+  if (!isObject(value)) throw new ProtocolError(`${op} result is not an object`);
+  if (!RESULTS[op](value)) throw new ProtocolError(`${op} result is malformed`);
   return value as unknown as ViceOperations[O]["result"];
 }
 
