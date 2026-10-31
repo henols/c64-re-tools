@@ -143,24 +143,28 @@ function quoteFields(component: string, text: string, effect: string | undefined
   return { file: found.file, heading: found.heading, text, effect };
 }
 
+const TEXT_OPTIONS = ["kind", "component", "severity", "by", "intent", "choice", "expected", "actual", "effect"];
+
+/** The arguments with each text option joined to the next argument: a text can start with a dash, for example "--compare failed". */
+export function joinedValues(argv: readonly string[]): string[] {
+  const joined: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index]!;
+    if (argument.startsWith("--") && TEXT_OPTIONS.includes(argument.slice(2)) && index + 1 < argv.length) {
+      index += 1;
+      joined.push(`${argument}=${argv[index]!}`);
+    } else joined.push(argument);
+  }
+  return joined;
+}
+
 function parse(argv: string[]): ReturnType<typeof parseArgs<{ args: string[]; strict: true; allowPositionals: true; options: Record<string, { type: "string" | "boolean" }> }>> {
   try {
     return parseArgs({
-      args: argv,
+      args: joinedValues(argv),
       strict: true,
       allowPositionals: true,
-      options: {
-        kind: { type: "string" },
-        component: { type: "string" },
-        severity: { type: "string" },
-        by: { type: "string" },
-        intent: { type: "string" },
-        choice: { type: "string" },
-        expected: { type: "string" },
-        actual: { type: "string" },
-        effect: { type: "string" },
-        help: { type: "boolean" },
-      },
+      options: { ...Object.fromEntries(TEXT_OPTIONS.map((name) => [name, { type: "string" as const }])), help: { type: "boolean" } },
     });
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
