@@ -6,7 +6,7 @@
 // writes the memory into the project. "loads" captures each part of a
 // multi-load program. No native unpack tool is used.
 
-import { type AddressRange, COVERAGE, EXECUTE, formatC64Address, READ, WRITE } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, EXECUTE, formatC64Address } from "#src/c64.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { IO_RAM, markIoRamWrites, readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
 import { readActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
@@ -17,16 +17,14 @@ import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
 import { PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
-import { basicStart, inspect, readMemoryMap, underRom, writtenThenExecuted } from "./lib/evidence.ts";
+import { basicStart, inspect, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
-import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, withoutRanges } from "./lib/stages.ts";
+import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "./lib/stages.ts";
 import { entryStateFile, machineState, readRam, readyState, removeStaleFiles, vectorsOf } from "./lib/machine.ts";
 
 /** Written-then-executed bytes from this many on are unpacking, decrypting or relocating, not self-changing code. */
 const UNPACKED_BYTES = 256;
 const MAX_ADVANCE = 10_000;
-/** The most ranges one memory map read gives. */
-const MAX_RANGES = 1000;
 
 /** Runs the steps; the reason when a runUntil step did not reach its target. */
 async function runSteps(client: ViceSessionClient, steps: ActionStep[]): Promise<string | undefined> {
@@ -65,20 +63,14 @@ async function trace(program: string, options: { frames: number; entry?: number;
       }
     }
     const { pc } = await client.registersGet("c64");
-    const ranges = await readMemoryMap(async (start) => {
-      const map = await client.memmap({ action: "read", start, end: 0xffff, maxRanges: MAX_RANGES });
-      if (!("ranges" in map)) throw new WireFailure("operation-failed", "The emulator did not give the memory map.");
-      const ranges = map.ranges.map(({ start: from, end, flags }) => ({ start: from, end, read: (flags & READ) !== 0, write: (flags & WRITE) !== 0, execute: (flags & EXECUTE) !== 0 }));
-      return map.next === undefined ? { ranges } : { ranges, next: map.next };
-    });
-    const { written, counted, bytes: count, running: atStop } = writtenThenExecuted(ranges, pc);
+    const { written, bytes: count, running: atStop } = writtenThenExecuted(await readCoverage(client), pc);
     // The run often ends in a KERNAL interrupt: the written code that runs next gives the range and the point after the unpacking.
     let running = atStop;
     let until = pc;
-    if (running === undefined && counted.length > 0) {
-      const next = await firstPcIn(client, counted);
+    if (running === undefined && written.length > 0) {
+      const next = await firstPcIn(client, written);
       if (next !== undefined) {
-        running = counted.find((range) => next >= range.start && next <= range.end);
+        running = written.find((range) => next >= range.start && next <= range.end);
         until = next;
       }
     }
@@ -88,11 +80,7 @@ async function trace(program: string, options: { frames: number; entry?: number;
         traced: true,
         frames: ran,
         pc: formatC64Address(pc),
-        writtenThenExecuted: listed(written, options.max, (range) => ({
-          start: formatC64Address(range.start),
-          end: formatC64Address(range.end),
-          ...(underRom(range.start) ? { underRom: true } : {}),
-        })),
+        writtenThenExecuted: listed(written, options.max, showRange),
         bytes: count,
         packing,
         evidence:
@@ -516,6 +504,28 @@ async function stages(program: string, options: { frames: number; entry?: number
   }
 }
 
+/** Frames that the program runs after its entry to show the memory that it uses. */
+const AFTER_ENTRY_FRAMES = 250;
+
+const ENTRY_SNAPSHOT = "capture-entry";
+
+/**
+ * Runs the program on from its entry and gives the RAM that it used: the
+ * evidence that a block that a loader or a stage left is part of the
+ * program. The machine then goes back to the entry.
+ */
+async function usedAfter(client: ViceSessionClient): Promise<(address: number) => boolean> {
+  await client.snapshot({ action: "save", name: ENTRY_SNAPSHOT });
+  try {
+    await client.memmap({ action: "clear" });
+    await client.execution({ action: "advance-frames", count: AFTER_ENTRY_FRAMES, space: "c64" });
+    return usedAfterEntry(await readCoverage(client));
+  } finally {
+    await client.snapshot({ action: "restore", name: ENTRY_SNAPSHOT });
+    await client.snapshot({ action: "remove", name: ENTRY_SNAPSHOT });
+  }
+}
+
 /** Why a capture can wait for --until in vain: a step ran over it. */
 function passedInStep(until: number, step: number): string {
   return `The CPU executed ${formatC64Address(until)} in step ${step}, before the wait for --until started. A press step runs frames. Make the steps stop before the program gets to that address, or give an --until address that the program gets to later.`;
@@ -547,7 +557,10 @@ async function capture(
     const state = await machineState(client);
     // The segments: what the stages wrote, without loader leftovers, with no overlap.
     const load = bytes[0]! | (bytes[1]! << 8);
-    const found = options.range !== undefined ? [options.range] : captureSegments(followed.stages, registers.pc, { start: load, end: Math.min(0xffff, load + bytes.length - 3) });
+    const found =
+      options.range !== undefined
+        ? [options.range]
+        : captureSegments(followed.stages, registers.pc, { loaded: { start: load, end: Math.min(0xffff, load + bytes.length - 3) }, used: await usedAfter(client) });
     const segments = withoutRanges(found, options.exclude);
     const file = (path: string) => `${options.out}/${path}`;
     const written: Written[] = [];
