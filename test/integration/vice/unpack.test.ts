@@ -4,19 +4,14 @@
 // Opt-in with C64RT_LIVE_VICE.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
 import { runProgram } from "../../../src/host-client/autostart.ts";
 import { textToPetscii } from "../../../src/c64.ts";
+import { prg, SYS_2061 } from "../../../src/c64.testkit.ts";
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
-import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { REFERENCE } from "../../fixtures/prg/counter-variants.ts";
 import { borderLoopPrg } from "../../fixtures/prg/border-loop.ts";
 import { delayedPackedPrg, gatedPackedPrg } from "../../fixtures/prg/gated-packed.ts";
@@ -24,38 +19,23 @@ import { generatedCallPrg } from "../../fixtures/prg/generated-call.ts";
 import { selfOverwritingPrg } from "../../fixtures/prg/self-overwriting.ts";
 import { stagedPrg } from "../../fixtures/prg/staged.ts";
 import { xorPackedPrg } from "../../fixtures/prg/xor-packed.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
-import { readEnvelope } from "../../kit.ts";
+import { runScript, scratchDir, skillScript } from "../../kit.ts";
+import { hostServer, liveSkip } from "./live.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-unpacker/scripts/unpacker.ts");
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-unpack-"));
+const script = skillScript("c64-unpacker", "unpacker.ts");
+const project = scratchDir("unpack");
+const host = hostServer();
 writeFileSync(join(project, "packed.prg"), xorPackedPrg);
 writeFileSync(join(project, "gated.prg"), gatedPackedPrg);
 writeFileSync(join(project, "staged.prg"), stagedPrg);
 writeFileSync(join(project, "self-overwriting.prg"), selfOverwritingPrg);
 writeFileSync(join(project, "generated-call.prg"), generatedCallPrg);
 writeFileSync(join(project, "press-key.json"), JSON.stringify([{ frames: 50 }, { type: { mode: "text", text: " " } }]));
-let server: HostServer | undefined;
-after(async () => {
-  await server?.close();
-  rmSync(project, { recursive: true, force: true });
-});
 
 /** The written blocks from $0400 on: the KERNAL writes variables in pages 0-3 while a stage runs, and wrote lists each block. */
 const fromScreen = (wrote: Array<{ start: string; end: string }>) => wrote.filter((block) => Number.parseInt(block.start.slice(1), 16) >= 0x0400);
 
-async function unpack(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
-  if (server === undefined) {
-    const supervisor = new ProcessSupervisor();
-    supervisor.installExitGuard();
-    server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
-  }
-  const child = spawn(process.execPath, [...process.execArgv, script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` }, stdio: ["ignore", "pipe", "inherit"] });
-  let stdout = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  const [status] = (await once(child, "exit")) as [number | null];
-  return { status, json: readEnvelope(stdout, status).json as Record<string, unknown> };
-}
+const unpack = async (...args: string[]) => runScript(script, args, { cwd: project, host: await host() });
 
 test("a capture at the unpacked entry gives the original program back", { skip: liveSkip, timeout: 180_000 }, async () => {
   const end = 0xc000 + REFERENCE.prg.length - 3;
@@ -184,7 +164,7 @@ test("the frames of a runUntil step to memory count toward the frames of the run
 
 test("stage 0 starts at the program also when the first step is no frames step: the RUN that the script types is no part of it", { skip: liveSkip, timeout: 180_000 }, async () => {
   // 10 SYS2061, and at $080d a loop that writes nothing. The RUN that the script types shows on the screen at $0400.
-  writeFileSync(join(project, "variable.prg"), Uint8Array.of(0x01, 0x08, 0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00, 0x4c, 0x0d, 0x08));
+  writeFileSync(join(project, "variable.prg"), prg(0x0801, SYS_2061, [0x4c, 0x0d, 0x08]));
   writeFileSync(join(project, "type-first.json"), JSON.stringify([{ type: { mode: "text", text: " " } }]));
   const { status, json } = await unpack("stages", "variable.prg", "--steps", "type-first.json", "--frames", "50", "--min-stage", "1");
   assert.equal(status, 0, JSON.stringify(json));
@@ -243,7 +223,7 @@ test("a capture at the last stage writes the image, its segments and the entry s
   assert.ok(Array.isArray(state.differsFromReset) && state.differsFromReset.length > 0, "a run leaves zero page and stack different from a fresh READY");
 
   // A scenario starts the program and runs the same steps: it reaches $4000 at the same raster position and timer values.
-  const client = await ViceSessionClient.open({ videoStandard: "pal", env: { ...process.env, C64RT_HOST: `${server!.host}:${server!.port}` } });
+  const client = await ViceSessionClient.open({ videoStandard: "pal", env: { ...process.env, C64RT_HOST: await host() } });
   const cwd = process.cwd();
   process.chdir(project);
   try {
@@ -308,8 +288,7 @@ test("a capture holds the RAM under the I/O area that a stage wrote", { skip: li
   // 10 SYS 2061; with all RAM ($01 = $34) it fills $d000-$d0ff with $5a, then waits at $0821.
   writeFileSync(
     join(project, "io.prg"),
-    Uint8Array.from([
-      0x01, 0x08, 0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00,
+    prg(0x0801, SYS_2061, [
       0x78, 0xa9, 0x34, 0x85, 0x01, 0xa2, 0x00, // $080d: SEI; LDA #$34; STA $01; LDX #0
       0xa9, 0x5a, 0x9d, 0x00, 0xd0, 0xe8, 0xd0, 0xf8, // $0814: LDA #$5A; STA $D000,X; INX; BNE $0814
       0xa9, 0x37, 0x85, 0x01, 0x58, 0x4c, 0x21, 0x08, // $081c: LDA #$37; STA $01; CLI; JMP $0821

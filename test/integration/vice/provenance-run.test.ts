@@ -4,33 +4,24 @@
 // Opt-in with C64RT_LIVE_VICE.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
-import { viceSessionFactory } from "../../../src/host/vice/session.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
-import { readEnvelope } from "../../kit.ts";
+import { prg, SYS_2061 } from "../../../src/c64.testkit.ts";
+import { runScript, scratchDir, skillScript } from "../../kit.ts";
+import { hostServer, liveSkip } from "./live.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-provenance/scripts/provenance.ts");
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-provenance-run-"));
-let server: HostServer | undefined;
-after(async () => {
-  await server?.close();
-  rmSync(project, { recursive: true, force: true });
-});
+const script = skillScript("c64-provenance", "provenance.ts");
+const project = scratchDir("provenance-run");
+const host = hostServer();
 
 const LOAD = 0x0801;
 /** 10 SYS 2061; LDA #$AA; STA $0830; STA $0831; LDA $0840; JSR $0850; JMP to itself. $0850: NOP, NOP, RTS. */
 function release(variant: "a" | "b"): Uint8Array {
   const memory = new Uint8Array(0x70);
   const put = (address: number, bytes: number[]) => memory.set(bytes, address - LOAD);
-  put(0x0801, [0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00]);
+  put(0x0801, [...SYS_2061]);
   put(0x080d, [0xa9, 0xaa, 0x8d, 0x30, 0x08, 0x8d, 0x31, 0x08, 0xad, 0x40, 0x08, 0x20, 0x50, 0x08, 0x4c, 0x1c, 0x08]);
   put(0x0850, variant === "a" ? [0xea, 0xea, 0x60] : [0xea, 0x60, 0x00]);
   if (variant === "b") {
@@ -43,13 +34,8 @@ function release(variant: "a" | "b"): Uint8Array {
 }
 
 test("each difference gets its first access in every release and whether the run changed it", { skip: liveSkip, timeout: 300_000 }, async () => {
-  const supervisor = new ProcessSupervisor();
-  supervisor.installExitGuard();
-  server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
-
-  const prg = (bytes: Uint8Array) => Buffer.concat([Buffer.from([LOAD & 0xff, LOAD >> 8]), bytes]);
-  writeFileSync(join(project, "a.prg"), prg(release("a")));
-  writeFileSync(join(project, "b.prg"), prg(release("b")));
+  writeFileSync(join(project, "a.prg"), prg(LOAD, release("a")));
+  writeFileSync(join(project, "b.prg"), prg(LOAD, release("b")));
   const image = new Uint8Array(0x10000);
   image.set(release("a"), LOAD);
   mkdirSync(join(project, "unpacked"));
@@ -65,16 +51,9 @@ test("each difference gets its first access in every release and whether the run
     }),
   );
 
-  const child = spawn(process.execPath, [...process.execArgv, script, "compare", "a.prg", "b.prg", "unpacked/image.json", "--frames", "50"], {
-    cwd: project,
-    env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` },
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  let stdout = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  const [status] = (await once(child, "exit")) as [number | null];
-  assert.equal(status, 0, stdout);
-  const json = readEnvelope(stdout, status).json as {
+  const run = await runScript(script, ["compare", "a.prg", "b.prg", "unpacked/image.json", "--frames", "50"], { cwd: project, host: await host() });
+  assert.equal(run.status, 0, run.stdout);
+  const json = run.json as {
     differences: Array<{ start: string; end: string; runtime: Record<string, { start: string; end: string; first: string; changed: boolean }> }>;
     run: { releases: Record<string, { started: boolean }> };
   };
@@ -98,16 +77,9 @@ test("each difference gets its first access in every release and whether the run
   );
 
   // With a shift, the watches sit at the release's own addresses, and runtime gives those addresses.
-  const shifted = spawn(process.execPath, [...process.execArgv, script, "compare", "a.prg", "b.prg", "--shift", "1:16", "--frames", "50"], {
-    cwd: project,
-    env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` },
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  let shiftedOut = "";
-  shifted.stdout.on("data", (chunk) => (shiftedOut += chunk));
-  const [shiftedStatus] = (await once(shifted, "exit")) as [number | null];
-  assert.equal(shiftedStatus, 0, shiftedOut);
-  const moved = readEnvelope(shiftedOut, shiftedStatus).json as typeof json & { releases: Array<{ name: string; shift: number }> };
+  const shifted = await runScript(script, ["compare", "a.prg", "b.prg", "--shift", "1:16", "--frames", "50"], { cwd: project, host: await host() });
+  assert.equal(shifted.status, 0, shifted.stdout);
+  const moved = shifted.json as typeof json & { releases: Array<{ name: string; shift: number }> };
   assert.deepEqual(moved.releases.map((item) => [item.name, item.shift]), [["a.prg", 16], ["b.prg", 0]]);
   const hex = (text: string) => Number.parseInt(text.slice(1), 16);
   for (const difference of moved.differences) {

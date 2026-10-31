@@ -4,30 +4,20 @@
 // the rebuild's from its symbol files. Opt-in with C64RT_LIVE_VICE.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
 import { formatC64Address } from "../../../src/c64.ts";
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
-import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { openForWrite } from "../../../src/knowledge/database.ts";
 import { renameSymbol } from "../../../src/knowledge/write.ts";
 import { BROKEN, EQUIVALENT, REFERENCE } from "../../fixtures/prg/counter-variants.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
-import { readEnvelope } from "../../kit.ts";
+import { runScript, scratchDir, skillScript } from "../../kit.ts";
+import { hostServer, liveSkip } from "./live.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-m9-"));
-let server: HostServer | undefined;
-after(async () => {
-  await server?.close();
-  rmSync(project, { recursive: true, force: true });
-});
+const script = skillScript("c64-testing", "testing.ts");
+const project = scratchDir("verdicts");
+const host = hostServer();
 
 function setUpProject(): void {
   writeFileSync(join(project, "reference.prg"), REFERENCE.prg);
@@ -59,22 +49,7 @@ function setUpProject(): void {
   writeFileSync(join(project, "inconclusive.json"), JSON.stringify(scenario("counts to ten", "good", "never", 10)));
 }
 
-async function hostAddress(): Promise<string> {
-  if (server === undefined) {
-    const supervisor = new ProcessSupervisor();
-    supervisor.installExitGuard();
-    server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
-  }
-  return `${server.host}:${server.port}`;
-}
-
-async function runTest(scenario: string): Promise<{ status: number | null; json: Record<string, unknown> }> {
-  const child = spawn(process.execPath, [...process.execArgv, script, "test", scenario], { cwd: project, env: { ...process.env, C64RT_HOST: await hostAddress() }, stdio: ["ignore", "pipe", "inherit"] });
-  let stdout = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  const [status] = (await once(child, "exit")) as [number | null];
-  return { status, json: readEnvelope(stdout, status).json as Record<string, unknown> };
-}
+const runTest = async (scenario: string) => runScript(script, ["test", scenario], { cwd: project, host: await host() });
 
 test("the equivalent rebuild passes, the different one fails, an unreachable checkpoint is inconclusive", { skip: liveSkip, timeout: 300_000 }, async () => {
   setUpProject();

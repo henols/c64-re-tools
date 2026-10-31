@@ -3,29 +3,15 @@
 // C64RT_LIVE_VICE.
 
 import assert from "node:assert/strict";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
-import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { hostServer, liveSkip } from "./live.ts";
 
-const servers: HostServer[] = [];
-after(async () => {
-  for (const server of servers) await server.close();
-});
-
-async function openClient(): Promise<ViceSessionClient> {
-  const supervisor = new ProcessSupervisor();
-  supervisor.installExitGuard();
-  const server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
-  servers.push(server);
-  return ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: `${server.host}:${server.port}` } });
-}
+const host = hostServer();
 
 test("a trace records the writes to a register with the instruction and the raster line, and the IRQ entries of each frame", { skip: liveSkip, timeout: 300_000 }, async () => {
-  const client = await openClient();
+  const client = await ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: await host() } });
   try {
     // To READY, then $c000 LDA $d011 / AND #$ef / STA $d011 / LDX #$40 / DEX / BNE $c00a / JMP $c000.
     await client.execution({ action: "advance-frames", count: 150, space: "c64" });

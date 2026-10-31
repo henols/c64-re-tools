@@ -3,41 +3,20 @@
 // second run starts from the snapshot file of the first. Opt-in with C64RT_LIVE_VICE.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
 import { COVERAGE } from "../../../src/c64.ts";
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
-import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { joystickCounterPrg, LEFT_SEEN } from "../../fixtures/prg/joystick-counter.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
-import { readEnvelope } from "../../kit.ts";
+import { runScript, scratchDir, skillScript } from "../../kit.ts";
+import { hostServer, liveSkip } from "./live.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-run-"));
-let server: HostServer | undefined;
-after(async () => {
-  await server?.close();
-  rmSync(project, { recursive: true, force: true });
-});
+const script = skillScript("c64-testing", "testing.ts");
+const project = scratchDir("run");
+const host = hostServer();
 
-async function runSteps(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
-  if (server === undefined) {
-    const supervisor = new ProcessSupervisor();
-    supervisor.installExitGuard();
-    server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
-  }
-  const child = spawn(process.execPath, [...process.execArgv, script, "run", ...args], { cwd: project, env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` }, stdio: ["ignore", "pipe", "inherit"] });
-  let stdout = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  const [status] = (await once(child, "exit")) as [number | null];
-  return { status, json: readEnvelope(stdout, status).json as Record<string, unknown> };
-}
+const runSteps = async (...args: string[]) => runScript(script, ["run", ...args], { cwd: project, host: await host() });
 
 test("a run writes screens, a coverage map, a snapshot and observations; a later run starts from that snapshot", { skip: liveSkip, timeout: 300_000 }, async () => {
   writeFileSync(join(project, "counter.prg"), joystickCounterPrg);
@@ -149,23 +128,16 @@ test("an observation reads the RAM under the KERNAL and all 64 KiB, and diff fin
   assert.equal(all.length, 0x10000);
   assert.deepEqual([...all.subarray(0xe000, 0xe004)], [1, 2, 3, 4]);
 
-  const differ = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
-  const child = spawn(process.execPath, [...process.execArgv, differ, "diff", "runs/under/a.vsf", "runs/under/b.vsf"], { cwd: project, env: { ...process.env, C64RT_HOST: `${server!.host}:${server!.port}` }, stdio: ["ignore", "pipe", "inherit"] });
-  let stdout = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  const [status] = (await once(child, "exit")) as [number | null];
-  assert.equal(status, 0, stdout);
-  const diff = readEnvelope(stdout, status).json as { memory: { listed: Array<{ start: string; end: string; a?: string; b?: string }> } };
-  assert.ok(diff.memory.listed.some((range) => range.start === "$e000" && range.end === "$e003" && range.b === "01020304"), stdout);
+  const diff = await runScript(script, ["diff", "runs/under/a.vsf", "runs/under/b.vsf"], { cwd: project, host: await host() });
+  assert.equal(diff.status, 0, diff.stdout);
+  const listed = diff.json.memory.listed as Array<{ start: string; end: string; a?: string; b?: string }>;
+  assert.ok(listed.some((range) => range.start === "$e000" && range.end === "$e003" && range.b === "01020304"), diff.stdout);
 
   // PAL snapshots in an NTSC machine do not restore: refused, never a diff of the wrong state.
-  const ntsc = spawn(process.execPath, [...process.execArgv, differ, "diff", "runs/under/a.vsf", "runs/under/b.vsf", "--ntsc"], { cwd: project, env: { ...process.env, C64RT_HOST: `${server!.host}:${server!.port}` }, stdio: ["ignore", "pipe", "inherit"] });
-  let refused = "";
-  ntsc.stdout.on("data", (chunk) => (refused += chunk));
-  const [ntscStatus] = (await once(ntsc, "exit")) as [number | null];
-  assert.equal(ntscStatus, 2, refused);
-  const { error } = readEnvelope(refused, ntscStatus).json as { error: { code: string; message: string } };
-  assert.equal(error.code, "invalid-input", refused);
+  const ntsc = await runScript(script, ["diff", "runs/under/a.vsf", "runs/under/b.vsf", "--ntsc"], { cwd: project, host: await host() });
+  assert.equal(ntsc.status, 2, ntsc.stdout);
+  const { error } = ntsc.json as { error: { code: string; message: string } };
+  assert.equal(error.code, "invalid-input", ntsc.stdout);
   assert.match(error.message, /^runs\/under\/a\.vsf did not restore: the RAM after the restore is not the RAM of the file\..*Leave out --ntsc for a PAL snapshot/);
 });
 

@@ -4,12 +4,11 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import type { ViceSessionHandle } from "../../../src/host/server.ts";
-import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import type { VideoStandard } from "../../../src/protocol/messages.ts";
 import { readPng } from "../../../src/graphics.testkit.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { waitFor } from "../../kit.ts";
+import { liveSkip, openLiveSession } from "./live.ts";
 
 const sessions: ViceSessionHandle[] = [];
 after(async () => {
@@ -17,9 +16,7 @@ after(async () => {
 });
 
 async function open(videoStandard: VideoStandard): Promise<ViceSessionHandle> {
-  const supervisor = new ProcessSupervisor();
-  supervisor.installExitGuard();
-  const session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard });
+  const session = await openLiveSession({ videoStandard });
   sessions.push(session);
   return session;
 }
@@ -32,10 +29,9 @@ async function capture(session: ViceSessionHandle) {
 test("a PAL capture is the 384x272 bordered frame and follows the border colour", { skip: liveSkip, timeout: 90_000 }, async () => {
   const session = await open("pal");
   await session.handle("reset", { mode: "hard", run: true });
-  const deadline = Date.now() + 20_000;
   // After the KERNAL draws the start screen: light blue border (14), blue window (6).
-  let shot = await capture(session);
-  while (shot.image.pixels[36 * 384 + 32] !== 6 && Date.now() < deadline) shot = await capture(session);
+  let shot!: Awaited<ReturnType<typeof capture>>;
+  await waitFor(async () => (shot = await capture(session)).image.pixels[36 * 384 + 32] === 6, "the blue window of the start screen", 20_000);
   assert.equal(shot.width, 384);
   assert.equal(shot.height, 272);
   assert.equal(shot.image.pixels[0], 14, "border");
@@ -46,8 +42,7 @@ test("a PAL capture is the 384x272 bordered frame and follows the border colour"
   await session.handle("execution", { action: "pause", space: "c64" });
   await session.handle("memoryWrite", { address: 0xd020, data: "02", space: "c64", view: "cpu" });
   await session.handle("execution", { action: "resume", space: "c64" });
-  shot = await capture(session);
-  while (shot.image.pixels[0] !== 2 && Date.now() < deadline + 10_000) shot = await capture(session);
+  await waitFor(async () => (shot = await capture(session)).image.pixels[0] === 2, "the red border", 10_000);
   assert.equal(shot.image.pixels[0], 2);
   assert.deepEqual(shot.image.palette[2]!.length, 3);
   assert.equal((await session.handle("status", {})).state, "running");

@@ -1,52 +1,20 @@
 // Real-VICE checks for keyboard and joystick input.
 
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
+import { test } from "node:test";
 
 import { textToPetscii } from "../../../src/c64.ts";
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import type { ViceSessionHandle } from "../../../src/host/server.ts";
-import { viceSessionFactory } from "../../../src/host/vice/session.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { waitFor } from "../../kit.ts";
+import { fileSession, liveSkip, screenOf } from "./live.ts";
 
-let session: ViceSessionHandle;
-before(async () => {
-  if (liveSkip !== false) return;
-  const supervisor = new ProcessSupervisor();
-  supervisor.installExitGuard();
-  session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard: "pal" });
-});
-after(async () => {
-  await session?.close();
-});
-
-/** The text screen at $0400 as rows of characters (screen codes 1-26 shown as A-Z). */
-async function screenText(): Promise<string> {
-  const { data } = await session.handle("memoryRead", { address: 0x0400, size: 1000, space: "c64", view: "cpu" });
-  const bytes = Buffer.from(data, "hex");
-  let text = "";
-  for (let row = 0; row < 25; row++) {
-    for (const code of bytes.subarray(row * 40, row * 40 + 40)) text += code < 32 ? String.fromCharCode(code + 64) : String.fromCharCode(code);
-    text += "\n";
-  }
-  return text;
-}
-
-/** Polls (no fixed sleep) until `check` passes. */
-async function eventually(check: () => Promise<boolean>, what: string, timeoutMs = 20_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!(await check())) {
-    if (Date.now() > deadline) throw new Error(`${what} did not happen in ${timeoutMs} ms`);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-}
+const session = fileSession();
 
 test("typed text reaches BASIC", { skip: liveSkip, timeout: 60_000 }, async () => {
   await session.handle("reset", { mode: "hard", run: true });
-  await eventually(async () => (await screenText()).includes("READY."), "the READY prompt");
+  await waitFor(async () => (await screenOf(session)).includes("READY."), "the READY prompt", 20_000);
   const petscii = textToPetscii("print 7*6\n");
   assert.deepEqual(await session.handle("keyboard", { data: Buffer.from(petscii).toString("hex") }), { queuedBytes: petscii.length });
-  await eventually(async () => /^ 42 *$/m.test(await screenText()), "the answer 42");
+  await waitFor(async () => /^ 42 *$/m.test(await screenOf(session)), "the answer 42", 20_000);
 });
 
 test("a running program reads both joysticks through the CIA ports", { skip: liveSkip, timeout: 60_000 }, async () => {
@@ -61,10 +29,10 @@ test("a running program reads both joysticks through the CIA ports", { skip: liv
   await session.handle("execution", { action: "resume", space: "c64" });
   const seen = async () => (await session.handle("memoryRead", { address: 0xc100, size: 2, space: "c64", view: "cpu" })).data;
   // Port 2 is $dc00: up (bit 0), left (bit 2) and fire (bit 4) pulled low. Port 1 is $dc01: right (bit 3) low.
-  await eventually(async () => {
+  await waitFor(async () => {
     const [dc00, dc01] = Buffer.from(await seen(), "hex");
     return (dc00! & 0x1f) === 0x0a && (dc01! & 0x1f) === 0x17;
-  }, "the joystick lines");
+  }, "the joystick lines", 20_000);
   await session.handle("joystick", { port: 2, direction: "center", fire: false });
-  await eventually(async () => (Buffer.from(await seen(), "hex")[0]! & 0x1f) === 0x1f, "the released joystick");
+  await waitFor(async () => (Buffer.from(await seen(), "hex")[0]! & 0x1f) === 0x1f, "the released joystick", 20_000);
 });
