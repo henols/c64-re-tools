@@ -7,6 +7,7 @@
 import { appendFileSync, copyFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { describeError } from "./errors.ts";
 import { fileStampCet, isoCet } from "./time.ts";
 
 export const TRACE_VARIABLE = "C64RT_TRACE";
@@ -161,7 +162,7 @@ export interface TraceTarget {
 }
 
 /** The target that C64RT_TRACE in `env` gives: its directory, or nothing. */
-export function traceTargetFromEnv(env: NodeJS.ProcessEnv = process.env): TraceTarget {
+function traceTargetFromEnv(env: NodeJS.ProcessEnv = process.env): TraceTarget {
   const path = env[TRACE_VARIABLE];
   return path === undefined || path === "" ? {} : { dir: { path, given: `${TRACE_VARIABLE}=${path}` } };
 }
@@ -183,7 +184,7 @@ export function startTrace(kind: TraceKind, options: { env?: NodeJS.ProcessEnv; 
     current = Trace.open(kind, dir.path, new Date(), echo);
   } catch (error) {
     current = noFile();
-    options.warn?.(`${dir.given} cannot be used (${error instanceof Error ? error.message : String(error)}); no trace file is written.`);
+    options.warn?.(`${dir.given} cannot be used (${describeError(error)}); no trace file is written.`);
   }
   return current;
 }

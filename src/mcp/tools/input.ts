@@ -10,7 +10,7 @@ import { TOOL_INPUTS } from "../inputs.ts";
 import { AddressOutput, defineTool } from "../server.ts";
 
 
-export const c64Keyboard = defineTool({
+const c64Keyboard = defineTool({
   name: "c64_keyboard",
   title: "Type on the C64 keyboard",
   description:
@@ -31,7 +31,7 @@ export const c64Keyboard = defineTool({
   },
 });
 
-export const c64Press = defineTool({
+const c64Press = defineTool({
   name: "c64_press",
   title: "Press keys of the C64 keyboard",
   description:
@@ -62,7 +62,7 @@ export const c64Press = defineTool({
   },
 });
 
-export const c64Joystick = defineTool({
+const c64Joystick = defineTool({
   name: "c64_joystick",
   title: "Move a joystick",
   description:

@@ -7,8 +7,8 @@ import { describeError } from "../../errors.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { checkDecompilerResult, checkRequestBounds, DECOMPILER_LIMITS, imageRange, seedsInside, type DecompilerParams, type DecompilerResult, type SeedReport } from "../types.ts";
 import type { ToolContext } from "../run.ts";
-import { walk } from "./walk.ts";
-import { decompile, loadImage, setName, SLEIGH_VERSION } from "./wasm.ts";
+
+type Wasm = typeof import("./wasm.ts");
 
 /** The longest reason that the result check accepts. */
 const MAX_REASON = 1000;
@@ -27,21 +27,23 @@ export async function analyze(
     throw new WireFailure("invalid-input", "Give at least one entry point inside the program, for example the SYS address of its BASIC loader.");
   }
   context.signal.throwIfAborted();
+  // The decoder module (4.7 MB) loads when an analysis runs, not when a script that can run one starts.
+  const [{ walk }, wasm] = await Promise.all([import("./walk.ts"), import("./wasm.ts")]);
 
   let walked: Omit<ReturnType<typeof walk>, "refusedSeeds">;
   let refusedSeeds: ReturnType<typeof walk>["refusedSeeds"];
   try {
-    loadImage(body, start);
+    wasm.loadImage(body, start);
     ({ refusedSeeds, ...walked } = walk(body, start, end, { entryPoints, codeStarts, dataRanges, labels: params.labels }));
   } catch (error) {
     context.log?.(`The decoder failed: ${describeError(error)}`);
     throw new WireFailure("operation-failed", `The decoder failed: ${describeError(error)}. Nothing was imported.`);
   }
-  const { decompilations, notDecompiled } = decompileRoutines(params, walked.functions, body, start, context);
+  const { decompilations, notDecompiled } = decompileRoutines(params, walked.functions, body, start, context, wasm);
 
   let result: DecompilerResult;
   try {
-    result = checkDecompilerResult({ ...walked, decompilations, notDecompiled, completeness: { functions: true, regions: true, references: true }, toolVersion: SLEIGH_VERSION });
+    result = checkDecompilerResult({ ...walked, decompilations, notDecompiled, completeness: { functions: true, regions: true, references: true }, toolVersion: wasm.SLEIGH_VERSION });
   } catch (error) {
     context.log?.(`Decompiler result rejected: ${describeError(error)}`);
     throw new WireFailure("operation-failed", `The decompiler returned an incomplete or inconsistent result. Nothing was imported. The check found: ${describeError(error)}.`);
@@ -50,7 +52,7 @@ export async function analyze(
 }
 
 /** The requested routines as C text, within the character bounds; the labels name routines and data. */
-function decompileRoutines(params: DecompilerParams, functions: DecompilerResult["functions"], body: Uint8Array, start: number, context: ToolContext): Pick<DecompilerResult, "decompilations" | "notDecompiled"> {
+function decompileRoutines(params: DecompilerParams, functions: DecompilerResult["functions"], body: Uint8Array, start: number, context: ToolContext, { decompile, loadImage, setName }: Wasm): Pick<DecompilerResult, "decompilations" | "notDecompiled"> {
   const decompilations: DecompilerResult["decompilations"] = [];
   const notDecompiled: NonNullable<DecompilerResult["notDecompiled"]> = [];
   if (params.decompile.length === 0) return { decompilations, notDecompiled };

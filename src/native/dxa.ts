@@ -9,7 +9,7 @@ import { writeFileSync } from "node:fs";
 import { stripVTControlCharacters } from "node:util";
 
 import { describeError, Refusal } from "../errors.ts";
-import { SYMBOL_NAME } from "../c64.ts";
+import { hexWord, SYMBOL_NAME } from "../c64.ts";
 import { WireFailure } from "../protocol/messages.ts";
 import { checkDxaResult, checkRequestBounds, imageRange, seedsInside, type DxaParams, type DxaResult, type SeedReport } from "./types.ts";
 import { Workspace } from "./staging.ts";
@@ -32,8 +32,6 @@ const TIMEOUT_MS = 120_000;
 const MAX_LISTING = 8 * 1024 * 1024;
 const VERSION_TIMEOUT_MS = 20_000;
 const MAX_VERSION_OUTPUT = 64 * 1024;
-
-const hex = (value: number) => value.toString(16).padStart(4, "0");
 
 /**
  * The options for one run; every value comes from the validated request. A
@@ -85,16 +83,16 @@ export function parseListing(listing: string, start: number, end: number): Pick<
   const first = statements[0];
   const last = statements.at(-1);
   if (first === undefined || last === undefined) throw new Refusal("operation-failed", "the listing has no statements");
-  if (first.address !== start) throw new Refusal("operation-failed", `the listing starts at $${hex(first.address)}, not at $${hex(start)}`);
+  if (first.address !== start) throw new Refusal("operation-failed", `the listing starts at $${hexWord(first.address)}, not at $${hexWord(start)}`);
   if (last.address > end) throw new Refusal("operation-failed", "the listing runs past the end of the program");
   const regions: DxaResult["regions"] = [];
   statements.forEach((statement, index) => {
     const next = statements[index + 1]?.address ?? end + 1;
     const size = next - statement.address;
-    if (size <= 0) throw new Refusal("operation-failed", `the listing goes back at $${hex(next)}`);
+    if (size <= 0) throw new Refusal("operation-failed", `the listing goes back at $${hexWord(next)}`);
     // Data lines count their items; an instruction line dumps exactly its bytes.
     const expected = statement.data ?? statement.dumped;
-    if (expected !== size) throw new Refusal("operation-failed", `the line at $${hex(statement.address)} holds ${expected} bytes, but the next line is ${size} bytes later`);
+    if (expected !== size) throw new Refusal("operation-failed", `the line at $${hexWord(statement.address)} holds ${expected} bytes, but the next line is ${size} bytes later`);
     const classification = statement.data === undefined ? "code" : "data";
     const last = regions.at(-1);
     if (last?.classification === classification) last.end = next - 1;
@@ -135,10 +133,10 @@ export async function analyze(
       writeFileSync(workspace.path(`${name}.txt`), lines.join(""));
       files[name] = `${name}.txt`;
     };
-    seed("routines", entryPoints.map((address) => `${hex(address)}\n`));
-    seed("blocks", dataRanges.map((range) => `${hex(range.start)}-${hex(range.end)}\n`));
+    seed("routines", entryPoints.map((address) => `${hexWord(address)}\n`));
+    seed("blocks", dataRanges.map((range) => `${hexWord(range.start)}-${hexWord(range.end)}\n`));
     // The xa label file format: name, address, flags. dxa reads the name up to the first blank, so a leading dot stays.
-    seed("labels", params.labels.filter((label) => SYMBOL_NAME.test(label.name)).map((label) => `${label.name}, 0x${hex(label.address)}, 0x0000\n`));
+    seed("labels", params.labels.filter((label) => SYMBOL_NAME.test(label.name)).map((label) => `${label.name}, 0x${hexWord(label.address)}, 0x0000\n`));
     const run = await runToolOrFail(
       "dxa",
       "The DXA analysis",

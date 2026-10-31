@@ -5,9 +5,9 @@
 
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { c64AddressOf, formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
-import { MAX_BASELINES, MAX_MASK_RECTANGLES, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
+import { isInteger, isObject, MAX_BASELINES, MAX_MASK_RECTANGLES, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
 import { LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
-import { ACTION_STEP_KINDS, aStep, checkActionStep, checkLocation, isInteger, isObject, refuseOldStep, renamedField, runActionStep, type ActionStep, type ActionStepKind, type Location } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, aStep, checkActionStep, checkLocation, refuseOldStep, renamedField, runActionStep, type ActionStep, type ActionStepKind, type Location } from "#src/host-client/steps.ts";
 import { applyEntryState, parseEntryState } from "#src/host-client/entry-state.ts";
 import { readPrg } from "#src/host-client/image.ts";
 import { readProjectFile, readProjectJson, writeReported, type Written } from "#src/host-client/transfer.ts";

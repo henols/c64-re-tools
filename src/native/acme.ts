@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, posix, relative, sep } from "node:path";
 
-import { formatC64Address } from "../c64.ts";
+import { formatC64Address, hexWord } from "../c64.ts";
 import { WireFailure } from "../protocol/messages.ts";
 import { isRelativePath } from "../protocol/tools.ts";
 import type { AcmeParams, AcmeResult, AssembledSymbol, Diagnostic } from "./types.ts";
@@ -16,7 +16,7 @@ import { outputTail, runToolOrFail, type ToolContext } from "./run.ts";
 export function showSymbol(symbol: AssembledSymbol) {
   return symbol.kind === "address"
     ? { name: symbol.name, kind: "address", address: formatC64Address(symbol.address), used: symbol.used }
-    : { name: symbol.name, kind: "constant", value: `$${symbol.value.toString(16).padStart(4, "0")}`, used: symbol.used };
+    : { name: symbol.name, kind: "constant", value: `$${hexWord(symbol.value)}`, used: symbol.used };
 }
 
 /** The text of a symbols file (symbols/<build>.json next to the program): the symbols of a build, which c64-testing reads for the names of a program. */
@@ -47,7 +47,7 @@ function insideTree(sourceDir: string, path: string): boolean {
 }
 
 /** Refuses an entry source or include directory that ACME could read outside the staged tree, by name. */
-export function checkAcmeParams(params: AcmeParams): void {
+function checkAcmeParams(params: AcmeParams): void {
   const sourceDir = params.sourceDir ?? "";
   if (sourceDir !== "" && !insideSourceRoot(sourceDir)) throw new WireFailure("invalid-input", `The source directory ${sourceDir} is not a relative path inside the staged tree.`);
   if (!insideSourceRoot(params.entrySource)) throw new WireFailure("invalid-input", `The entry source ${params.entrySource} is not a relative path inside the source root.`);

@@ -13,9 +13,10 @@
 // The scripts install without packages, so this checker has no zod: the MCP
 // tools keep their zod schemas, and a test checks that both take the same inputs.
 
-import { c64AddressOf, SYMBOL_NAME, textToPetscii } from "../c64.ts";
+import { c64AddressOf, formatC64Address, isAddressText, textToPetscii } from "../c64.ts";
 import { keyTaps, MAX_PRESS_FRAMES, PRESS_FRAMES, type KeyTap } from "../c64-keys.ts";
 import { isRefusal, Refusal } from "../errors.ts";
+import { isInteger, isObject, isOneOf } from "../protocol/messages.ts";
 import {
   COMPARISONS,
   CONDITION_REGISTERS,
@@ -82,18 +83,18 @@ export const STEP_FIELDS = {
   flags: ["n", "v", "b", "d", "i", "z", "c"],
 } as const;
 
+/** Hex bytes: two digits per byte, either case, at least one byte. The MCP tools take the same. */
+export const HEX_BYTES = /^(?:[0-9a-fA-F]{2})+$/;
+export const HEX_BYTES_RULE = "must be hex bytes, two digits per byte, no separators, for example a9008d20d0";
+
 /** The highest raster line of a PAL frame; an NTSC frame has fewer, which the emulator checks. */
 export const MAX_RASTER_LINE = 311;
 /** The wait of a runUntil step without timeoutFrames, as c64_run_until has it. */
 export const DEFAULT_TIMEOUT_FRAMES = 3000;
 
-export const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
-export const isInteger = (value: unknown, min: number, max: number): value is number => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
-const isOneOf = <T extends string>(values: readonly T[], value: unknown): value is T => (values as readonly unknown[]).includes(value);
-
 /** True for an address of a step or a file: $ and 1 to 4 hex digits, or a name. */
-export function isLocation(value: unknown): value is Location {
-  return typeof value === "string" && (c64AddressOf(value) !== undefined || SYMBOL_NAME.test(value));
+function isLocation(value: unknown): value is Location {
+  return typeof value === "string" && isAddressText(value);
 }
 
 /** Checks an address in a file: $ and 1 to 4 hex digits, or a name. */
@@ -116,7 +117,7 @@ export function keyboardBytes(input: { mode: "text" | "petscii"; text?: string |
  * One line of JSON with a space after each colon and comma: the form that a
  * refusal tells the caller to write.
  */
-export function jsonLine(value: unknown): string {
+function jsonLine(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(jsonLine).join(", ")}]`;
   if (isObject(value)) return `{${Object.entries(value).filter(([, item]) => item !== undefined).map(([key, item]) => `${JSON.stringify(key)}: ${jsonLine(item)}`).join(", ")}}`;
   return JSON.stringify(value) ?? "null";
@@ -235,7 +236,7 @@ function checkInput(kind: ActionStepKind, value: unknown, at: string, fail: (mes
     case "write": {
       const fields = new Fields(value, where, STEP_FIELDS.write, fail);
       const data = fields.get("data");
-      if (typeof data !== "string" || !/^(?:[0-9a-fA-F]{2})+$/.test(data)) fields.fail("data", "must be hex bytes, two digits per byte, no separators, for example a9008d20d0");
+      if (typeof data !== "string" || !HEX_BYTES.test(data)) fields.fail("data", HEX_BYTES_RULE);
       if ((data as string).length / 2 > MAX_MEMORY_WRITE) fields.fail("data", `has at most ${MAX_MEMORY_WRITE} bytes`);
       return { write: { address: fields.location("address"), data: (data as string).toLowerCase(), space: fields.oneOf("space", SPACES, "c64"), view: fields.oneOf("view", MEMORY_VIEWS, "cpu") } };
     }
@@ -291,7 +292,7 @@ function checkInput(kind: ActionStepKind, value: unknown, at: string, fail: (mes
 }
 
 /** A "$xxxx" text of a number, or the value as it is. */
-const asAddress = (value: unknown) => (isInteger(value, 0, 0xffff) ? `$${value.toString(16).padStart(4, "0")}` : value);
+const asAddress = (value: unknown) => (isInteger(value, 0, 0xffff) ? formatC64Address(value) : value);
 
 /** The hex text of a list of bytes, or the value as it is. */
 const asHex = (value: unknown) => (Array.isArray(value) && value.every((byte) => isInteger(byte, 0, 0xff)) ? Buffer.from(value as number[]).toString("hex") : value);
@@ -309,7 +310,7 @@ function targetOf(input: Record<string, unknown>): unknown {
  * that it has and the step to write. Undefined when the step has no 2.0 form.
  * Keys of the step other than its kind (for example side) stay.
  */
-export function newStepForm(kind: string, step: Record<string, unknown>): { fields: string[]; step: Record<string, unknown> } | undefined {
+function newStepForm(kind: string, step: Record<string, unknown>): { fields: string[]; step: Record<string, unknown> } | undefined {
   const input = step[kind];
   const { [kind]: _input, ...rest } = step;
   const form = (fields: string[], value: unknown, others = rest) => ({ fields, step: { [kind]: value, ...others } });
@@ -388,7 +389,7 @@ export function checkActionSteps(value: unknown, fail: (message: string) => neve
 }
 
 /** The names and addresses of an action step: each location that the step resolves when it runs. */
-export function stepLocations(step: ActionStep): Location[] {
+function stepLocations(step: ActionStep): Location[] {
   if ("write" in step) return [step.write.address];
   if ("registers" in step) return step.registers.pc === undefined ? [] : [step.registers.pc];
   if (!("runUntil" in step)) return [];

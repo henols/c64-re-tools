@@ -4,7 +4,7 @@
 // (a program, an image, a listing) go next to these values as attachments.
 
 import { Refusal } from "../errors.ts";
-import { prgRange, REFERENCE_KINDS, SYMBOL_NAME, type ReferenceKind } from "../c64.ts";
+import { inRanges, prgRange, REFERENCE_KINDS, SYMBOL_NAME, type ReferenceKind } from "../c64.ts";
 import { isInteger, isObject, isOneOf, WireFailure } from "../protocol/messages.ts";
 import { type SourceTree } from "../protocol/tools.ts";
 
@@ -40,7 +40,7 @@ export interface AcmeResult {
   diagnostics: Diagnostic[];
 }
 
-export const IMAGE_KINDS = ["prg", "flat64k"] as const;
+const IMAGE_KINDS = ["prg", "flat64k"] as const;
 export type ImageKind = (typeof IMAGE_KINDS)[number];
 
 export const DECOMPILER_LIMITS = { entryPoints: 1024, codeStarts: 8192, dataRanges: 1024, labels: 4096, decompile: 32, decompiledChars: 16_000, decompiledTotalChars: 128_000 } as const;
@@ -142,11 +142,10 @@ export function checkDecompilerResult(value: unknown): DecompilerResult {
     if (!isObject(range) || !isInteger(range.start, 0, 0xffff) || !isInteger(range.end, range.start, 0xffff)) fail("bad coverage range");
     ranges.push({ start: range.start, end: range.end });
   }
-  const covered = (address: number) => ranges.some((range) => range.start <= address && address <= range.end);
   if (!isList(functions)) fail("no functions");
   for (const fn of functions) {
     if (!isObject(fn) || !isInteger(fn.entry, 0, 0xffff) || typeof fn.name !== "string" || !SYMBOL_NAME.test(fn.name) || !isOneOf(["seed", "generated", "native"] as const, fn.nameSource)) fail("bad function");
-    if (!covered(fn.entry)) fail("a function lies outside the coverage");
+    if (!inRanges(ranges, fn.entry)) fail("a function lies outside the coverage");
   }
   if (!isList(regions)) fail("no regions");
   let previousEnd = -1;
@@ -172,12 +171,12 @@ export function checkDecompilerResult(value: unknown): DecompilerResult {
     ) {
       fail("bad instruction");
     }
-    if (!covered(instruction.address)) fail("an instruction lies outside the coverage");
+    if (!inRanges(ranges, instruction.address)) fail("an instruction lies outside the coverage");
   }
   if (!isList(references)) fail("no references");
   for (const reference of references) {
     if (!isObject(reference) || !isInteger(reference.from, 0, 0xffff) || !isInteger(reference.to, 0, 0xffff) || !isOneOf(REFERENCE_KINDS, reference.type)) fail("bad reference");
-    if (!covered(reference.from)) fail("a reference source lies outside the coverage");
+    if (!inRanges(ranges, reference.from)) fail("a reference source lies outside the coverage");
   }
   if (!isList(decompilations) || decompilations.length > DECOMPILER_LIMITS.decompile) fail("bad decompilations");
   let total = 0;

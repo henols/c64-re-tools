@@ -153,7 +153,7 @@ export function isOlderThanMinimum(version: { major: number; minor: number }): b
 }
 
 /** A file this process may run. Windows has no execute permission (X_OK checks nothing there): a file is enough. */
-export function isExecutableFile(path: string): boolean {
+function isExecutableFile(path: string): boolean {
   try {
     if (!statSync(path).isFile()) return false;
     if (process.platform !== "win32") accessSync(path, constants.X_OK);

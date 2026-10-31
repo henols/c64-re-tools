@@ -18,7 +18,7 @@ import type { AssembledSymbol } from "./native/types.ts";
 export const COPIER_SOURCE = "loader_copier_src";
 
 /** The memory configuration at the start of the copier of the packed form: all RAM visible. */
-export const PACKED_EXIT_MEMORY = 0x34;
+const PACKED_EXIT_MEMORY = 0x34;
 
 /** The pages that the unpacker of Exomizer uses: the copier of the packed form writes them, so main.asm is packed from here. */
 const PACKED_FROM = 0x0400;

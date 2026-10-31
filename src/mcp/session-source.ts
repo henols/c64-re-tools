@@ -1,6 +1,7 @@
 // The C64 session of the MCP server: one at a time, opened again after a loss.
 
 import type { ViceSessionClient } from "../host-client/vice-session.ts";
+import { describeError } from "../errors.ts";
 import { WireFailure } from "../protocol/messages.ts";
 import { elapsedMs, trace } from "../trace.ts";
 import type { SessionSource } from "./server.ts";
@@ -32,7 +33,7 @@ export function sessionSource(openClient: (signal: AbortSignal) => Promise<ViceS
       () => {},
     );
     current.catch((error: unknown) => {
-      log(`session not opened: ${error instanceof Error ? error.message : String(error)}`);
+      log(`session not opened: ${describeError(error)}`);
       if (opening === current) opening = undefined;
     });
     return current;
