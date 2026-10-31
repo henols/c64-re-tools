@@ -9,14 +9,14 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs
 import { basename, join, posix } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
-import { formatC64Address } from "#src/c64.ts";
+import { formatC64Address, formatC64RangeFields, inRanges } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { writeProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { conflicts } from "#src/knowledge/conflicts.ts";
-import { openForRead, TEXT_DIRECTORY } from "#src/knowledge/database.ts";
+import { openForRead, TEXT_DIRECTORY, withRead } from "#src/knowledge/database.ts";
 import { changedEvidence, type EvidenceChange } from "#src/knowledge/evidence.ts";
-import { programImage, type ProgramImage } from "#src/knowledge/program.ts";
+import { programImage } from "#src/knowledge/program.ts";
 import { listComments, listModules, listReferences, listRegions, listSymbols, sourceRevision } from "#src/knowledge/read.ts";
 import { compareText } from "#src/knowledge/text.ts";
 import { groupOf, namedGroup, PROJECT_DIRECTORY, projectRoot, resolveProjectFile, resolveProjectPath, type ProjectGroup } from "#src/project.ts";
@@ -62,11 +62,8 @@ function generate(call: Call): Reply {
     }
   }
   const map = readSourceMap(source);
-  const db = openForRead();
-  let knowledge;
-  let image: ProgramImage | undefined;
-  try {
-    image = programImage(db, map.space);
+  const { image, knowledge } = withRead((db) => {
+    const image = programImage(db, map.space);
     const found = conflicts(db).length;
     if (found > 0) throw new Refusal("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Nothing was written. Resolve the merge conflicts of the project knowledge. Then generate the source again from the knowledge, and run generate again.`);
     // A source of another revision has other lines: the links would point to the wrong code. A change in another space does not change the source.
@@ -74,7 +71,7 @@ function generate(call: Call): Reply {
     if (map.revision !== revision) {
       throw new WireFailure("invalid-input", `${map.mapPath} is from knowledge revision ${map.revision}, and the knowledge of the source is at revision ${revision}. Nothing was written. Generate the source again from the knowledge. Then run generate again.`);
     }
-    knowledge = {
+    const knowledge = {
       revision,
       symbols: listSymbols(db, undefined, undefined, undefined, map.space),
       regions: listRegions(db, undefined, undefined, undefined, map.space),
@@ -82,15 +79,14 @@ function generate(call: Call): Reply {
       references: listReferences(db, undefined, undefined, undefined, map.space),
       modules: listModules(db, undefined, undefined, map.space),
     };
-  } finally {
-    db?.close();
-  }
+    return { image, knowledge };
+  });
   const old = oldFiles(out, directory);
   const built = buildReference({
     out: posix.normalize(out),
     map,
     ...knowledge,
-    ...(image === undefined ? {} : { image: { byteAt: image.byteAt, inImage: (address: number) => image.segments.some((segment) => address >= segment.start && address <= segment.end) } }),
+    ...(image === undefined ? {} : { image: { byteAt: image.byteAt, inImage: (address: number) => inRanges(image.segments, address) } }),
   });
   for (const path of old) rmSync(join(directory, path), { force: true });
   const written = built.files.map((file) => writeReported(file.path, file.bytes, { what: "--out" }));
@@ -100,7 +96,7 @@ function generate(call: Call): Reply {
   const gaps = {
     routinesWithoutComment: listed(built.gaps.routinesWithoutComment, max, (routine) => ({ name: routine.name, address: formatC64Address(routine.address), file: routine.file })),
     modulesWithoutRoutines: listed(built.gaps.modulesWithoutRoutines, max, (module) => ({ file: module.file, start: formatC64Address(module.start), ...(module.title === undefined ? {} : { title: module.title }) })),
-    tablesWithoutName: listed(built.gaps.tablesWithoutName, max, (table) => ({ start: formatC64Address(table.start), end: formatC64Address(table.end), type: table.type })),
+    tablesWithoutName: listed(built.gaps.tablesWithoutName, max, (table) => ({ ...formatC64RangeFields(table), type: table.type })),
   };
   const hints: string[] = [];
   if (image === undefined) hints.push("The knowledge has no program bytes. Thus the reference does not decode the tables and does not show the graphics. To get them, put the program bytes into the project knowledge and run generate again.");
@@ -280,15 +276,11 @@ function link(call: Call): Reply {
   /** The evidence of a project that no page names. */
   const readEvidence = (member: Member) => {
     if (evidenceRead.has(member) || unreadableKnowledge.has(member)) return;
-    let db: DatabaseSync | undefined;
     try {
-      db = openForRead(member.root);
-      addEvidence(member, db);
+      withRead((db) => addEvidence(member, db), member.root);
     } catch (error) {
       if (!(error instanceof Refusal)) throw error;
       markUnreadable(member, error);
-    } finally {
-      db?.close();
     }
   };
 

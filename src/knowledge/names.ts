@@ -7,7 +7,8 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { c64AddressOf, formatC64Address } from "../c64.ts";
 import { Refusal } from "../errors.ts";
-import { openForRead } from "./database.ts";
+import { projectRoot } from "../project.ts";
+import { withRead } from "./database.ts";
 import { analyzerNamed, listAnalyzerNames, listSymbols, symbolNamed } from "./read.ts";
 import { DEFAULT_SPACE, type Space, type SymbolKind } from "./schema.ts";
 
@@ -34,14 +35,18 @@ export function nameTable(db: DatabaseSync | undefined, space: Space = DEFAULT_S
   return names;
 }
 
-/** addressOfName on the knowledge of the project: the name resolver of the scripts. */
+/** The name table of each project folder and space that knowledgeNames read in this process. A script resolves its names before it writes. */
+const tables = new Map<string, Map<string, number>>();
+
+/** addressOfName on the knowledge of the project: the name resolver of the scripts. It reads the knowledge once for each space, and again only to refuse a name. */
 export function knowledgeNames(name: string, space: string): number {
-  const db = openForRead();
-  try {
-    return addressOfName(db, name, space);
-  } finally {
-    db?.close();
+  const key = `${projectRoot()}\n${space}`;
+  let table = tables.get(key);
+  if (table === undefined) {
+    table = withRead((db) => nameTable(db, space));
+    tables.set(key, table);
   }
+  return table.get(name) ?? withRead((db) => addressOfName(db, name, space));
 }
 
 /** An address of a step or a file: $ and 1 to 4 hex digits, else a name of the knowledge in the space. */

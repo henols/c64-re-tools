@@ -4,13 +4,14 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
-import { type AddressRange, formatC64Address, instructionLength, SPACE_PATTERN, SYMBOL_NAME } from "../c64.ts";
+import { type AddressRange, formatC64Address, instructionLength, SPACE_PATTERN, subtract, SYMBOL_NAME } from "../c64.ts";
 import { isoCet } from "../time.ts";
 import { CONFLICT_RULES, conflicts, conflictTable, type Conflict, type ConflictRow } from "./conflicts.ts";
 import { transaction } from "./database.ts";
 import { labelProblem, MNEMONICS } from "../opcodes.ts";
 import { checkExpression, evaluate, identifiers, operandText, replaceIdentifiers } from "./expression.ts";
 import {
+  baseLabel,
   baseValue,
   COMMENT_COLUMNS,
   commentsAt,
@@ -131,20 +132,6 @@ export function checkAddress(value: number, what = "address"): void {
 
 function checkOneOf<T extends string>(values: readonly T[], value: string, what: string): asserts value is T {
   if (!(values as readonly string[]).includes(value)) throw new Refusal("invalid-input", `${what} must be one of: ${values.join(", ")}.`);
-}
-
-/** Parts of `range` that no range in `holes` covers. */
-export function subtract(range: AddressRange, holes: AddressRange[]): AddressRange[] {
-  let pieces = [range];
-  for (const hole of holes) {
-    pieces = pieces.flatMap((piece) => {
-      if (hole.end < piece.start || hole.start > piece.end) return [piece];
-      const left = hole.start > piece.start ? [{ start: piece.start, end: hole.start - 1 }] : [];
-      const right = hole.end < piece.end ? [{ start: hole.end + 1, end: piece.end }] : [];
-      return [...left, ...right];
-    });
-  }
-  return pieces;
 }
 
 /** What a revision records about its writer. Analyzer imports may add tool details. */
@@ -930,11 +917,6 @@ function unpatchStep(db: DatabaseSync, change: Change, _origin: Origin, request:
   if (found.length > 1) throw new Refusal("invalid-input", `The patches of ${found.map((row) => row.switch).join(", ")} start at ${formatC64Address(request.start)}. Give the switch of the patch to remove.`);
   change.close("patches", "space = ? AND start_address = ? AND switch_name = ?", space, request.start, found[0]!.switch);
   return { current: null };
-}
-
-/** The label of the base release of a space: its bytes are the program of the knowledge. */
-function baseLabel(db: DatabaseSync, space: Space): string | undefined {
-  return listReleases(db, undefined, space).find((release) => release.base)?.label;
 }
 
 /**

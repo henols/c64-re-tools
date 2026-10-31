@@ -13,11 +13,11 @@
 // jump whose address a run wrote, or an RTS to an address that the code
 // pushed), code that nothing reaches is unknown: it stays.
 
-import { type AddressRange, COVERAGE, formatC64Address, pointerTableEntries, POINTER_TABLE_TYPES, type PointerTableType } from "#src/c64.ts";
+import { type AddressRange, c64AddressOf, COVERAGE, formatC64Address, formatC64Range, hexWord, inRanges, mergeRanges, pointerTableEntries, POINTER_TABLE_TYPES, type PointerTableType, rangesOverlap } from "#src/c64.ts";
 import { symbolsPath } from "#src/build-name.ts";
 import { Refusal } from "#src/errors.ts";
 import { computedFlows, NO_FALL_THROUGH, type Root, separate, type UnresolvedFlow, vectorHigh, WRITES_A, WRITES_X, WRITES_Y } from "#src/knowledge/separate.ts";
-import type { RegionType } from "#src/knowledge/schema.ts";
+import { INSTRUCTION_REGION_TYPES, type RegionType } from "#src/knowledge/schema.ts";
 import { OPCODES } from "#src/opcodes.ts";
 
 /**
@@ -25,13 +25,10 @@ import { OPCODES } from "#src/opcodes.ts";
  * charset, sprite, bitmap and screen data without the CPU, so the coverage
  * does not show that a program uses them: only --drop makes them free.
  */
-export const DROPPABLE_DATA: readonly RegionType[] = ["bytes", "words", ...POINTER_TABLE_TYPES, "petscii", "workspace", "unused"];
+const DROPPABLE_DATA: readonly RegionType[] = ["bytes", "words", ...POINTER_TABLE_TYPES, "petscii", "workspace", "unused"];
 
 /** The data that the VIC-II reads: a region of another type that overlaps it stays too, for example unused bytes in a bitmap. */
 const VIC_DATA: readonly RegionType[] = ["charset", "sprite", "bitmap", "screen"];
-
-/** Regions of code: their bytes are the blocks of the decoded instructions. */
-const CODE_TYPES: readonly RegionType[] = ["code", "jumps", "dual-use"];
 
 /** The hardware vectors $fffa-$ffff: they stay when the image holds them. */
 const VECTORS: AddressRange = { start: 0xfffa, end: 0xffff };
@@ -94,10 +91,7 @@ export interface DropPlan {
   unresolved: UnresolvedFlow[];
 }
 
-const inside = (address: number, ranges: readonly AddressRange[]) => ranges.some((range) => address >= range.start && address <= range.end);
-const overlaps = (a: AddressRange, b: AddressRange) => a.start <= b.end && b.start <= a.end;
 const within = (a: AddressRange, b: AddressRange) => a.start >= b.start && a.end <= b.end;
-const shown = (range: AddressRange) => `${formatC64Address(range.start)}-${formatC64Address(range.end)}`;
 
 /** The blocks of the instructions: a block ends after an instruction that does not run on, and before a gap. An instruction inside the one before stays in its block. */
 export function blocksOf(instructions: ReadonlyMap<number, number>, memory: Uint8Array): AddressRange[] {
@@ -111,17 +105,6 @@ export function blocksOf(instructions: ReadonlyMap<number, number>, memory: Uint
     open = !NO_FALL_THROUGH.has(memory[start]!);
   }
   return blocks;
-}
-
-/** Joins ranges in address order that touch or overlap. */
-function merged(ranges: readonly AddressRange[]): AddressRange[] {
-  const result: AddressRange[] = [];
-  for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
-    const last = result.at(-1);
-    if (last !== undefined && range.start <= last.end + 1) last.end = Math.max(last.end, range.end);
-    else result.push({ ...range });
-  }
-  return result;
 }
 
 /** A place where code goes or reads: the instruction (or table) at `from`, and what it names. */
@@ -146,7 +129,7 @@ function flowsOf(input: DropInput, inImage: (address: number) => boolean, indexe
   const reads: DataReference[] = [];
   const { memory } = input;
   const word = (at: number) => memory[at]! | (memory[(at + 1) & 0xffff]! << 8);
-  const rom = (address: number) => inside(address, input.rom ?? []);
+  const rom = (address: number) => inRanges(input.rom ?? [], address);
   // The address of a vector, a table or an RTS target in two immediates of one block: the low byte and the high byte
   // go into a pointer (two stores to N and N+1), into the registers of a JSR, or onto the stack (PHA high, PHA low).
   type Immediate = { at: number; value: number } | undefined;
@@ -182,7 +165,7 @@ function flowsOf(input: DropInput, inImage: (address: number) => boolean, indexe
     if (mnemonic === "txa") registers.a = registers.x;
     if (mnemonic === "tya") registers.a = registers.y;
     const stored = { sta: registers.a, stx: registers.x, sty: registers.y }[mnemonic];
-    if ((mode === "zp" || mode === "abs") && ["sta", "stx", "sty"].includes(mnemonic) && !inside(operand, [IO_AREA])) {
+    if ((mode === "zp" || mode === "abs") && ["sta", "stx", "sty"].includes(mnemonic) && !inRanges([IO_AREA], operand)) {
       stores.delete(operand);
       if (stored !== undefined) {
         stores.set(operand, stored);
@@ -231,7 +214,7 @@ function flowsOf(input: DropInput, inImage: (address: number) => boolean, indexe
     if (NO_FALL_THROUGH.has(opcode)) endBlock();
   }
   for (const reference of input.references) {
-    if (inside(reference.from, input.changed)) continue;
+    if (inRanges(input.changed, reference.from)) continue;
     if (reference.kind === "call" || reference.kind === "jump" || reference.kind === "pointer") flows.push({ from: reference.from, to: reference.to });
     reads.push({ from: reference.from, start: reference.to, end: reference.to });
   }
@@ -257,12 +240,14 @@ const isTable = (type: RegionType) => type === "jumps" || (POINTER_TABLE_TYPES a
  * entry does not reach, and the refusals of --drop and --keep.
  */
 export function planDrops(input: DropInput): DropPlan {
-  const inImage = (address: number) => inside(address, input.segments);
+  const inImage = (address: number) => inRanges(input.segments, address);
   const touched = (address: number) => input.coverage !== undefined && (input.coverage[address]! & RAM_ACCESS) !== 0;
   const executed = (address: number) => input.coverage !== undefined && (input.coverage[address]! & COVERAGE.ramExecute) !== 0;
-  const regions = input.regions.flatMap((region) => input.segments.filter((segment) => overlaps(region, segment)).map((segment) => ({ start: Math.max(region.start, segment.start), end: Math.min(region.end, segment.end), type: region.type })));
+  const regions = input.regions.flatMap((region) => input.segments.filter((segment) => rangesOverlap(region, segment)).map((segment) => ({ start: Math.max(region.start, segment.start), end: Math.min(region.end, segment.end), type: region.type })));
   // The source writes a data region as data, also where the decompiler decoded instructions in it: those are no code.
-  const instructions = new Map([...input.instructions].filter(([start, length]) => !regions.some((region) => !CODE_TYPES.includes(region.type) && start <= region.end && region.start <= start + length - 1)));
+  const inData = new Uint8Array(0x10000);
+  for (const region of regions) if (!INSTRUCTION_REGION_TYPES.includes(region.type)) inData.fill(1, region.start, region.end + 1);
+  const instructions = new Map([...input.instructions].filter(([start, length]) => !inData.subarray(start, start + length).includes(1)));
   const blocks = blocksOf(instructions, input.memory);
   // An indexed operand reads in the region that holds it, and in the next region when it is the last byte (table-1,x).
   // Without a region, it can read the 256 bytes from the operand.
@@ -276,26 +261,27 @@ export function planDrops(input: DropInput): DropPlan {
 
   for (const range of [...input.keep, ...input.drop]) {
     for (let address = range.start; address <= range.end; address++) {
-      if (!inImage(address)) throw new Refusal("invalid-input", `${shown(range)} is not in the program: ${formatC64Address(address)} is in no segment.`);
+      if (!inImage(address)) throw new Refusal("invalid-input", `${formatC64Range(range)} is not in the program: ${formatC64Address(address)} is in no segment.`);
     }
   }
   for (const range of input.drop) {
-    const kept = input.keep.find((other) => overlaps(range, other));
-    if (kept !== undefined) throw new Refusal("invalid-input", `--drop ${shown(range)} overlaps --keep ${shown(kept)}.`);
-    const changed = input.changed.find((other) => overlaps(range, other));
-    if (changed !== undefined) throw new Refusal("invalid-input", `--drop ${shown(range)} overlaps the patch ${shown(changed)}, which the export changed.`);
-    const cutBlock = blocks.find((block) => overlaps(block, range) && !within(block, range));
-    if (cutBlock !== undefined) throw new Refusal("invalid-input", `--drop ${shown(range)} cuts the code ${shown(cutBlock)}. Give a range that holds all of it, or none of it.`);
-    const cutData = regions.find((region) => !CODE_TYPES.includes(region.type) && overlaps(region, range) && !within(region, range));
-    if (cutData !== undefined) throw new Refusal("invalid-input", `--drop ${shown(range)} cuts the ${cutData.type} region ${shown(cutData)}. Give a range that holds all of it, or none of it.`);
+    const kept = input.keep.find((other) => rangesOverlap(range, other));
+    if (kept !== undefined) throw new Refusal("invalid-input", `--drop ${formatC64Range(range)} overlaps --keep ${formatC64Range(kept)}.`);
+    const changed = input.changed.find((other) => rangesOverlap(range, other));
+    if (changed !== undefined) throw new Refusal("invalid-input", `--drop ${formatC64Range(range)} overlaps the patch ${formatC64Range(changed)}, which the export changed.`);
+    const cutBlock = blocks.find((block) => rangesOverlap(block, range) && !within(block, range));
+    if (cutBlock !== undefined) throw new Refusal("invalid-input", `--drop ${formatC64Range(range)} cuts the code ${formatC64Range(cutBlock)}. Give a range that holds all of it, or none of it.`);
+    const cutData = regions.find((region) => !INSTRUCTION_REGION_TYPES.includes(region.type) && rangesOverlap(region, range) && !within(region, range));
+    if (cutData !== undefined) throw new Refusal("invalid-input", `--drop ${formatC64Range(range)} cuts the ${cutData.type} region ${formatC64Range(cutData)}. Give a range that holds all of it, or none of it.`);
   }
 
   // Tables that a run read or that the knowledge names: their entries can be the only way to code, so they are roots.
   const tables = regions.filter((region) => isTable(region.type));
+  const targetsOf = new Map(tables.map((table) => [table, tableTargets(table, input.memory)]));
   const tableUsers = (table: AddressRange) => reads.filter((read) => read.start <= table.end && table.start <= read.end).map((read) => read.from);
   const tableRoots: Root[] = [];
   for (const table of tables) {
-    const targets = tableTargets(table, input.memory);
+    const targets = targetsOf.get(table)!;
     let read = false;
     for (let address = table.start; address <= table.end && !read; address++) read = touched(address);
     if (read || input.references.some((reference) => reference.to >= table.start && reference.to <= table.end)) for (const target of targets) tableRoots.push({ address: target, from: "table entry" });
@@ -309,7 +295,7 @@ export function planDrops(input: DropInput): DropPlan {
   const reachable = (index: number) => !rooted || passA.codeRegions[index]!.reachable === true;
   for (const range of input.drop) {
     const live = blocks.findIndex((block, index) => within(block, range) && reachable(index));
-    if (live >= 0) throw new Refusal("invalid-input", `--drop ${shown(range)} holds the code ${shown(blocks[live]!)}, which the entry or a vector reaches. Only code that nothing reaches can be dropped.`);
+    if (live >= 0) throw new Refusal("invalid-input", `--drop ${formatC64Range(range)} holds the code ${formatC64Range(blocks[live]!)}, which the entry or a vector reaches. Only code that nothing reaches can be dropped.`);
   }
   const ran = (block: AddressRange) => {
     for (let address = block.start; address <= block.end; address++) if (executed(address)) return true;
@@ -321,7 +307,7 @@ export function planDrops(input: DropInput): DropPlan {
   const extra: Root[] = [...tableRoots];
   for (const block of candidates) {
     if (ran(block)) extra.push({ address: block.start, from: "executed code" });
-    else if ([...input.keep, ...input.changed].some((range) => overlaps(block, range))) extra.push({ address: block.start, from: "kept range" });
+    else if ([...input.keep, ...input.changed].some((range) => rangesOverlap(block, range))) extra.push({ address: block.start, from: "kept range" });
   }
   const passB = separate({ segments: [...input.segments], memory: input.memory, ...(input.entry === undefined ? {} : { entry: input.entry }), codeRegions: asRegions(candidates), references, roots: extra });
   const automatic = input.coverage !== undefined && rooted;
@@ -333,23 +319,25 @@ export function planDrops(input: DropInput): DropPlan {
       ? []
       : computedFlows({ starts: [...instructions.keys()], memory: input.memory, inImage, coverage: input.coverage, references: input.references }).unresolved.filter((flow) => live.some((block) => flow.at >= block.start && flow.at <= block.end));
   const droppedCode = unresolved.length === 0 ? unreachableCode : [];
-  const unknown = unresolved.length === 0 ? [] : merged(unreachableCode);
+  const unknown = unresolved.length === 0 ? [] : mergeRanges(unreachableCode);
   const stays = candidates.filter((block) => !droppedCode.includes(block));
-  const inStaying = (address: number) => stays.some((block) => address >= block.start && address <= block.end);
+  const staying = new Uint8Array(0x10000);
+  for (const block of stays) staying.fill(1, block.start, block.end + 1);
+  const inStaying = (address: number) => staying[address] === 1;
   for (const range of input.drop) {
-    const into = flows.find((flow) => inStaying(flow.from) && inside(flow.to, [range]));
-    if (into !== undefined) throw new Refusal("invalid-input", `--drop ${shown(range)}: the code at ${formatC64Address(into.from)} stays and goes to ${formatC64Address(into.to)}.`);
-    const read = reads.find((item) => inStaying(item.from) && overlaps(item, range));
-    if (read !== undefined) throw new Refusal("invalid-input", `--drop ${shown(range)}: the code at ${formatC64Address(read.from)} stays and reads ${shown({ start: Math.max(read.start, range.start), end: Math.min(read.end, range.end) })}.`);
+    const into = flows.find((flow) => inStaying(flow.from) && inRanges([range], flow.to));
+    if (into !== undefined) throw new Refusal("invalid-input", `--drop ${formatC64Range(range)}: the code at ${formatC64Address(into.from)} stays and goes to ${formatC64Address(into.to)}.`);
+    const read = reads.find((item) => inStaying(item.from) && rangesOverlap(item, range));
+    if (read !== undefined) throw new Refusal("invalid-input", `--drop ${formatC64Range(range)}: the code at ${formatC64Address(read.from)} stays and reads ${formatC64Range({ start: Math.max(read.start, range.start), end: Math.min(read.end, range.end) })}.`);
   }
 
   // Data: a region of a droppable type that no run touched and that nothing that stays names.
   const gone = [...input.drop, ...droppedCode];
   const units = automatic
     ? regions.filter((region) => {
-        if (!DROPPABLE_DATA.includes(region.type) || gone.some((range) => overlaps(range, region))) return false;
-        if (regions.some((other) => VIC_DATA.includes(other.type) && overlaps(other, region))) return false;
-        if ([...input.keep, ...input.changed, VECTORS, ...(input.basic === undefined ? [] : [input.basic])].some((range) => overlaps(range, region))) return false;
+        if (!DROPPABLE_DATA.includes(region.type) || gone.some((range) => rangesOverlap(range, region))) return false;
+        if (regions.some((other) => VIC_DATA.includes(other.type) && rangesOverlap(other, region))) return false;
+        if ([...input.keep, ...input.changed, VECTORS, ...(input.basic === undefined ? [] : [input.basic])].some((range) => rangesOverlap(range, region))) return false;
         for (let address = region.start; address <= region.end; address++) if (touched(address)) return false;
         return true;
       })
@@ -359,12 +347,12 @@ export function planDrops(input: DropInput): DropPlan {
   // A name from code that stays, or from a unit that stays, keeps the unit. Kept tables keep their entries.
   for (let grown = true; grown; ) {
     grown = false;
-    const keeps = (from: number) => inStaying(from) || (!inside(from, gone) && (unitAt(from) < 0 || !dropped.has(unitAt(from))));
+    const keeps = (from: number) => inStaying(from) || (!inRanges(gone, from) && (unitAt(from) < 0 || !dropped.has(unitAt(from))));
     for (const [index, unit] of units.entries()) {
       if (!dropped.has(index)) continue;
       const named = reads.some((read) => read.start <= unit.end && unit.start <= read.end && keeps(read.from));
-      const entry = units.some((table, other) => !dropped.has(other) && isTable(table.type) && tableTargets(table, input.memory).some((target) => target >= unit.start && target <= unit.end));
-      const fromTable = tables.some((table) => unitAt(table.start) < 0 && tableTargets(table, input.memory).some((target) => target >= unit.start && target <= unit.end));
+      const entry = units.some((table, other) => !dropped.has(other) && isTable(table.type) && targetsOf.get(table)!.some((target) => target >= unit.start && target <= unit.end));
+      const fromTable = tables.some((table) => unitAt(table.start) < 0 && targetsOf.get(table)!.some((target) => target >= unit.start && target <= unit.end));
       if (named || entry || fromTable) {
         dropped.delete(index);
         grown = true;
@@ -389,7 +377,7 @@ export function planDrops(input: DropInput): DropPlan {
   }
 
   const routines = [...input.routines].sort((a, b) => a.address - b.address);
-  const unreachableExecuted = merged(blocks.filter((block, index) => rooted && passA.codeRegions[index]!.reachable === false && ran(block) && !input.drop.some((range) => within(block, range)))).map((range) => {
+  const unreachableExecuted = mergeRanges(blocks.filter((block, index) => rooted && passA.codeRegions[index]!.reachable === false && ran(block) && !input.drop.some((range) => within(block, range)))).map((range) => {
     const routine = routines.filter((item) => item.address <= range.start).at(-1)?.name;
     return { ...range, ...(routine === undefined ? {} : { routine }) };
   });
@@ -397,7 +385,7 @@ export function planDrops(input: DropInput): DropPlan {
 }
 
 /** The label of a free range. */
-export const freeName = (range: AddressRange) => `free_${range.start.toString(16).padStart(4, "0")}`;
+export const freeName = (range: AddressRange) => `free_${hexWord(range.start)}`;
 
 /** What the export does with one test file of the project. */
 export type TestRewrite = { kind: "scenario" | "run"; text: string } | { reason: string };
@@ -443,9 +431,9 @@ export function rewriteTest(text: string, name: string, symbols: ReadonlyMap<str
   if (!scenario && !run) return { reason: "it is not a scenario or a run file" };
   if (hasSnapshot(test)) return { reason: "it restores a snapshot, which is a state of the old program" };
   for (const location of locationsOf(test.steps)) {
-    if (/^\$[0-9a-fA-F]{1,4}$/.test(location)) {
-      const address = Number.parseInt(location.slice(1), 16);
-      if (inside(address, free)) return { reason: `it names ${location}, which is in a free range` };
+    const address = c64AddressOf(location);
+    if (address !== undefined) {
+      if (inRanges(free, address)) return { reason: `it names ${location}, which is in a free range` };
     } else if (!symbols.has(location)) return { reason: `it names ${location}, which the exported program does not have` };
   }
   const side = (program: string) => ({ program: `${program}.prg`, symbols: symbolsPath(`${program}.prg`) });
@@ -513,7 +501,7 @@ export function readmeText(input: ReadmeInput): string {
   if (input.free.length === 0) lines.push("None: the export dropped nothing.");
   else {
     lines.push("The export dropped code and data that nothing uses. Each range is `$00` in the source, with a label `free_xxxx`. Use the space for new code.", "", "| Range | Bytes | Was |", "|---|---|---|");
-    for (const range of input.free) lines.push(`| \`${shown(range)}\` | ${range.end - range.start + 1} | ${range.what} |`);
+    for (const range of input.free) lines.push(`| \`${formatC64Range(range)}\` | ${range.end - range.start + 1} | ${range.what} |`);
   }
   lines.push(
     "",

@@ -4,10 +4,8 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import { COVERAGE, coverageEntries, coverageSeedKinds, executedStarts, romOnlyRanges } from "#src/c64.ts";
+import { COVERAGE } from "#src/c64.ts";
 import type { RefusedSeed, RefusedSeedReason } from "#src/native/types.ts";
-
-export { coverageEntries, coverageSeedKinds, executedStarts, romOnlyRanges };
 import { listReferences, listRegions, type RegionRow } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, isAnalyzer, isSemantic, type Analyzer, type Space } from "#src/knowledge/schema.ts";
 

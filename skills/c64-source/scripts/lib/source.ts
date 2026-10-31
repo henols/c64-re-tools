@@ -14,11 +14,11 @@
 // each release has it, the default build does not, and the loader never
 // loads it.
 
-import { CONFIG_FILE, configValues } from "#src/build-name.ts";
-import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, POINTER_TABLE_TYPES, pointerEntryText, pointerTableEntries, type PointerTableType, splitEntryByte } from "#src/c64.ts";
+import { CONFIG_FILE } from "#src/build-name.ts";
+import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, formatC64Range, hexWord, inRanges, POINTER_TABLE_TYPES, pointerEntryText, pointerTableEntries, type PointerTableType, splitEntryByte } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { identifiers, operandText, replaceIdentifiers, type OperandExpression } from "#src/knowledge/expression.ts";
-import { type CommentPlacement, isAnalyzer, isGeneratedFile, LEFTOVER_FOLDER, LEFTOVERS_SWITCH, SEGMENT_FOLDER, RELEASE_DEFINE, START_SCREEN_SWITCH, type Origin, type RegionType, type SwitchKind } from "#src/knowledge/schema.ts";
+import { type CommentPlacement, INSTRUCTION_REGION_TYPES, isAnalyzer, isGeneratedFile, LEFTOVER_FOLDER, LEFTOVERS_SWITCH, SEGMENT_FOLDER, RELEASE_DEFINE, START_SCREEN_SWITCH, type Origin, type RegionType, type SwitchKind } from "#src/knowledge/schema.ts";
 import type { Area } from "#src/platform.ts";
 import { hasZeroPageForm, instructionWith, labelProblem, MODE_LENGTH, OPCODES, takesAddress, USE_KINDS, useKind, type UseKind } from "#src/opcodes.ts";
 
@@ -136,7 +136,6 @@ export interface OperandAsNumber {
   reason: string;
 }
 
-const CODE_TYPES: readonly RegionType[] = ["code", "jumps", "dual-use"];
 const BYTES_PER_LINE = 8;
 const WORDS_PER_LINE = 4;
 const CHARS_PER_LINE = 32;
@@ -285,24 +284,39 @@ function operandValue(address: number, opcode: number, byteAt: (address: number)
  */
 export function entriesInData<R extends { start: number; end: number; type: RegionType }>(entries: readonly number[], regions: readonly R[]): Array<{ entry: number; region: R }> {
   return entries.flatMap((entry) => {
-    const region = regions.find((row) => entry >= row.start && entry <= row.end && !CODE_TYPES.includes(row.type));
+    const region = regions.find((row) => entry >= row.start && entry <= row.end && !INSTRUCTION_REGION_TYPES.includes(row.type));
     return region === undefined ? [] : [{ entry, region }];
   });
 }
 
 /** Why an image without its entry fails: the image does not hold the program. Undefined when the entry is in a segment, or the image has no entry. */
 export function entryOutsideImage(entry: number | undefined, segments: readonly AddressRange[]): string | undefined {
-  if (entry === undefined || segments.some((segment) => entry >= segment.start && entry <= segment.end)) return undefined;
+  if (entry === undefined || inRanges(segments, entry)) return undefined;
   return `The entry ${formatC64Address(entry)} is in no segment of the image: the image does not hold the program. Capture the program again, so that a segment holds the entry.`;
+}
+
+/**
+ * regions.find for each address as one index: the first region whose span
+ * holds the address. It is filled from the last region to the first, so the
+ * first one wins. `span` gives the part of a region that counts, or undefined
+ * to leave the region out.
+ */
+function regionFinder<R extends AddressRange>(regions: readonly R[], span: (region: R) => AddressRange | undefined = (region) => region): (address: number) => R | undefined {
+  const first = new Int32Array(0x10000).fill(-1);
+  for (let index = regions.length - 1; index >= 0; index--) {
+    const part = span(regions[index]!);
+    if (part !== undefined) first.fill(index, part.start, part.end + 1);
+  }
+  return (address) => regions[first[address] ?? -1];
 }
 
 /** Splits the segments into pieces at module starts and lays out instructions and data. */
 export function layout(input: SourceInput): Layout {
-  const inImage = (address: number) => input.segments.some((segment) => address >= segment.start && address <= segment.end);
-  const regionAt = (address: number) => input.regions.find((region) => address >= region.start && address <= region.end);
+  const inImage = (address: number) => inRanges(input.segments, address);
+  const regionAt = regionFinder(input.regions);
   const isData = (address: number) => {
     const region = regionAt(address);
-    return region !== undefined && !CODE_TYPES.includes(region.type);
+    return region !== undefined && !INSTRUCTION_REGION_TYPES.includes(region.type);
   };
 
   for (const module of input.modules) {
@@ -318,7 +332,6 @@ export function layout(input: SourceInput): Layout {
   const cuts = new Set([...patches, ...macroUses, ...leftovers].flatMap((range) => [range.start, range.end + 1]));
 
   const pieces: Piece[] = [];
-  const hex = (address: number) => address.toString(16).padStart(4, "0");
   for (const segment of input.segments) {
     const inside = (address: number) => address > segment.start && address <= segment.end;
     // A range of leftovers is one file: a module that starts in it goes on after it.
@@ -328,16 +341,16 @@ export function layout(input: SourceInput): Layout {
     for (let index = 0; index + 1 < bounds.length; index++) {
       const start = bounds[index]!;
       const end = bounds[index + 1]! - 1;
-      const segmentTitle = `Segment ${formatC64Address(segment.start)}-${formatC64Address(segment.end)}`;
+      const segmentTitle = `Segment ${formatC64Range(segment)}`;
       if (leftovers.some((range) => range.start === start)) {
-        pieces.push({ start, end, file: `${LEFTOVER_FOLDER}/leftover_${hex(start)}.asm`, title: `Leftovers ${formatC64Address(start)}-${formatC64Address(end)}: ${end - start + 1} bytes that nothing uses. Only LEFTOVERS = 1 builds them.`, segmentStart: index === 0, leftover: true, items: [] });
+        pieces.push({ start, end, file: `${LEFTOVER_FOLDER}/leftover_${hexWord(start)}.asm`, title: `Leftovers ${formatC64Range({ start, end })}: ${end - start + 1} bytes that nothing uses. Only LEFTOVERS = 1 builds them.`, segmentStart: index === 0, leftover: true, items: [] });
         continue;
       }
       // A module that leftovers cut goes on in a file of its own after them, in its folder: <module>_xxxx.asm.
       const module = modules.find((row) => row.start === start);
       const holder = module ?? modules.filter((row) => row.start >= segment.start && row.start < start).at(-1);
       const title = (text: string | undefined) => text?.replace(/\s*\r?\n\s*/g, " ");
-      const file = module?.file ?? (holder === undefined ? `${SEGMENT_FOLDER}/segment_${hex(start)}.asm` : `${holder.file.replace(/\.asm$/i, "")}_${hex(start)}.asm`);
+      const file = module?.file ?? (holder === undefined ? `${SEGMENT_FOLDER}/segment_${hexWord(start)}.asm` : `${holder.file.replace(/\.asm$/i, "")}_${hexWord(start)}.asm`);
       const named = module === undefined && holder !== undefined ? `${title(holder.title) ?? holder.file}, from ${formatC64Address(start)}` : title(module?.title);
       pieces.push({ start, end, file, title: named ?? segmentTitle, segmentStart: index === 0, leftover: false, items: [] });
     }
@@ -354,7 +367,7 @@ export function layout(input: SourceInput): Layout {
     let address = piece.start;
     while (address <= piece.end) {
       const region = regionAt(address);
-      const codeRegion = region !== undefined && CODE_TYPES.includes(region.type);
+      const codeRegion = region !== undefined && INSTRUCTION_REGION_TYPES.includes(region.type);
       const length = input.instructions.get(address);
       const opcode = input.byteAt(address);
       const fits =
@@ -414,10 +427,12 @@ export function layout(input: SourceInput): Layout {
     tally(address, kind);
   };
   const inIo = (address: number) => input.io !== undefined && address >= input.io.start && address <= input.io.end;
+  /** The data region that holds an address after its first byte. */
+  const tableRegion = regionFinder(input.regions, (row) => (INSTRUCTION_REGION_TYPES.includes(row.type) ? undefined : { start: row.start + 1, end: row.end }));
   /** The start of the named data region that holds an address without a name of its own: the operand is written name+offset. */
   const tableStart = (address: number) => {
     if (symbols.has(address)) return undefined;
-    const region = input.regions.find((row) => address > row.start && address <= row.end && !CODE_TYPES.includes(row.type) && row.type !== "dual-use");
+    const region = tableRegion(address);
     return region !== undefined && symbols.has(region.start) ? region.start : undefined;
   };
   const use = (address: number, kind: UseKind) => {
@@ -588,7 +603,7 @@ export function layout(input: SourceInput): Layout {
       if (inImage(address)) namedLabels++;
       continue;
     }
-    let name = `l_${address.toString(16).padStart(4, "0")}`;
+    let name = `l_${hexWord(address)}`;
     while (taken.has(name)) name = `${name}_`;
     taken.add(name);
     names.set(address, name);
@@ -608,7 +623,7 @@ export function layout(input: SourceInput): Layout {
     }
     const known = blocks.get(patch.start);
     if (known !== undefined) {
-      if (known.end !== patch.end) refuse(`The range overlaps the patch of ${known.alternatives[0]!.switch} at ${formatC64Address(known.start)}-${formatC64Address(known.end)}: alternatives have the same range.`);
+      if (known.end !== patch.end) refuse(`The range overlaps the patch of ${known.alternatives[0]!.switch} at ${formatC64Range(known)}: alternatives have the same range.`);
       else known.alternatives.push({ switch: patch.switch, code: patch.code, ...(patch.comment === undefined ? {} : { comment: patch.comment }), base: owner.base });
       continue;
     }
@@ -691,18 +706,13 @@ export function layout(input: SourceInput): Layout {
   };
 }
 
-/** The pointer region types: a table of addresses, or of addresses minus 1 for RTS. */
-const POINTER_TYPES: ReadonlyArray<DataItem["type"]> = POINTER_TABLE_TYPES;
-const isPointerTable = (region: Region): region is Region & { type: PointerTableType } => (POINTER_TABLE_TYPES as readonly string[]).includes(region.type);
-
-/** The pairs of a pointer table: the address of each low and high byte, and the target it names. */
-function pairsOf(region: Region, byteAt: (address: number) => number): Array<{ low: number; high: number; target: number }> {
-  return isPointerTable(region) ? pointerTableEntries(region, byteAt) : [];
-}
+/** A data item of a pointer table: a table of addresses, or of addresses minus 1 for RTS. The type of a data item with a region is the type of the region. */
+type PointerItem = DataItem & { region: Region & { type: PointerTableType } };
+const isPointerTable = (item: DataItem): item is PointerItem => item.region !== undefined && (POINTER_TABLE_TYPES as readonly string[]).includes(item.type);
 
 function pointersOf(item: DataItem, byteAt: (address: number) => number): number[] {
-  if (item.region === undefined || !POINTER_TYPES.includes(item.type)) return [];
-  return pairsOf(item.region, byteAt)
+  if (!isPointerTable(item)) return [];
+  return pointerTableEntries(item.region, byteAt)
     .filter((pair) => (pair.low >= item.start && pair.low <= item.end) || (pair.high >= item.start && pair.high <= item.end))
     .map((pair) => pair.target);
 }
@@ -715,7 +725,7 @@ export interface InstructionForm {
 }
 
 /** The operand size suffix: +2 forces an absolute operand below $0100, +1 a zero-page operand that is a label of the image. */
-export function formOf(layout: Pick<Layout, "inImage" | "byteAt">, item: InstructionItem): InstructionForm {
+function formOf(layout: Pick<Layout, "inImage" | "byteAt">, item: InstructionItem): InstructionForm {
   const { mnemonic, mode } = OPCODES[item.opcode]!;
   const value = takesAddress(mode) ? operandValue(item.address, item.opcode, layout.byteAt)! : 0;
   let suffix = "";
@@ -781,10 +791,10 @@ function cellsOf(item: DataItem, layout: Layout, breaks: Set<number>): Cell[] {
   const name = (address: number) => layout.names.get(address);
   const byteCell = (address: number, text = formatC64Byte(byteAt(address))): Cell => ({ address, length: 1, directive: "!byte", text });
 
-  if (item.region !== undefined && POINTER_TYPES.includes(item.type)) {
+  if (isPointerTable(item)) {
     const rts = item.type === "rts-addresses" || item.type === "rts-addresses-split";
     const split = item.type === "addresses-split" || item.type === "rts-addresses-split";
-    const pairs = pairsOf(item.region, byteAt);
+    const pairs = pointerTableEntries(item.region, byteAt);
     const partOf = new Map<number, { pair: (typeof pairs)[number]; high: boolean }>();
     for (const pair of pairs) {
       partOf.set(pair.low, { pair, high: false });
@@ -935,8 +945,6 @@ export const hasSwitchFile = (layout: Pick<Layout, "switches" | "releases" | "le
 /** True when the source has config.asm: the knowledge has switches or a start screen, or the source has leftovers. */
 export const hasConfigFile = (layout: Pick<Layout, "switches" | "startScreen" | "leftovers">) => layout.switches.length > 0 || layout.startScreen || layout.leftovers.length > 0;
 
-export { CONFIG_FILE, configValues };
-
 /**
  * config.asm: the value of each switch as a plain assignment, grouped by
  * kind. Without a value, a switch has its default. A comment tells the
@@ -958,7 +966,7 @@ export function configText(layout: Pick<Layout, "switches" | "patches" | "startS
     if (rows.length === 0) continue;
     out.push("", `; ${group.title}`);
     for (const row of rows) {
-      const ranges = (patches.get(row.name) ?? []).map((patch) => `${formatC64Address(patch.start)}-${formatC64Address(patch.end)}`);
+      const ranges = (patches.get(row.name) ?? []).map((patch) => `${formatC64Range(patch)}`);
       const parts = [
         row.releases.length === 0 ? "on in no release" : `on in ${row.releases.join(", ")}`,
         ranges.length === 0 ? "no patch" : ranges.join(", "),
@@ -1032,7 +1040,7 @@ function constantsText(layout: Layout): { text: string; labels: SourceLabel[] } 
     const next = describe?.(row.address).area;
     if (next !== undefined && next.start !== area?.start) {
       area = next;
-      out.push("", `; ${area.name[0]!.toUpperCase()}${area.name.slice(1)} ${formatC64Address(area.start)}-${formatC64Address(area.end)}`);
+      out.push("", `; ${area.name[0]!.toUpperCase()}${area.name.slice(1)} ${formatC64Range(area)}`);
       if (area.meaning !== undefined) out.push(`; ${area.meaning}`);
     }
     const line = `${row.name.padEnd(nameColumn)} = ${row.value.padEnd(valueColumn)}`;
@@ -1122,8 +1130,8 @@ const patchCondition = (alternative: PatchAlternative) => (alternative.base === 
  */
 function patchOpening(patch: PatchBlock): string[] {
   const bytes = patch.end - patch.start + 1;
-  const range = `${formatC64Address(patch.start)}-${formatC64Address(patch.end)}`;
-  const out = [`!zone patch_${patch.alternatives[0]!.switch}_${patch.start.toString(16).padStart(4, "0")} {`, ".patch_start"];
+  const range = `${formatC64Range(patch)}`;
+  const out = [`!zone patch_${patch.alternatives[0]!.switch}_${hexWord(patch.start)} {`, ".patch_start"];
   patch.alternatives.forEach((first, index) => {
     for (const second of patch.alternatives.slice(index + 1)) {
       out.push(`!if ${patchCondition(first)} { !if ${patchCondition(second)} { !error "${first.switch} and ${second.switch} change ${range}: turn on one of them." } }`);
@@ -1193,7 +1201,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
   const notExecuted = { instructions: 0, ranges: [] as AddressRange[] };
 
   for (const piece of layout.pieces) {
-    const out: string[] = [`; ${piece.title}`, `; ${formatC64Address(piece.start)}-${formatC64Address(piece.end)}`, ""];
+    const out: string[] = [`; ${piece.title}`, `; ${formatC64Range(piece)}`, ""];
     /** True while the instructions before have not executed: they form one range. */
     let running = false;
     /** The line of the mark of the open range of instructions that did not execute. */
@@ -1214,7 +1222,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
         }
         // The mark gives the range, so a reader finds it in the full list.
         const range = notExecuted.ranges.at(-1)!;
-        out[markLine] = `; not executed ${formatC64Address(range.start)}-${formatC64Address(range.end)}`;
+        out[markLine] = `; not executed ${formatC64Range(range)}`;
         notExecuted.instructions += count;
       }
       running = !executed;

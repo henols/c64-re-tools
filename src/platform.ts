@@ -380,6 +380,11 @@ export function platformNames(): Array<{ address: number; end: number; name: str
     .filter((entry) => !seen.has(entry.name) && seen.add(entry.name) !== undefined);
 }
 
+/** The address of each platform name: the operand images of the knowledge read a name in an expression with it. */
+export function platformAddresses(): Map<string, number> {
+  return new Map(platformNames().map((entry) => [entry.name, entry.address]));
+}
+
 /** Which ROMs a program uses: a ROM it does not use gives no names, and without both the system area gives none. */
 export interface RomUse {
   basic: boolean;

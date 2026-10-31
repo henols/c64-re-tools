@@ -30,7 +30,7 @@ export function proseLines(text: string): Array<{ text: string; prose: boolean }
 }
 
 /** The id that GitHub and VS Code give a heading: lower case, without punctuation, spaces as hyphens. */
-export function headingSlug(heading: string): string {
+function headingSlug(heading: string): string {
   const text = heading
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/<[^>]+>/g, "")

@@ -2,10 +2,9 @@
 // each item. knowledge.ts reads and writes the files; these functions check
 // each verdict and count the result, so the files stay consistent.
 
-import { createHash } from "node:crypto";
-
 import { SYMBOL_NAME } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
+import { sha256 } from "#src/knowledge/text.ts";
 
 export const CHECK_VERDICTS = ["correct", "wrong", "unsure"] as const;
 export type CheckVerdict = (typeof CHECK_VERDICTS)[number];
@@ -52,7 +51,7 @@ export interface Verdicts {
  * in address order. A changed text or another row does not move a row.
  */
 export function pickSample<T extends { space: string; address: number; placement: string }>(rows: readonly T[], seed: number, count: number): T[] {
-  const key = (row: T) => createHash("sha256").update(`${seed}:${row.space}:${row.address}:${row.placement}`).digest("hex");
+  const key = (row: T) => sha256(`${seed}:${row.space}:${row.address}:${row.placement}`);
   return rows
     .map((row) => ({ row, key: key(row) }))
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))

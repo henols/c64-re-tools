@@ -13,7 +13,7 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
-import { type AddressRange, formatC64Address } from "../c64.ts";
+import { type AddressRange, formatC64Address, formatC64Range, mergeRanges, subtract } from "../c64.ts";
 import { Refusal } from "../errors.ts";
 import { transaction } from "./database.ts";
 import {
@@ -31,7 +31,7 @@ import {
   type SymbolRow,
 } from "./read.ts";
 import { ANALYZERS, CODE_REGION_TYPES, DEFAULT_SPACE, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SEMANTIC_ORIGINS, SYMBOL_KINDS, type Analyzer, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
-import { Change, checkAddress, checkSpace, subtract, SYMBOL_NAME, type Evidence } from "./write.ts";
+import { Change, checkAddress, checkSpace, SYMBOL_NAME, type Evidence } from "./write.ts";
 
 
 
@@ -129,18 +129,6 @@ function invalid(message: string): never {
   throw new Refusal("invalid-input", `The analyzer result is not usable: ${message} Nothing was imported.`);
 }
 
-/** Sorted, merged coverage ranges. */
-function mergeCoverage(coverage: AddressRange[]): AddressRange[] {
-  const sorted = [...coverage].sort((a, b) => a.start - b.start);
-  const merged: AddressRange[] = [];
-  for (const range of sorted) {
-    const last = merged.at(-1);
-    if (last !== undefined && range.start <= last.end + 1) last.end = Math.max(last.end, range.end);
-    else merged.push({ ...range });
-  }
-  return merged;
-}
-
 /**
  * Checks complete findings before anything is written. Every finding
  * lies in coverage, names are valid and unique, regions do not overlap.
@@ -153,9 +141,9 @@ export function validateFindings(findings: NormalizedFindings): AddressRange[] {
   for (const range of findings.coverage) {
     checkAddress(range.start, "coverage start");
     checkAddress(range.end, "coverage end");
-    if (range.end < range.start) invalid(`coverage ${formatC64Address(range.start)}-${formatC64Address(range.end)} ends before it starts.`);
+    if (range.end < range.start) invalid(`coverage ${formatC64Range(range)} ends before it starts.`);
   }
-  const coverage = mergeCoverage(findings.coverage);
+  const coverage = mergeRanges(findings.coverage);
   const covering = (start: number, end: number) => coverage.some((range) => range.start <= start && end <= range.end);
 
   const addresses = new Set<number>();

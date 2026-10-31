@@ -4,7 +4,6 @@
 // its start, so match finds it in another program at another address and
 // suggests its names there as writes of the knowledge. Nothing here writes knowledge.
 
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
@@ -12,12 +11,13 @@ import { Refusal } from "#src/errors.ts";
 import { writeRefusal, type Written } from "#src/host-client/transfer.ts";
 import { formatC64Address, instructionLength } from "#src/c64.ts";
 import { evaluate, identifiers, operandText } from "#src/knowledge/expression.ts";
+import { sha256 } from "#src/knowledge/text.ts";
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "#src/knowledge/read.ts";
 import { COMMENT_PLACEMENTS, type CommentPlacement, isSemantic, OPERAND_SELECTS, type OperandSelect, REFERENCE_KINDS, type ReferenceKind, REGION_TYPES, type RegionType, SYMBOL_KINDS, type SymbolKind } from "#src/knowledge/schema.ts";
 import { checkOutputPath, isInside, knowledgePart, LOCAL_DIRECTORY, PROJECT_DIRECTORY } from "#src/project.ts";
 
 /** A routine shorter than this is not saved and not searched: its bytes occur by chance. */
-export const MIN_ROUTINE = 16;
+const MIN_ROUTINE = 16;
 
 /** A routine name is also its file name: a letter or underscore, then letters, digits or underscores. */
 const ROUTINE_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
@@ -372,7 +372,7 @@ export function saveRoutine(folder: string, routine: Routine, replace: boolean, 
   } catch (error) {
     throw writeRefusal(error, out, "--library") ?? error;
   }
-  return { out, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+  return { out, bytes: bytes.length, sha256: sha256(bytes) };
 }
 
 /** An image to search: its segments and its bytes inside them. */

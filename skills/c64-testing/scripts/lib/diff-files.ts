@@ -4,11 +4,10 @@
 // that the runs use: VICE reads its own snapshot format. Two memory files of a
 // run, or two observations of runs (also two of one run), compare as they are.
 
-import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { formatC64Address, formatC64RangeFields, parseC64Address } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { isObject } from "#src/host-client/steps.ts";
-import { WireFailure } from "#src/host-client/tools.ts";
-import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
+import { readProjectFile, readProjectJson, writeReported } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { checkSnapshotFile } from "#src/media.ts";
 import { listed, UsageError } from "#src/script.ts";
@@ -27,13 +26,7 @@ function kindOf(path: string): Kind {
 /** The state of one observation of a results.json: its memory items and its registers. */
 function observation(path: string): MachineState {
   const [file, name] = [path.slice(0, path.lastIndexOf(":")), path.slice(path.lastIndexOf(":") + 1)];
-  let results: { observations?: Record<string, { memory?: Record<string, unknown>; registers?: Record<string, unknown> }> };
-  try {
-    results = JSON.parse(readProjectFile(file).bytes.toString("utf8")) as typeof results;
-  } catch (error) {
-    if (error instanceof WireFailure) throw error;
-    throw new Refusal("invalid-input", `${file} is not JSON: ${(error as Error).message}`);
-  }
+  const results = readProjectJson(file) as { observations?: Record<string, { memory?: Record<string, unknown>; registers?: Record<string, unknown> }> };
   const seen = results.observations?.[name];
   if (seen === undefined) throw new Refusal("not-found", `${file} has no observation ${name}. It has ${Object.keys(results.observations ?? {}).join(", ") || "none"}.`);
   const observed: Record<string, string> = {};
@@ -115,7 +108,7 @@ async function snapshotState(client: ViceSessionClient, path: string, ntsc: bool
   return { memory: { base: 0, bytes: memory }, colorRam, values };
 }
 
-const show = (range: ChangedRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end), ...(range.a === undefined ? {} : { a: range.a, b: range.b }) });
+const show = (range: ChangedRange) => ({ ...formatC64RangeFields(range), ...(range.a === undefined ? {} : { a: range.a, b: range.b }) });
 /** A changed value as a person reads it: the pc as "$xxxx". */
 const showValue = (item: { name: string; a: number | boolean; b: number | boolean }) => (item.name === "cpu.pc" && typeof item.a === "number" && typeof item.b === "number" ? { name: item.name, a: formatC64Address(item.a), b: formatC64Address(item.b) } : item);
 
@@ -124,7 +117,7 @@ const showValue = (item: { name: string; a: number | boolean; b: number | boolea
  * diff compared. With none, the reason names what each side has, so that a
  * count of 0 does not read as "equal".
  */
-export function comparedItems(what: string, a: readonly string[], b: readonly string[], first: string, second: string): { compared: number; reason?: string } {
+function comparedItems(what: string, a: readonly string[], b: readonly string[], first: string, second: string): { compared: number; reason?: string } {
   const compared = a.filter((name) => b.includes(name)).length;
   if (compared > 0) return { compared };
   const has = (names: readonly string[]) => (names.length === 0 ? "none" : names.join(", "));

@@ -6,21 +6,20 @@
 // writes the memory into the project. "loads" captures each part of a
 // multi-load program. No native unpack tool is used.
 
-import { type AddressRange, COVERAGE, EXECUTE, formatC64Address } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, EXECUTE, formatC64Address, formatC64Range, formatC64RangeFields, inRanges } from "#src/c64.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { IO_RAM, markIoRamWrites, readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
 import { readActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readPrg } from "#src/host-client/image.ts";
-import { writeReported, type Written } from "#src/host-client/transfer.ts";
-import { ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
 import { PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
 import { basicStart, inspect, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
-import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "./lib/stages.ts";
-import { entryStateFile, machineState, readRam, readyState, removeStaleFiles, vectorsOf } from "./lib/machine.ts";
+import { callReturn, captureSegments, executedIn, mergeMaps, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "./lib/stages.ts";
+import { entryStateFile, machineState, readyState, vectorsOf, writeCapture } from "./lib/machine.ts";
 
 /** Written-then-executed bytes from this many on are unpacking, decrypting or relocating, not self-changing code. */
 const UNPACKED_BYTES = 256;
@@ -80,7 +79,7 @@ async function trace(program: string, options: { frames: number; entry?: number;
         traced: true,
         frames: ran,
         pc: formatC64Address(pc),
-        writtenThenExecuted: listed(written, options.max, showRange),
+        writtenThenExecuted: listed(written, options.max, formatC64RangeFields),
         bytes: count,
         packing,
         evidence:
@@ -218,7 +217,7 @@ async function follow(
   const notStarted = await startLoaded(client, program, bytes, options.entry);
   if (notStarted !== undefined) return { stages: [], frames: 0, reached: false, failed: notStarted };
   // The map gives a write to the RAM under the I/O area as an I/O write: a compare of that RAM at each stage end finds them.
-  const readIoRam = () => readRam(client, IO_RAM.start, IO_RAM.end - IO_RAM.start + 1);
+  const readIoRam = () => readMemoryInParts(client, IO_RAM.start, IO_RAM.end - IO_RAM.start + 1, "ram");
   let ioRam = await readIoRam();
   const markIoRam = async (map: Uint8Array) => {
     const now = await readIoRam();
@@ -289,9 +288,9 @@ async function follow(
      */
     const returns = async (map: Uint8Array, frames: number): Promise<number | undefined> => {
       const { sp } = await client.registersGet("c64");
-      const stack = await readRam(client, 0x0100, 0x100);
+      const stack = await readMemoryInParts(client, 0x0100, 0x100, "ram");
       const pushed = stack[(sp + 1) & 0xff]! | (stack[(sp + 2) & 0xff]! << 8);
-      const [opcode] = await readRam(client, (pushed - 2) & 0xffff, 1);
+      const [opcode] = await readMemoryInParts(client, (pushed - 2) & 0xffff, 1, "ram");
       const back = callReturn(stack, sp, () => opcode!, (address) => ((stage.map[address]! | map[address]!) & COVERAGE.ramExecute) !== 0);
       if (back === undefined) return undefined;
       await arm({ exec: [], watch: [] });
@@ -462,13 +461,12 @@ async function follow(
   return { stages: found, frames: total, reached, ...(halted === undefined ? {} : { halted }), ...(untilRan === undefined ? {} : { untilRan }) };
 }
 
-const showRange = (range: { start: number; end: number }) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
 const showStages = (stages: Stage[]) =>
   stages.map((stage, index) => ({
     stage: index,
     entry: formatC64Address(stage.entry),
     frames: stage.frames,
-    wrote: stage.wrote.map(showRange),
+    wrote: stage.wrote.map(formatC64RangeFields),
     ...(stage.next === undefined ? {} : { next: formatC64Address(stage.next) }),
   }));
 
@@ -553,7 +551,7 @@ async function capture(
       };
     }
     // The RAM view: unpacked code is often under the ROMs or the I/O area.
-    const memory = await readRam(client, 0x0000, 0x10000);
+    const memory = await readMemoryInParts(client, 0x0000, 0x10000, "ram");
     const state = await machineState(client);
     // The segments: what the stages wrote, without loader leftovers, with no overlap.
     const load = bytes[0]! | (bytes[1]! << 8);
@@ -562,38 +560,24 @@ async function capture(
         ? [options.range]
         : captureSegments(followed.stages, registers.pc, { loaded: { start: load, end: Math.min(0xffff, load + bytes.length - 3) }, used: await usedAfter(client) });
     const segments = withoutRanges(found, options.exclude);
-    const file = (path: string) => `${options.out}/${path}`;
-    const written: Written[] = [];
-    const write = (path: string, bytes: Uint8Array) => written.push(writeReported(file(path), bytes, { what: "--out" }));
-    write("image.bin", memory);
-    const files = segments.map((segment) => {
-      const name = `segment-${segment.start.toString(16).padStart(4, "0")}-${segment.end.toString(16).padStart(4, "0")}.prg`;
-      write(name, Buffer.concat([Buffer.from([segment.start & 0xff, segment.start >> 8]), memory.subarray(segment.start, segment.end + 1)]));
-      return name;
-    });
     const vectors = vectorsOf(state, memory);
-    write(
-      "image.json",
-      Buffer.from(
-        `${JSON.stringify(
-          {
-            entry: formatC64Address(registers.pc),
-            segments: segments.map((segment, index) => ({ ...showRange(segment), ...("writtenBy" in segment ? { writtenBy: segment.writtenBy } : {}), ...("loaded" in segment ? { loaded: true } : {}), file: files[index] })),
-            ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(showRange) }),
-            vectors,
-            stages: showStages(followed.stages),
-            image: "image.bin",
-          },
-          null,
-          2,
-        )}\n`,
-      ),
-    );
     // A clean machine at the READY prompt shows what the loader and the stages changed.
     const entry = entryStateFile(registers, state, vectors, await readyState(client));
-    write("entry_state.json", entry.bytes);
-    // A capture again into the folder: the segment PRGs of the earlier capture that image.json no longer lists go.
-    const removed = removeStaleFiles(options.out, files);
+    const { written, removed } = writeCapture(
+      options.out,
+      memory,
+      segments,
+      [],
+      (files) => ({
+        entry: formatC64Address(registers.pc),
+        segments: segments.map((segment, index) => ({ ...formatC64RangeFields(segment), ...("writtenBy" in segment ? { writtenBy: segment.writtenBy } : {}), ...("loaded" in segment ? { loaded: true } : {}), file: files[index] })),
+        ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(formatC64RangeFields) }),
+        vectors,
+        stages: showStages(followed.stages),
+        image: "image.bin",
+      }),
+      entry.bytes,
+    );
     return {
       output: {
         captured: true,
@@ -601,8 +585,8 @@ async function capture(
         out: options.out,
         files: written,
         ...(removed.length === 0 ? {} : { removed }),
-        segments: segments.map((segment) => ({ ...showRange(segment), ...("loaded" in segment ? { loaded: true } : {}) })),
-        ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(showRange) }),
+        segments: segments.map((segment) => ({ ...formatC64RangeFields(segment), ...("loaded" in segment ? { loaded: true } : {}) })),
+        ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(formatC64RangeFields) }),
         stages: followed.stages.length,
         differsFromReset: entry.differsFromReset,
       },
@@ -739,11 +723,10 @@ const COMMANDS: CommandSpec[] = [
       const range = call.range("range");
       const until = call.address("until")!;
       // A segment must hold the entry: refused before the emulator runs.
-      const show = (item: AddressRange) => `${formatC64Address(item.start)}-${formatC64Address(item.end)}`;
       const holds = (item: AddressRange) => until >= item.start && until <= item.end;
       const excluded = call.ranges("exclude").find(holds);
-      if (excluded !== undefined) throw new UsageError(`--exclude ${show(excluded)} holds the entry --until ${formatC64Address(until)}. A segment must hold the entry: give an --exclude range without it.`);
-      if (range !== undefined && !holds(range)) throw new UsageError(`--range ${show(range)} does not hold the entry --until ${formatC64Address(until)}. Give a --range that holds the entry.`);
+      if (excluded !== undefined) throw new UsageError(`--exclude ${formatC64Range(excluded)} holds the entry --until ${formatC64Address(until)}. A segment must hold the entry: give an --exclude range without it.`);
+      if (range !== undefined && !holds(range)) throw new UsageError(`--range ${formatC64Range(range)} does not hold the entry --until ${formatC64Address(until)}. Give a --range that holds the entry.`);
       return captured(call, await capture(call.subject(0), { until, out: call.string("out")!, ...(range === undefined ? {} : { range }), exclude: call.ranges("exclude"), timeoutFrames: call.count("timeout-frames")!, steps: stepsOf(call), minStage: call.count("min-stage")!, ...entryOf(call) }));
     },
   },

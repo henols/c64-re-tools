@@ -2,7 +2,7 @@
 // Host Runtime and extracts files into the project. T64 tape files and CRT
 // cartridge files are read locally: no host tool reads them.
 
-import { formatC64Address } from "#src/c64.ts";
+import { formatC64Address, hexWord, prgOf } from "#src/c64.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { DISK_BLOCK_BYTES, DISK_IMAGE_TYPES, inspectDisk, MAX_DISK_SECTORS } from "#src/host-client/tools.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
@@ -68,7 +68,7 @@ function tapeDirectory(image: string) {
 /** A CRT cartridge file: its header and CHIP packets, each with the PRG file name that crt writes. */
 function cartridge(image: string) {
   const crt = about(image, () => parseCrt(readProjectFile(image).bytes));
-  const chips = crt.chips.map((chip) => ({ bank: chip.bank, address: formatC64Address(chip.address), size: chip.size, space: `bank${chip.bank}`, file: `bank${chip.bank}-${chip.address.toString(16).padStart(4, "0")}.prg` }));
+  const chips = crt.chips.map((chip) => ({ bank: chip.bank, address: formatC64Address(chip.address), size: chip.size, space: `bank${chip.bank}`, file: `bank${chip.bank}-${hexWord(chip.address)}.prg` }));
   return { crt, header: { name: crt.name, type: crt.type, typeName: crt.typeName, exrom: crt.exrom, game: crt.game, ...(crt.mode === undefined ? {} : { mode: crt.mode }) }, chips };
 }
 
@@ -196,7 +196,7 @@ await runScript({
         kindFor("crt", image, ["crt"]);
         const out = call.string("out")!;
         const { crt, header, chips } = cartridge(image);
-        const files = crt.chips.map((chip, index) => writeReported(`${out}/${chips[index]!.file}`, Buffer.concat([Buffer.from([chip.address & 0xff, chip.address >> 8]), chip.data]), { what: "--out" }));
+        const files = crt.chips.map((chip, index) => writeReported(`${out}/${chips[index]!.file}`, prgOf(chip.address, chip.data), { what: "--out" }));
         files.push(writeReported(`${out}/crt.json`, `${JSON.stringify({ ...header, chips }, null, 2)}\n`, { what: "--out" }));
         return reply({ ...header, chips, files }, { hint: "All banks use the same addresses. Analyze each bank PRG in its own knowledge space: the field space of its chip gives the space." });
       },

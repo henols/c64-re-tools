@@ -12,10 +12,10 @@
 import { posix } from "node:path";
 
 import { BUILD_DIRECTORY, type BuildKind, buildName, CONFIG_FILE, configValues, COPIER_LINE, symbolsPath, withConfigValues } from "#src/build-name.ts";
-import { type AddressRange, formatC64Address } from "#src/c64.ts";
+import { type AddressRange, formatC64RangeFields } from "#src/c64.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { readSourceTree, writeReported } from "#src/host-client/transfer.ts";
-import { openForRead } from "#src/knowledge/database.ts";
+import { withRead } from "#src/knowledge/database.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { releaseImage, requireProgram } from "#src/knowledge/program.ts";
 import { currentStartScreen, listSwitches, releaseLabeled } from "#src/knowledge/read.ts";
@@ -53,26 +53,6 @@ function parseSwitches(texts: readonly string[]): Map<string, 0 | 1> {
   return values;
 }
 
-/** The default of each switch of a generated source: the knowledge gives them, the start screen is in and the leftovers are out. */
-function switchDefaults(space: Space): Map<string, number> {
-  const db = openForRead();
-  try {
-    return new Map([[START_SCREEN_SWITCH, 1], [LEFTOVERS_SWITCH, 0], ...listSwitches(db, undefined, space).map((row) => [row.name, row.default] as const)]);
-  } finally {
-    db?.close();
-  }
-}
-
-/** What the packed form needs from the knowledge of the space: the loaded ranges. Refuses a start screen of a captured stage and a segment below $0400. */
-function packedLoaded(leftovers: readonly AddressRange[], space: Space): AddressRange[] {
-  const db = openForRead();
-  try {
-    return packedRanges(requireProgram(db, space).segments, leftovers, currentStartScreen(db, space)?.stage);
-  } finally {
-    db?.close();
-  }
-}
-
 /** The message of a refusal of `work`, or undefined when it did not refuse: a refusal of the loader program does not stop the build of main.asm. */
 function refusalOf(work: () => void): string | undefined {
   try {
@@ -82,6 +62,27 @@ function refusalOf(work: () => void): string | undefined {
     if (isRefusal(error)) return error.message;
     throw error;
   }
+}
+
+/**
+ * What a generated source needs from the knowledge of the space, in one read:
+ * the default of each switch (the knowledge gives them, the start screen is in
+ * and the leftovers are out), and for the packed form, given the leftover
+ * ranges of the source, the loaded ranges or why the build gets no loader (a
+ * start screen of a captured stage, a segment below $0400).
+ */
+function generatedKnowledge(space: Space, leftovers: readonly AddressRange[] | undefined) {
+  return withRead((db) => {
+    const defaults = new Map<string, number>([[START_SCREEN_SWITCH, 1], [LEFTOVERS_SWITCH, 0], ...listSwitches(db, undefined, space).map((row) => [row.name, row.default] as const)]);
+    let loaded: AddressRange[] | undefined;
+    const noLoader =
+      leftovers === undefined
+        ? undefined
+        : refusalOf(() => {
+            loaded = packedRanges(requireProgram(db, space).segments, leftovers, currentStartScreen(db, space)?.stage);
+          });
+    return { defaults, loaded, noLoader };
+  });
 }
 
 await runScript({
@@ -121,8 +122,7 @@ await runScript({
         if (switches.size > 0 && label !== undefined) throw new UsageError("--switch does not work with --release: a release build has the switch values of that release");
         let releaseDefine: Record<string, number> = {};
         if (call.flag("compare") || label !== undefined) {
-          const db = openForRead();
-          try {
+          withRead((db) => {
             if (label === undefined) program = requireProgram(db, call.space);
             else {
               const release = releaseLabeled(db, label, call.space);
@@ -130,9 +130,7 @@ await runScript({
               releaseDefine = { [`${RELEASE_DEFINE}${label}`]: 1 };
               if (call.flag("compare")) program = releaseImage(db, label, call.space);
             }
-          } finally {
-            db?.close();
-          }
+          });
         }
         const setPc = call.address("set-pc");
         const { contents, ...tree } = readSourceTree(sourceRoot, call.strings("include"));
@@ -150,32 +148,30 @@ await runScript({
           contents[config] = changed;
           tree.files[config] = { ...tree.files[config]!, size: changed.length };
         }
-        // The name of the build tells what it is: the release, or the switch values.
-        const kind: BuildKind | undefined = label !== undefined ? { release: label } : config < 0 ? undefined : { values: configValues(textOf(config)), defaults: switchDefaults(call.space) };
+        // With --switch, main.asm of a generated source with a loader also gives the loader program of these values.
+        const loaderIndex = switches.size > 0 && entry === "main.asm" ? inSource(LOADER_FILE) : -1;
+        // The packed form: the loaded ranges are the segments of the program without the leftover files of the source.
+        const packedForm = loaderIndex >= 0 && textOf(loaderIndex).split(/\r?\n/).includes(COPIER_LINE);
         // The leftover files of a generated source, each with its range from its first line. A build with LEFTOVERS = 0 skips them; a release has them.
         const folder = posix.join(tree.sourceDir, LEFTOVER_FOLDER);
         const leftovers: LeftOutLeftover[] = tree.files.flatMap((file, index) => {
           const range = posix.dirname(file.path) === folder ? leftoverRange(textOf(index)) : undefined;
           return range === undefined ? [] : [{ ...range, file: `${LEFTOVER_FOLDER}/${posix.basename(file.path)}` }];
         });
+        // A source with --switch has config.asm and no --release, so the packed form always gets this read.
+        const generated = label === undefined && config >= 0 ? generatedKnowledge(call.space, packedForm ? leftovers : undefined) : undefined;
+        // The name of the build tells what it is: the release, or the switch values.
+        const kind: BuildKind | undefined = label !== undefined ? { release: label } : generated === undefined ? undefined : { values: configValues(textOf(config)), defaults: generated.defaults };
         const leftOut = kind !== undefined && "values" in kind && kind.values.get(LEFTOVERS_SWITCH) === 0 ? leftovers : [];
         const plain = call.flag("plain");
         const out = call.string("out") ?? `${BUILD_DIRECTORY}/${buildName(entry, kind, textOf(inSource(entry)))}.${plain ? "bin" : "prg"}`;
         const params: AcmeParams = { ...tree, entrySource: entry, defines: { ...releaseDefine, ...Object.fromEntries(call.strings("define").map(parseDefine)) }, ...(setPc === undefined ? {} : { setPc }) };
 
-        // With --switch, main.asm of a generated source with a loader also gives the loader program of these values.
-        const loaderIndex = switches.size > 0 && entry === "main.asm" ? inSource(LOADER_FILE) : -1;
-        let loaded: AddressRange[] | undefined;
+        const loaded = generated?.loaded;
         // Why the build writes no loader program.
-        let noLoader: string | undefined;
-        if (loaderIndex >= 0 && textOf(loaderIndex).split(/\r?\n/).includes(COPIER_LINE)) {
-          // The packed form: the loaded ranges are the segments of the program without the leftover files of the source.
-          noLoader = refusalOf(() => {
-            loaded = packedLoaded(leftovers, call.space);
-          });
-          // The toolkit never installs a tool: without Exomizer the build refuses by name before ACME runs.
-          if (noLoader === undefined) findTool(EXOMIZER);
-        }
+        let noLoader = generated?.noLoader;
+        // The toolkit never installs a tool: without Exomizer the build refuses by name before ACME runs.
+        if (packedForm && noLoader === undefined) findTool(EXOMIZER);
 
         const { result, attachments } = await assemble(params, contents, localToolContext());
         if (!result.assembled) return reply({ result: "FAIL", assembled: false, diagnostics: result.diagnostics }, { hint: "The source has errors, and no program was written. Correct the source at the file and the line of each diagnostic. Then run build again." });
@@ -234,7 +230,7 @@ await runScript({
           assembled: true,
           ...written,
           ...(plain ? { plain: true } : {}),
-          loadRange: { start: formatC64Address(range.start), end: formatC64Address(range.end), bytes: range.bytes },
+          loadRange: { ...formatC64RangeFields(range), bytes: range.bytes },
           symbols,
           // The symbols of the program for a test run, in symbols/ next to it.
           symbolsFile: writeReported(symbolsPath(out), symbolsFileText(shown), { what: "--out" }),

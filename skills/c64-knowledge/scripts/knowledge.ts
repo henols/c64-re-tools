@@ -2,17 +2,17 @@
 // project folder (--project, or the one found from the working directory).
 // Each command prints one JSON result.
 
-import { createHash, randomInt } from "node:crypto";
+import { randomInt } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
-import { formatC64Address } from "#src/c64.ts";
+import { type AddressRange, formatC64Address, formatC64RangeFields, inRanges } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { readImage } from "#src/host-client/image.ts";
-import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
+import { readProjectFile, readProjectJson, writeReported } from "#src/host-client/transfer.ts";
 import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
-import { openForRead, withWrite } from "#src/knowledge/database.ts";
+import { withRead, withWrite } from "#src/knowledge/database.ts";
 import { operandText } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, historyOfMacro, historyOfSwitch, revision, revisionCounts, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
@@ -20,10 +20,9 @@ import { knowledgeNames } from "#src/knowledge/names.ts";
 import { addCoverage, coverageAccess, coverageRangeCounts, memoryRows, operandImages as programImages, programCoverage, programImage, releaseCode, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
 import { coloursOfCapture, startScreenOfCapture, startScreenOfStage } from "#src/knowledge/start-screen.ts";
 import {
-  analyzerNamesAt,
   at,
+  baseLabel,
   baseValue,
-  commentsAt,
   coverageRuns,
   currentRevision,
   currentStartScreen,
@@ -42,11 +41,8 @@ import {
   listSwitches,
   listSuppressions,
   listSymbols,
-  operandAt,
   REFERENCE_DIRECTIONS,
   referenceCounts,
-  referencesFrom,
-  referencesTo,
   regionCounts,
   search,
   symbolAt,
@@ -101,8 +97,9 @@ import {
   type OperandImage,
   type WriteContext,
 } from "#src/knowledge/write.ts";
-import { platformNames } from "#src/platform.ts";
+import { platformAddresses, platformNames } from "#src/platform.ts";
 import { coverageMapOf } from "#src/knowledge/recording-files.ts";
+import { sha256 } from "#src/knowledge/text.ts";
 import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec, type SubjectSpec } from "#src/script.ts";
 import { isoCet } from "#src/time.ts";
@@ -120,8 +117,7 @@ const spaceOf = (row: { space: string }) => (row.space === "c64" ? {} : { space:
 const symbol = (row: SymbolRow) => ({ ...spaceOf(row), address: formatC64Address(row.address), name: row.name, kind: row.kind, origin: row.origin, revision: row.revision });
 const region = (row: RegionRow) => ({
   ...spaceOf(row),
-  start: formatC64Address(row.start),
-  end: formatC64Address(row.end),
+  ...formatC64RangeFields(row),
   type: row.type,
   ...(row.element === undefined ? {} : { element: row.element, count: (row.end - row.start + 1) / row.element }),
   origin: row.origin,
@@ -142,8 +138,7 @@ const operand = (row: OperandRow) => ({
 });
 const patch = (row: PatchRow) => ({
   ...spaceOf(row),
-  start: formatC64Address(row.start),
-  end: formatC64Address(row.end),
+  ...formatC64RangeFields(row),
   bytes: row.end - row.start + 1,
   switch: row.switch,
   code: row.code,
@@ -160,7 +155,7 @@ const switchRow = (row: SwitchRow, base?: string, patches?: readonly PatchRow[])
   base: baseValue(row, base),
   releases: row.releases,
   ...(row.comment === undefined ? {} : { comment: row.comment }),
-  ...(patches === undefined ? {} : { patches: patches.map((patch) => ({ start: formatC64Address(patch.start), end: formatC64Address(patch.end) })) }),
+  ...(patches === undefined ? {} : { patches: patches.map((patch) => formatC64RangeFields(patch)) }),
   origin: row.origin,
   revision: row.revision,
 });
@@ -194,8 +189,7 @@ const startScreen = (row: StartScreenRow) => ({
 const macro = (row: MacroRow) => ({ ...spaceOf(row), name: row.name, params: row.params, body: row.body, ...(row.comment === undefined ? {} : { comment: row.comment }), origin: row.origin, revision: row.revision });
 const macroUse = (row: MacroUseRow) => ({
   ...spaceOf(row),
-  start: formatC64Address(row.start),
-  end: formatC64Address(row.end),
+  ...formatC64RangeFields(row),
   macro: row.macro,
   args: row.args,
   text: `+${row.macro}${row.args.length === 0 ? "" : ` ${row.args.join(", ")}`}`,
@@ -208,7 +202,7 @@ function suppression(row: SuppressionRow) {
     row.entity === "symbol"
       ? { address: formatC64Address(row.start) }
       : row.entity === "region"
-        ? { start: formatC64Address(row.start), end: formatC64Address(row.end) }
+        ? formatC64RangeFields(row)
         : { from: formatC64Address(row.start), to: formatC64Address(row.to!), kind: row.kind! };
   return { ...spaceOf(row), suppresses: row.entity, ...place, origin: row.origin, revision: row.revision };
 }
@@ -220,36 +214,45 @@ function programRow(entry: Extract<HistoryEntry, { entity: "memory" | "entry" | 
   return { ...spaceOf(entry.row), map: entry.row.map, kind: entry.row.kind, ranges: entry.row.ranges, origin: entry.row.origin, revision: entry.row.revision };
 }
 
+/** The row of a history entry in its output shape. */
+function historyRow(entry: HistoryEntry) {
+  switch (entry.entity) {
+    case "memory":
+    case "entry":
+    case "coverage":
+      return programRow(entry);
+    case "symbol":
+    case "analyzer-name":
+      return symbol(entry.row);
+    case "region":
+      return region(entry.row);
+    case "comment":
+      return comment(entry.row);
+    case "reference":
+      return reference(entry.row);
+    case "module":
+      return module(entry.row);
+    case "operand":
+      return operand(entry.row);
+    case "patch":
+      return patch(entry.row);
+    case "switch":
+      return switchRow(entry.row);
+    case "release":
+      return release(entry.row);
+    case "start-screen":
+      return startScreen(entry.row);
+    case "macro":
+      return macro(entry.row);
+    case "macro-use":
+      return macroUse(entry.row);
+    case "suppression":
+      return suppression(entry.row);
+  }
+}
+
 function historyEntry(entry: HistoryEntry) {
-  const shown =
-    entry.entity === "memory" || entry.entity === "entry" || entry.entity === "coverage"
-      ? programRow(entry)
-      : entry.entity === "symbol" || entry.entity === "analyzer-name"
-      ? symbol(entry.row)
-      : entry.entity === "region"
-        ? region(entry.row)
-        : entry.entity === "comment"
-          ? comment(entry.row)
-          : entry.entity === "reference"
-            ? reference(entry.row)
-            : entry.entity === "module"
-              ? module(entry.row)
-              : entry.entity === "operand"
-                ? operand(entry.row)
-                : entry.entity === "patch"
-                  ? patch(entry.row)
-                  : entry.entity === "switch"
-                    ? switchRow(entry.row)
-                    : entry.entity === "release"
-                    ? release(entry.row)
-                    : entry.entity === "start-screen"
-                    ? startScreen(entry.row)
-                  : entry.entity === "macro"
-                    ? macro(entry.row)
-                    : entry.entity === "macro-use"
-                      ? macroUse(entry.row)
-                      : suppression(entry.row);
-  const { revision: _revision, ...row } = shown;
+  const { revision: _revision, ...row } = historyRow(entry);
   return { entity: entry.entity, ...row, fromRevision: entry.from, ...(entry.to === undefined ? {} : { toRevision: entry.to }) };
 }
 
@@ -277,40 +280,62 @@ function reasonsOf(db: DatabaseSync | undefined, rows: SuppressionRow[]): Map<st
 
 /** The bytes of a program: the byte at an address inside a segment, else undefined. */
 function programBytes(image: { segments: ReadonlyArray<{ start: number; end: number }>; byteAt: (address: number) => number }): (address: number) => number | undefined {
-  return (at) => (image.segments.some((segment) => at >= segment.start && at <= segment.end) ? image.byteAt(at) : undefined);
+  return (at) => (inRanges(image.segments, at) ? image.byteAt(at) : undefined);
 }
 
 /** The name of an address: a user or LLM name, else the platform name; an analyzer name in symbols (knowledge from an older version) gives way to it. */
 function nameOf(db: DatabaseSync | undefined, space: string): (at: number) => string | undefined {
   const platform = new Map(space === DEFAULT_SPACE ? platformNames().map((entry) => [entry.address, entry.name]) : []);
+  const symbols = new Map<number, SymbolRow>();
+  for (const row of listSymbols(db, undefined, undefined, undefined, space)) if (!symbols.has(row.address)) symbols.set(row.address, row);
   return (at) => {
-    const own = symbolAt(db, at, space);
+    const own = symbols.get(at);
     return own !== undefined && isSemantic(own.origin) ? own.name : (platform.get(at) ?? own?.name);
   };
 }
 
-/** The lookups of a listing: the program and the coverage in the knowledge, the knowledge of the space and the platform names of the C64. */
-function listingSource(db: DatabaseSync | undefined, space: string): ListingSource {
+/** The rows of each address, in the order of the list. */
+function byAddress<T extends { address: number }>(rows: readonly T[]): Map<number, T[]> {
+  const grouped = new Map<number, T[]>();
+  for (const row of rows) (grouped.get(row.address) ?? grouped.set(row.address, []).get(row.address)!).push(row);
+  return grouped;
+}
+
+/**
+ * The lookups of a listing of a range: the program and the coverage in the knowledge, the knowledge of the space and the platform names of the C64.
+ * The rows of the range are read once: a listing asks for each line.
+ */
+function listingSource(db: DatabaseSync | undefined, space: string, range: AddressRange): ListingSource {
   const image = requireProgram(db, space);
   const coverage = programCoverage(db, space)?.map;
   const byteAt = programBytes(image);
   const entries = space === DEFAULT_SPACE ? platformNames().filter((entry) => entry.end > entry.address) : [];
+  const secondNames = byAddress(listAnalyzerNames(db, range, undefined, undefined, space));
+  // The comments inside an instruction or a word of the last line are up to 2 bytes after the range.
+  const comments = byAddress(listComments(db, { start: range.start, end: Math.min(range.end + 2, 0xffff) }, undefined, space));
+  const operands = byAddress(listOperands(db, range, undefined, space));
+  const referencesIn = new Map<number, number>();
+  const referencesOut = new Map<number, number>();
+  for (const row of listReferences(db, range, undefined, undefined, space)) {
+    if (inRanges([range], row.to)) referencesIn.set(row.to, (referencesIn.get(row.to) ?? 0) + 1);
+    if (inRanges([range], row.from)) referencesOut.set(row.from, (referencesOut.get(row.from) ?? 0) + 1);
+  }
   return {
     byteAt,
     entryStart: (at) => (byteAt(at) !== undefined ? undefined : entries.find((entry) => at > entry.address && at <= entry.end)?.address),
     nameOf: nameOf(db, space),
-    secondNames: (at) => analyzerNamesAt(db, at, space).map((row) => row.name),
+    secondNames: (at) => (secondNames.get(at) ?? []).map((row) => row.name),
     regions: listRegions(db, undefined, undefined, undefined, space),
     comments: (at) => {
-      const rows = commentsAt(db, at, space);
+      const rows = comments.get(at) ?? [];
       const side = rows.find((row) => row.placement === "side")?.text;
       return { line: rows.filter((row) => row.placement === "line").flatMap((row) => row.text.split(/\r?\n/)), ...(side === undefined ? {} : { side }) };
     },
     operand: (at) => {
-      const row = operandAt(db, at, space);
+      const row = operands.get(at)?.[0];
       return row === undefined ? undefined : operandText(row);
     },
-    references: (at) => ({ in: referencesTo(db, at, space).length, out: referencesFrom(db, at, space).length }),
+    references: (at) => ({ in: referencesIn.get(at) ?? 0, out: referencesOut.get(at) ?? 0 }),
     ...(coverage === undefined ? {} : { coverage }),
   };
 }
@@ -352,22 +377,17 @@ function evidenceOf(value: string, space: string): Evidence {
   const ref = knowledgePath(given, `--evidence ${kind}:<file>`);
   // A coverage map is evidence by the name that coverage imported it with: the latest import into the space of the write.
   if (kind === "coverage") {
-    const db = openForRead();
-    try {
-      const run = coverageRuns(db).filter((item) => item.name === ref && item.space === space).at(-1);
-      const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
-      if (run === undefined) throw new UsageError(`--evidence coverage:${given} names no coverage map of the knowledge${where}. Import the map with coverage${space === DEFAULT_SPACE ? "" : ` --space ${space}`} first.`);
-      return { kind, ref, sha256: run.sha256, ...(run.space === DEFAULT_SPACE ? {} : { space: run.space }) };
-    } finally {
-      db?.close();
-    }
+    const run = withRead((db) => coverageRuns(db).filter((item) => item.name === ref && item.space === space).at(-1));
+    const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
+    if (run === undefined) throw new UsageError(`--evidence coverage:${given} names no coverage map of the knowledge${where}. Import the map with coverage${space === DEFAULT_SPACE ? "" : ` --space ${space}`} first.`);
+    return { kind, ref, sha256: run.sha256, ...(run.space === DEFAULT_SPACE ? {} : { space: run.space }) };
   }
   const bytes = readProjectFile(ref).bytes;
   const root = projectRoot();
   if (isInside(join(root, PROJECT_DIRECTORY, LOCAL_DIRECTORY), resolveProjectPath(ref, root))) {
     throw new UsageError(`--evidence ${kind}:${ref} is in ${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/, which git ignores. Move it to a folder that git keeps, for example a run folder to runs/<name>/. Then give the new path.`);
   }
-  return { kind, ref, sha256: createHash("sha256").update(bytes).digest("hex") };
+  return { kind, ref, sha256: sha256(bytes) };
 }
 
 /** An image.json of a capture or a PRG as a write of the program, with the entry state of the capture. */
@@ -382,7 +402,7 @@ function imageRequest(path: string, space: string): ImageRequest {
 
 /** The programs that operand, patch and macro use writes are checked against, with the platform names. */
 function operandImages(db: DatabaseSync): (space: string) => OperandImage {
-  return programImages(db, new Map(platformNames().map((entry) => [entry.name, entry.address])));
+  return programImages(db, platformAddresses());
 }
 
 /** An offset: a whole number in decimal or $ hex, with an optional minus sign. */
@@ -494,12 +514,7 @@ const originsOf = (call: Call) => {
 function checkFile<T>(seed: number, file: "sample.json" | "verdicts.json"): T | undefined {
   const path = `${checkFolder(seed)}/${file}`;
   if (!existsSync(resolveProjectPath(path))) return undefined;
-  try {
-    return JSON.parse(readProjectFile(path).bytes.toString("utf8")) as T;
-  } catch (error) {
-    if (error instanceof SyntaxError) throw new Refusal("invalid-input", `${path} is not JSON. Start a check with another seed.`);
-    throw error;
-  }
+  return readProjectJson(path, () => `${path} is not JSON. Start a check with another seed.`) as T;
 }
 
 /** The sample of the check of a seed; refuses a seed without a check. */
@@ -517,9 +532,8 @@ function readCommand(spec: Omit<CommandSpec, "run">, answer: (db: DatabaseSync |
   return {
     ...spec,
     options: { ...SPACE, ...spec.options },
-    run: (call) => {
-      const db = openForRead();
-      try {
+    run: (call) =>
+      withRead((db) => {
         const result = answer(db, call);
         const found = conflicts(db);
         if (found.length === 0) return result;
@@ -527,22 +541,27 @@ function readCommand(spec: Omit<CommandSpec, "run">, answer: (db: DatabaseSync |
           { ...result, conflicts: found.map(showConflict) },
           { hint: "A git merge left conflicts in the knowledge: see conflicts. Each write stops until you decide them. Run merge, then tell the user each item of its choices.", nextAction: call.next("merge", "--reason", "decide the conflicts of a git merge") },
         );
-      } finally {
-        db?.close();
-      }
-    },
+      }),
   };
 }
 
-/** A write command: every value is checked before the knowledge opens, so a refused write makes no knowledge folder. */
-function writeCommand(spec: Omit<CommandSpec, "run">, prepare: (call: Call) => WriteOperation): CommandSpec {
+/** A write command: every value is checked before the knowledge opens, so a refused write makes no knowledge folder. The write context comes first. */
+function writeCommand(spec: Omit<CommandSpec, "run">, prepare: (call: Call, context: WriteContext) => WriteOperation): CommandSpec {
   return {
     ...spec,
     notes: [spec.notes, "A write is one revision. It makes .c64-re-tools/knowledge/ when it is not there."].filter((note) => note !== undefined).join("\n"),
     // A command can give a WRITE option its own help or default, for example --space of revert.
     options: Object.fromEntries(Object.entries({ ...spec.options, ...WRITE }).map(([name, option]) => [name, spec.options?.[name] ?? option])),
-    run: (call) => withWrite(prepare(call)),
+    run: (call) => withWrite(prepare(call, contextOf(call))),
   };
+}
+
+/** A write command that removes a row and reports the revision. */
+function removeCommand<R>(spec: Omit<CommandSpec, "run">, request: (call: Call) => R, remove: (db: DatabaseSync, context: WriteContext, request: R) => { revision: string | null }): CommandSpec {
+  return writeCommand(spec, (call, context) => {
+    const given = request(call);
+    return (db) => ({ revision: remove(db, context, given).revision });
+  });
 }
 
 /** The write context of --by, --reason, --expect-revision and --evidence. */
@@ -695,7 +714,7 @@ const READ_COMMANDS: CommandSpec[] = [
     patches: list(call, listPatches(db, rangeOf(call), call.string("switch"), originsOf(call), call.space), patch, RANGE_REST),
   })),
   readCommand({ name: "switches", summary: "Each switch: its kind, its default, its value in the program (base), the releases that have it on and the ranges of its patches.", options: LIST }, (db, call) => {
-    const base = listReleases(db, undefined, call.space).find((row) => row.base)?.label;
+    const base = baseLabel(db, call.space);
     const patches = listPatches(db, undefined, undefined, undefined, call.space);
     const show = (row: SwitchRow) => switchRow(row, base, patches.filter((patch) => patch.switch === row.name));
     return { switches: list(call, listSwitches(db, undefined, call.space), show, MORE) };
@@ -716,7 +735,7 @@ const READ_COMMANDS: CommandSpec[] = [
         image === undefined
           ? null
           : {
-              segments: image.segments.map((segment) => ({ start: formatC64Address(segment.start), end: formatC64Address(segment.end) })),
+              segments: image.segments.map((segment) => formatC64RangeFields(segment)),
               bytes: image.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0),
               ...(image.entry === undefined ? {} : { entry: formatC64Address(image.entry) }),
               state: image.state !== undefined,
@@ -774,6 +793,7 @@ const READ_COMMANDS: CommandSpec[] = [
     const range = rangeOf(call);
     const origins = originsOf(call);
     const space = call.space;
+    const base = baseLabel(db, space);
     const exported = {
       revision: currentRevision(db),
       ...(space === DEFAULT_SPACE ? {} : { space }),
@@ -786,7 +806,7 @@ const READ_COMMANDS: CommandSpec[] = [
       modules: listModules(db, range, origins, space).map(module),
       operands: listOperands(db, range, origins, space).map(operand),
       patches: listPatches(db, range, undefined, origins, space).map(patch),
-      switches: listSwitches(db, origins, space).map((row) => switchRow(row, listReleases(db, undefined, space).find((item) => item.base)?.label)),
+      switches: listSwitches(db, origins, space).map((row) => switchRow(row, base)),
       releases: listReleases(db, origins, space).map(release),
       macros: listMacros(db, origins, space).map(macro),
       macroUses: listMacroUses(db, range, undefined, origins, space).map(macroUse),
@@ -807,8 +827,8 @@ const READ_COMMANDS: CommandSpec[] = [
       },
     },
     (db, call) => {
-      const { start, end } = call.parseRange(call.subject(0), "<range>");
-      const lines = listingLines(listing(listingSource(db, call.space), start, end, { code: call.flag("code") }));
+      const range = call.parseRange(call.subject(0), "<range>");
+      const lines = listingLines(listing(listingSource(db, call.space, range), range.start, range.end, { code: call.flag("code") }));
       const out = call.string("out");
       if (out !== undefined) return { lines: lines.length, ...writeReported(out, lines.map((line) => `${line}\n`).join(""), { what: "--out" }) };
       return { lines: list(call, lines, (line) => line, "a larger --max-listed, a smaller <range>, or --out <file> for all lines") };
@@ -817,16 +837,11 @@ const READ_COMMANDS: CommandSpec[] = [
 ];
 
 const WRITE_COMMANDS: CommandSpec[] = [
-  writeCommand({ name: "rename", summary: "Gives an address a name.", subjects: [ADDRESS, { name: "<name>", help: "the new name: assembler label syntax" }], options: { kind: SYMBOL_KIND } }, (call) => {
-    const context = contextOf(call);
+  writeCommand({ name: "rename", summary: "Gives an address a name.", subjects: [ADDRESS, { name: "<name>", help: "the new name: assembler label syntax" }], options: { kind: SYMBOL_KIND } }, (call, context) => {
     const request = { space: call.space, address: call.parseAddress(call.subject(0), "<address>"), name: call.subject(1), ...(call.string("kind") === undefined ? {} : { kind: call.string("kind") as (typeof SYMBOL_KINDS)[number] }) };
     return (db) => shown(renameSymbol(db, context, request), "symbol", symbol);
   }),
-  writeCommand({ name: "remove-symbol", summary: "Removes the name at an address.", subjects: [ADDRESS] }, (call) => {
-    const context = contextOf(call);
-    const request = { space: call.space, address: call.parseAddress(call.subject(0), "<address>") };
-    return (db) => ({ revision: removeSymbol(db, context, request).revision });
-  }),
+  removeCommand({ name: "remove-symbol", summary: "Removes the name at an address.", subjects: [ADDRESS] }, (call) => ({ space: call.space, address: call.parseAddress(call.subject(0), "<address>") }), removeSymbol),
   writeCommand(
     {
       name: "classify",
@@ -834,38 +849,29 @@ const WRITE_COMMANDS: CommandSpec[] = [
       subjects: [RANGE, { name: "<type>", help: `one of ${REGION_TYPES.join(", ")}` }],
       options: { element: { kind: "count", value: "<n>", min: 1, max: 0x10000, help: "the bytes of one element of a table: the length of the range is a multiple of it" } },
     },
-    (call) => {
-      const context = contextOf(call);
+    (call, context) => {
       const element = call.count("element");
       const request = { space: call.space, ...call.parseRange(call.subject(0), "<range>"), type: oneOf(REGION_TYPES, call.subject(1), "<type>"), ...(element === undefined ? {} : { element }) };
-      return (db) => {
-        const result = classifyRegion(db, context, request);
-        return { revision: result.revision, regions: result.current.map(region), ...(result.previous === undefined ? {} : { previous: result.previous.map(region) }) };
-      };
+      return (db) => shown(classifyRegion(db, context, request), "regions", (rows) => rows.map(region));
     },
   ),
-  writeCommand({ name: "unclassify", summary: "Removes the region types of a range.", subjects: [RANGE] }, (call) => {
-    const context = contextOf(call);
-    const request = { space: call.space, ...call.parseRange(call.subject(0), "<range>") };
-    return (db) => ({ revision: unclassifyRegion(db, context, request).revision });
-  }),
+  removeCommand({ name: "unclassify", summary: "Removes the region types of a range.", subjects: [RANGE] }, (call) => ({ space: call.space, ...call.parseRange(call.subject(0), "<range>") }), unclassifyRegion),
   writeCommand(
     {
       name: "comment",
       summary: "Writes a comment at an address: a line of its own above it, or at the end of its line.",
       subjects: [ADDRESS, { name: "<placement>", help: `one of ${COMMENT_PLACEMENTS.join(", ")}` }, { name: "<text>", help: "the comment", list: true }],
     },
-    (call) => {
-      const context = contextOf(call);
+    (call, context) => {
       const request = { space: call.space, address: call.parseAddress(call.subject(0), "<address>"), placement: oneOf(COMMENT_PLACEMENTS, call.subject(1), "<placement>"), text: call.rest(2).join(" ") };
       return (db) => shown(setComment(db, context, request), "comment", comment);
     },
   ),
-  writeCommand({ name: "uncomment", summary: "Removes a comment.", subjects: [ADDRESS, { name: "<placement>", help: `one of ${COMMENT_PLACEMENTS.join(", ")}` }] }, (call) => {
-    const context = contextOf(call);
-    const request = { space: call.space, address: call.parseAddress(call.subject(0), "<address>"), placement: oneOf(COMMENT_PLACEMENTS, call.subject(1), "<placement>") };
-    return (db) => ({ revision: removeComment(db, context, request).revision });
-  }),
+  removeCommand(
+    { name: "uncomment", summary: "Removes a comment.", subjects: [ADDRESS, { name: "<placement>", help: `one of ${COMMENT_PLACEMENTS.join(", ")}` }] },
+    (call) => ({ space: call.space, address: call.parseAddress(call.subject(0), "<address>"), placement: oneOf(COMMENT_PLACEMENTS, call.subject(1), "<placement>") }),
+    removeComment,
+  ),
   ...(["reference", "unreference"] as const).map((name) =>
     writeCommand(
       {
@@ -873,8 +879,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
         summary: name === "reference" ? "Records that code at one address refers to another." : "Removes a reference.",
         subjects: [{ name: "<from>", help: "the address of the instruction" }, { name: "<to>", help: "the address it refers to" }, { name: "<kind>", help: `one of ${REFERENCE_KINDS.join(", ")}` }],
       },
-      (call) => {
-        const context = contextOf(call);
+      (call, context) => {
         const request = { space: call.space, from: call.parseAddress(call.subject(0), "<from>"), to: call.parseAddress(call.subject(1), "<to>"), kind: oneOf(REFERENCE_KINDS, call.subject(2), "<kind>") };
         return name === "reference"
           ? (db) => shown(addReference(db, context, request), "reference", reference)
@@ -884,18 +889,13 @@ const WRITE_COMMANDS: CommandSpec[] = [
   ),
   writeCommand(
     { name: "module", summary: "Records that a file of the generated source starts at an address.", subjects: [START, { name: "<file.asm>", help: "the source file" }], options: { title: { kind: "text", value: "<text>", help: "the title of the file" } } },
-    (call) => {
-      const context = contextOf(call);
+    (call, context) => {
       const title = call.string("title");
       const request = { space: call.space, start: call.parseAddress(call.subject(0), "<start>"), file: call.subject(1), ...(title === undefined ? {} : { title }) };
       return (db) => shown(setModule(db, context, request), "module", module);
     },
   ),
-  writeCommand({ name: "unmodule", summary: "Removes the module that starts at an address.", subjects: [START] }, (call) => {
-    const context = contextOf(call);
-    const request = { space: call.space, start: call.parseAddress(call.subject(0), "<start>") };
-    return (db) => ({ revision: removeModule(db, context, request).revision });
-  }),
+  removeCommand({ name: "unmodule", summary: "Removes the module that starts at an address.", subjects: [START] }, (call) => ({ space: call.space, start: call.parseAddress(call.subject(0), "<start>") }), removeModule),
   writeCommand(
     {
       name: "operand",
@@ -910,8 +910,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       },
       notes: "Give exactly one of --lo, --hi, --value and --expr. The write is refused when the expression does not give the operand in the program of the knowledge.",
     },
-    (call) => {
-      const context = contextOf(call);
+    (call, context) => {
       const given = (["lo", "hi", "value", "expr"] as const).filter((option) => call.string(option) !== undefined);
       if (given.length !== 1) throw new UsageError("operand needs exactly one of --lo, --hi, --value or --expr.");
       const select: OperandSelect = given[0]!;
@@ -927,11 +926,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       return (db) => shown(setOperand(db, { ...context, image: operandImages(db) }, request), "operand", operand);
     },
   ),
-  writeCommand({ name: "unoperand", summary: "Removes the operand expression at an address.", subjects: [ADDRESS] }, (call) => {
-    const context = contextOf(call);
-    const request = { space: call.space, address: call.parseAddress(call.subject(0), "<address>") };
-    return (db) => ({ revision: removeOperand(db, context, request).revision });
-  }),
+  removeCommand({ name: "unoperand", summary: "Removes the operand expression at an address.", subjects: [ADDRESS] }, (call) => ({ space: call.space, address: call.parseAddress(call.subject(0), "<address>") }), removeOperand),
   writeCommand(
     {
       name: "patch",
@@ -946,8 +941,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       },
       notes: "Give exactly one of --code, --code-file, --nop and --from-release. Write the switch first (switch). The program holds the bytes of the base release: when the base release has the switch on, the code is the bytes with the switch off. Another switch can have a patch at the same range, as an alternative.",
     },
-    (call) => {
-      const context = contextOf(call);
+    (call, context) => {
       const code = textOrFile(call, "code");
       const from = call.string("from-release");
       if ([code !== undefined, call.flag("nop"), from !== undefined].filter(Boolean).length !== 1) throw new UsageError("patch needs exactly one of --code, --code-file, --nop or --from-release.");
@@ -960,7 +954,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       };
     },
   ),
-  writeCommand(
+  removeCommand(
     {
       name: "unpatch",
       summary: "Removes the patch that starts at an address.",
@@ -968,11 +962,10 @@ const WRITE_COMMANDS: CommandSpec[] = [
       options: { switch: { kind: "text", value: "<switch>", help: "the switch of the patch, when patches of more than one switch start there" } },
     },
     (call) => {
-      const context = contextOf(call);
       const switchName = call.string("switch");
-      const request = { space: call.space, start: call.parseAddress(call.subject(0), "<start>"), ...(switchName === undefined ? {} : { switch: switchName }) };
-      return (db) => ({ revision: removePatch(db, context, request).revision });
+      return { space: call.space, start: call.parseAddress(call.subject(0), "<start>"), ...(switchName === undefined ? {} : { switch: switchName }) };
     },
+    removePatch,
   ),
   writeCommand(
     {
@@ -987,8 +980,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       },
       notes: "Record the base release first (release --base). A write keeps the releases and the comment that it does not give.",
     },
-    (call) => {
-      const context = contextOf(call);
+    (call, context) => {
       const given = call.string("default");
       const releases = call.string("releases");
       const commentText = call.string("comment");
@@ -1002,16 +994,12 @@ const WRITE_COMMANDS: CommandSpec[] = [
       };
       return (db) => {
         const result = setSwitch(db, { ...context, image: operandImages(db) }, request);
-        const base = listReleases(db, undefined, call.space).find((row) => row.base)?.label;
+        const base = baseLabel(db, call.space);
         return shown(result, "switch", (row: SwitchRow) => switchRow(row, base));
       };
     },
   ),
-  writeCommand({ name: "unswitch", summary: "Removes a switch that has no patch.", subjects: [{ name: "<name>", help: "the switch name" }] }, (call) => {
-    const context = contextOf(call);
-    const request = { space: call.space, name: call.subject(0) };
-    return (db) => ({ revision: removeSwitch(db, context, request).revision });
-  }),
+  removeCommand({ name: "unswitch", summary: "Removes a switch that has no patch.", subjects: [{ name: "<name>", help: "the switch name" }] }, (call) => ({ space: call.space, name: call.subject(0) }), removeSwitch),
   writeCommand(
     {
       name: "release",
@@ -1024,15 +1012,20 @@ const WRITE_COMMANDS: CommandSpec[] = [
       },
       notes: "The build of a release defines RELEASE_<label>=1: each switch then has the value of that release. The check of the generated source builds each release and compares it with the bytes of the release in the knowledge.",
     },
-    (call) => {
-      const context = contextOf(call);
+    (call, context) => {
       const file = knowledgePath(call.string("file")!, "--file");
       const image = readImage(file);
-      const sha256 = createHash("sha256").update(readProjectFile(file).bytes).digest("hex");
       const commentText = call.string("comment");
       const base = call.flag("base");
       // The base release has no bytes of its own: its bytes are the program.
-      const request = { space: call.space, label: call.subject(0), file, sha256, ...(base ? { base } : { rows: memoryRows(image.segments, image.byteAt) }), ...(commentText === undefined ? {} : { comment: commentText }) };
+      const request = {
+        space: call.space,
+        label: call.subject(0),
+        file,
+        sha256: sha256(readProjectFile(file).bytes),
+        ...(base ? { base } : { rows: memoryRows(image.segments, image.byteAt) }),
+        ...(commentText === undefined ? {} : { comment: commentText }),
+      };
       return (db) => {
         if (base) {
           const program = requireProgram(db, call.space);
@@ -1047,11 +1040,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       };
     },
   ),
-  writeCommand({ name: "unrelease", summary: "Removes a release that no switch names.", subjects: [{ name: "<label>", help: "the release label" }] }, (call) => {
-    const context = contextOf(call);
-    const request = { space: call.space, label: call.subject(0) };
-    return (db) => ({ revision: removeRelease(db, context, request).revision });
-  }),
+  removeCommand({ name: "unrelease", summary: "Removes a release that no switch names.", subjects: [{ name: "<label>", help: "the release label" }] }, (call) => ({ space: call.space, label: call.subject(0) }), removeRelease),
   writeCommand(
     {
       name: "start-screen",
@@ -1076,8 +1065,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       },
       notes: "Record only a screen of the program itself, never a screen of a crack. If a release changed the screen, for example with the text of a crack, stop and ask the user how to deal with it. text and multicolour need --colours or --colour; hires uses neither. With --stage, the script takes the screen from the capture of the stage: give only --stage, and --call for a tune. With --capture, the script takes the screen in the program from a capture of the program while it shows the screen. A flag that you give too replaces the value of the capture. A write replaces the start screen of the knowledge.",
     },
-    (call) => {
-      const context = contextOf(call);
+    (call, context) => {
       const commentText = call.string("comment");
       // The values that the call gives. With --stage, the capture of the stage gives the others.
       const given: { mode?: StartScreenMode; screen?: number; bitmap?: number; charset?: number; colours?: number; colour?: number; border?: number; background?: number } = {};
@@ -1134,11 +1122,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       };
     },
   ),
-  writeCommand({ name: "unstart-screen", summary: "Removes the start screen. The loader of the generated source then starts the program at once." }, (call) => {
-    const context = contextOf(call);
-    const request = { space: call.space };
-    return (db) => ({ revision: removeStartScreen(db, context, request).revision });
-  }),
+  removeCommand({ name: "unstart-screen", summary: "Removes the start screen. The loader of the generated source then starts the program at once." }, (call) => ({ space: call.space }), removeStartScreen),
   writeCommand(
     {
       name: "macro",
@@ -1152,8 +1136,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       },
       notes: "Give --body or --body-file.",
     },
-    (call) => {
-      const context = contextOf(call);
+    (call, context) => {
       const body = textOrFile(call, "body");
       if (body === undefined || body === "") throw new UsageError("macro needs --body or --body-file with text.");
       const commentText = call.string("comment");
@@ -1161,11 +1144,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       return (db) => shown(setMacro(db, context, request), "macro", macro);
     },
   ),
-  writeCommand({ name: "unmacro", summary: "Removes a macro that no use has.", subjects: [{ name: "<name>", help: "the macro name" }] }, (call) => {
-    const context = contextOf(call);
-    const request = { space: call.space, name: call.subject(0) };
-    return (db) => ({ revision: removeMacro(db, context, request).revision });
-  }),
+  removeCommand({ name: "unmacro", summary: "Removes a macro that no use has.", subjects: [{ name: "<name>", help: "the macro name" }] }, (call) => ({ space: call.space, name: call.subject(0) }), removeMacro),
   writeCommand(
     {
       name: "use",
@@ -1173,28 +1152,19 @@ const WRITE_COMMANDS: CommandSpec[] = [
       subjects: [RANGE, { name: "<macro>", help: "the macro name" }],
       options: { args: { kind: "text", value: "<x, y>", help: "one expression for each param, a comma list" } },
     },
-    (call) => {
-      const context = contextOf(call);
+    (call, context) => {
       const request = { space: call.space, ...call.parseRange(call.subject(0), "<range>"), macro: call.subject(1), args: commaList(call.string("args") ?? "") };
-      return (db) => {
-        const result = setMacroUse(db, { ...context, image: operandImages(db) }, request);
-        return { revision: result.revision, use: macroUse(result.current), ...(result.previous === undefined ? {} : { previous: macroUse(result.previous) }) };
-      };
+      return (db) => shown(setMacroUse(db, { ...context, image: operandImages(db) }, request), "use", macroUse);
     },
   ),
-  writeCommand({ name: "unuse", summary: "Removes the macro use that starts at an address.", subjects: [START] }, (call) => {
-    const context = contextOf(call);
-    const request = { space: call.space, start: call.parseAddress(call.subject(0), "<start>") };
-    return (db) => ({ revision: removeMacroUse(db, context, request).revision });
-  }),
+  removeCommand({ name: "unuse", summary: "Removes the macro use that starts at an address.", subjects: [START] }, (call) => ({ space: call.space, start: call.parseAddress(call.subject(0), "<start>") }), removeMacroUse),
   writeCommand(
     {
       name: "image",
       summary: "Puts the program into the knowledge: its bytes, and for the image.json of a capture also the entry, the entry state and the stages. Only changed bytes write.",
       subjects: [{ name: "<file>", help: "the image.json of a capture or of loads, or a PRG" }],
     },
-    (call) => {
-      const context = contextOf(call);
+    (call, context) => {
       const request = imageRequest(call.subject(0), call.space);
       return (db) => {
         const { revision, current } = setImage(db, context, request);
@@ -1208,8 +1178,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       summary: "Puts coverage maps of the emulator, of a run or of a recording folder into the coverage of the knowledge. Each map is named by its path: a new map of a path replaces the earlier map of that path, and --evidence coverage:<path> cites it.",
       subjects: [{ name: "<map>", help: "a 64 KiB coverage map, or a recording folder: then its coverage map", list: true }],
     },
-    (call) => {
-      const context = contextOf(call);
+    (call, context) => {
       const maps = call.subjects.map((given) => {
         // A recording folder gives its coverage map: the knowledge names it by the path of the map in the folder.
         const path = coverageMapOf(given);
@@ -1236,8 +1205,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       subjects: [REVISION],
       options: { space: { kind: "space", value: "<space>", help: "revert only this space: c64, drive8, loading, or bank0 to bank255. The other spaces do not change. Without --space, every space reverts" } },
     },
-    (call) => {
-      const context = contextOf(call);
+    (call, context) => {
       const space = call.string("space");
       const request = { revision: call.subject(0), ...(space === undefined ? {} : { space }) };
       return (db) => {
@@ -1246,9 +1214,8 @@ const WRITE_COMMANDS: CommandSpec[] = [
       };
     },
   ),
-  writeCommand({ name: "merge", summary: "Decides the conflicts that a git merge of two computers' work left: of the rows of one conflict, the newest stays. One revision for all." }, (call) => {
-    const context = contextOf(call);
-    const platform = new Map(platformNames().map((entry) => [entry.name, entry.address]));
+  writeCommand({ name: "merge", summary: "Decides the conflicts that a git merge of two computers' work left: of the rows of one conflict, the newest stays. One revision for all." }, (_call, context) => {
+    const platform = platformAddresses();
     return (db) => {
       const merged = mergeConflicts(db, context, platform);
       return { revision: merged.revision, choices: merged.current.map(showChoice) };
@@ -1261,8 +1228,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       subjects: [{ name: "<file>", help: "the batch: a JSON list of writes, or - for standard input" }],
       notes: `A write is {"op": "<command>", ...} with the fields of the command, for example {"op": "rename", "address": "$2100", "name": "update_player"}. A range is "start" and "end". A write can name its own "space". The fields of each op, the optional ones in brackets: ${BATCH_OPS}. operand: select is lo, hi or value with symbol and [offset], or expr with expression. patch: an empty or no code is NOP only. macro params and use args: a JSON list of strings or a comma list. operand, patch and use writes are checked against the program of their space.`,
     },
-    (call) => {
-      const context = contextOf(call);
+    (call, context) => {
       const path = call.subject(0);
       const text = path === "-" ? readFileSync(0, "utf8") : readProjectFile(path).bytes.toString("utf8");
       let parsed: unknown;
@@ -1352,13 +1318,7 @@ const JOIN: CommandSpec = {
   run: (call) => {
     if (call.subjects.length < 2) throw new UsageError("join needs two or more batch files.");
     const batches: Batch[] = call.subjects.map((file) => {
-      let value: unknown;
-      try {
-        value = JSON.parse(readProjectFile(file).bytes.toString("utf8"));
-      } catch (error) {
-        if (error instanceof SyntaxError) throw new Refusal("invalid-input", `${file} is not JSON: ${error.message}`);
-        throw error;
-      }
+      const value = readProjectJson(file);
       const shaped = Array.isArray(value) ? { ops: value } : (value as { owner?: unknown; ops?: unknown });
       if (typeof shaped !== "object" || shaped === null || !Array.isArray(shaped.ops)) throw new Refusal("invalid-input", `${file}: a batch is a list of writes, or {"owner": {"start": "$1000", "end": "$1fff"}, "ops": [...]}`);
       let owner: Batch["owner"];

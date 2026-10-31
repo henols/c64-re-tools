@@ -6,16 +6,15 @@
 // snapshot file, which a run can start from. No tool guesses where a load
 // ends: the steps decide.
 
-import { type AddressRange, COVERAGE, formatC64Address } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, formatC64Address, formatC64RangeFields, prgOf } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { IO_RAM, markIoRamWrites, readCoverage } from "#src/host-client/coverage.ts";
 import { ACTION_STEP_KINDS, checkActionStep, checkStepNames, isObject, runActionStep, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
 import { knowledgeAt } from "#src/knowledge/names.ts";
-import { WireFailure } from "#src/host-client/tools.ts";
-import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
-import { ViceSessionClient } from "#src/host-client/vice-session.ts";
-import { entryStateFile, json, machineState, readRam, readyState, removeStaleFiles, vectorsOf } from "./machine.ts";
+import { readProjectFile, readProjectJson, writeReported } from "#src/host-client/transfer.ts";
+import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { entryStateFile, machineState, readyState, vectorsOf, writeCapture } from "./machine.ts";
 import { FIRST_SEGMENT_ADDRESS } from "./stages.ts";
 
 
@@ -32,13 +31,7 @@ const KERNAL_KEY_WAIT = { start: 0xe5cd, end: 0xe5d5 };
 
 /** Reads and checks the steps file of loads: action steps with $ addresses, and capture and save steps with new names. */
 export function readLoadSteps(path: string): LoadStep[] {
-  let value: unknown;
-  try {
-    value = JSON.parse(readProjectFile(path).bytes.toString("utf8"));
-  } catch (error) {
-    if (error instanceof WireFailure) throw error;
-    throw new Refusal("invalid-input", `--steps ${path} is not JSON: ${(error as Error).message}`);
-  }
+  const value = readProjectJson(path, (message) => `--steps ${path} is not JSON: ${message}`);
   const fail = (message: string): never => {
     throw new Refusal("invalid-input", `--steps ${path}: ${message}`);
   };
@@ -109,8 +102,6 @@ export function captureBlocks(before: Uint8Array, after: Uint8Array, map: Uint8A
   return changedBlocks(before, after, map, 16, writesKnown);
 }
 
-const hex4 = (value: number) => value.toString(16).padStart(4, "0");
-
 /**
  * Runs the program and its steps. Each capture step writes <out>/<name>/:
  * image.bin, image.json, entry_state.json, a PRG for each segment, and with
@@ -132,7 +123,7 @@ export async function loads(program: string, options: { out: string; steps: Load
       const { bytes } = readProjectFile(program);
       if (!(await autostartLoaded(client, program, bytes))) return { output: { loaded: false, reason: `The program was not in memory after ${LOAD_LIMIT_FRAMES} frames.`, captures: [] }, failed: true };
       // The RAM before RUN, without the program, so the first capture holds the program too.
-      previous = await readRam(client, 0x0000, 0x10000);
+      previous = await readMemoryInParts(client, 0x0000, 0x10000, "ram");
       const load = bytes[0]! | (bytes[1]! << 8);
       previous.fill(0, load, Math.min(0x10000, load + bytes.length - 2));
       loadedProgram = bytes;
@@ -144,7 +135,7 @@ export async function loads(program: string, options: { out: string; steps: Load
       }
     } else {
       // A disk, tape or cartridge: VICE loads and starts it. The RAM test of the KERNAL puts back what it writes.
-      previous = await readRam(client, 0x0000, 0x10000);
+      previous = await readMemoryInParts(client, 0x0000, 0x10000, "ram");
       await client.memmap({ action: "clear" });
       await client.autostart({ path: program, index: 0, run: true });
       writesKnown = false;
@@ -181,7 +172,7 @@ export async function loads(program: string, options: { out: string; steps: Load
       }
       if ((await client.status()).state === "running") await client.execution({ action: "pause", space: "c64" });
       const registers = await client.registersGet("c64");
-      const memory = await readRam(client, 0x0000, 0x10000);
+      const memory = await readMemoryInParts(client, 0x0000, 0x10000, "ram");
       const map = await readCoverage(client);
       if (loadedProgram !== undefined) {
         // The PRG itself is part of the first capture.
@@ -195,37 +186,30 @@ export async function loads(program: string, options: { out: string; steps: Load
       const state = await machineState(client);
       const vectors = vectorsOf(state, memory);
       const directory = `${options.out}/${step.capture}`;
-      const written: Written[] = [];
-      const write = (name: string, bytes: Uint8Array) => written.push(writeReported(`${directory}/${name}`, bytes, { what: "--out" }));
-      write("image.bin", memory);
-      const files = segments.map((segment) => {
-        const name = `segment-${hex4(segment.start)}-${hex4(segment.end)}.prg`;
-        write(name, Buffer.concat([Buffer.from([segment.start & 0xff, segment.start >> 8]), memory.subarray(segment.start, segment.end + 1)]));
-        return name;
-      });
       let drive: Record<string, unknown> | undefined;
+      const other: Array<{ name: string; bytes: Uint8Array }> = [];
       if (options.drive) {
         const ram = Buffer.from((await client.memoryRead({ address: 0x0000, size: DRIVE_RAM, space: "drive8", view: "cpu" })).data, "hex");
-        write("drive8.prg", Buffer.concat([Buffer.from([0x00, 0x00]), ram]));
+        other.push({ name: "drive8.prg", bytes: prgOf(0x0000, ram) });
         drive = { file: "drive8.prg", pc: formatC64Address((await client.registersGet("drive8")).pc), space: "drive8" };
       }
-      const showRange = (range: { start: number; end: number }) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
-      write(
-        "image.json",
-        json({
+      const entry = entryStateFile(registers, state, vectors, clean);
+      const { written, removed } = writeCapture(
+        directory,
+        memory,
+        segments,
+        other,
+        (files) => ({
           capture: step.capture,
           entry: formatC64Address(registers.pc),
-          segments: segments.map((segment, at) => ({ ...showRange(segment), file: files[at] })),
-          ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(showRange) }),
+          segments: segments.map((segment, at) => ({ ...formatC64RangeFields(segment), file: files[at] })),
+          ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(formatC64RangeFields) }),
           vectors,
           image: "image.bin",
           ...(drive === undefined ? {} : { drive }),
         }),
+        entry.bytes,
       );
-      const entry = entryStateFile(registers, state, vectors, clean);
-      write("entry_state.json", entry.bytes);
-      // A capture again into the folder: the files of the earlier capture that image.json no longer lists go.
-      const removed = removeStaleFiles(directory, [...files, ...(drive === undefined ? [] : ["drive8.prg"])]);
       const keyWait = registers.pc >= KERNAL_KEY_WAIT.start && registers.pc <= KERNAL_KEY_WAIT.end;
       captures.push({
         capture: step.capture,
@@ -234,8 +218,8 @@ export async function loads(program: string, options: { out: string; steps: Load
         ...(removed.length === 0 ? {} : { removed }),
         pc: formatC64Address(registers.pc),
         ...(keyWait ? { keyWait: true } : {}),
-        segments: segments.map(showRange),
-        ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(showRange) }),
+        segments: segments.map(formatC64RangeFields),
+        ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(formatC64RangeFields) }),
         differsFromReset: entry.differsFromReset,
         ...(small === 0 ? {} : { smallChanges: small }),
         ...(drive === undefined ? {} : { drive: drive.file }),

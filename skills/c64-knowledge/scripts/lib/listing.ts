@@ -4,6 +4,7 @@
 // reads files: knowledge.ts gives the lookups.
 
 import { COVERAGE, formatC64Address, formatC64Byte, POINTER_TABLE_TYPES, pointerEntryText, pointerTableEntries, type PointerTableType, splitEntryByte } from "#src/c64.ts";
+import { CODE_REGION_TYPES, INSTRUCTION_REGION_TYPES } from "#src/knowledge/schema.ts";
 import { instructionWith, MODE_LENGTH, OPCODES, type Mode } from "#src/opcodes.ts";
 
 export interface ListingSource {
@@ -44,7 +45,8 @@ export interface ListingLine {
 
 type Region = ListingSource["regions"][number];
 
-const CODE = new Set(["code", "jumps"]);
+const CODE = new Set<string>(CODE_REGION_TYPES);
+const INSTRUCTIONS = new Set<string>(INSTRUCTION_REGION_TYPES);
 const TABLES = new Set<string>(["words", ...POINTER_TABLE_TYPES]);
 const DATA_PER_LINE = 8;
 
@@ -64,7 +66,7 @@ function accessOf(coverage: Uint8Array | undefined, start: number, length: numbe
 function targetName(target: number, source: ListingSource): string | undefined {
   const own = source.nameOf(target);
   if (own !== undefined) return own;
-  const region = source.regions.find((row) => target > row.start && target <= row.end && !CODE.has(row.type) && row.type !== "dual-use");
+  const region = source.regions.find((row) => target > row.start && target <= row.end && !INSTRUCTIONS.has(row.type));
   const start = region?.start ?? source.entryStart?.(target);
   const name = start === undefined ? undefined : source.nameOf(start);
   return name === undefined ? undefined : `${name}+${target - start!}`;
@@ -162,9 +164,11 @@ export function listing(source: ListingSource, start: number, end: number, optio
       const length = MODE_LENGTH[opcode.mode];
       const bytes = Array.from({ length: length - 1 }, (_, offset) => source.byteAt(address + 1 + offset));
       if (address + length - 1 <= region.end && bytes.every((value) => value !== undefined)) {
-        // The operand expression of the knowledge in the syntax of the addressing mode, as c64-source writes it.
-        const operand = source.operand(address) ?? operandOf(opcode.mode, address, bytes[0] ?? 0, bytes[1] ?? 0, source);
-        if (address >= start) lines.push(line(address, length, instructionWith(byte, operand)));
+        if (address >= start) {
+          // The operand expression of the knowledge in the syntax of the addressing mode, as c64-source writes it.
+          const operand = source.operand(address) ?? operandOf(opcode.mode, address, bytes[0] ?? 0, bytes[1] ?? 0, source);
+          lines.push(line(address, length, instructionWith(byte, operand)));
+        }
         address += length;
         continue;
       }

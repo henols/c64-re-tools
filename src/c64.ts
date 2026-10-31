@@ -26,10 +26,68 @@ export function formatC64Address(value: number): string {
   return `$${checkAddress(value).toString(16).padStart(4, "0")}`;
 }
 
+/** An address as 4 hex digits without $, for labels and file names. */
+export function hexWord(value: number): string {
+  return value.toString(16).padStart(4, "0");
+}
+
 /** An inclusive span of C64 addresses. */
 export interface AddressRange {
   start: number;
   end: number;
+}
+
+/** A range as $xxxx-$xxxx. */
+export function formatC64Range(range: AddressRange): string {
+  return `${formatC64Address(range.start)}-${formatC64Address(range.end)}`;
+}
+
+/** A range with its ends as $xxxx. */
+export function formatC64RangeFields(range: AddressRange): { start: string; end: string } {
+  return { start: formatC64Address(range.start), end: formatC64Address(range.end) };
+}
+
+/** True when the two ranges share an address. */
+export function rangesOverlap(a: AddressRange, b: AddressRange): boolean {
+  return a.start <= b.end && b.start <= a.end;
+}
+
+/** True when one of the ranges holds the address. */
+export function inRanges(ranges: readonly AddressRange[], address: number): boolean {
+  return ranges.some((range) => address >= range.start && address <= range.end);
+}
+
+/** The ranges in address order, with each run of touching or overlapping ranges as one. */
+export function mergeRanges(ranges: readonly AddressRange[]): AddressRange[] {
+  const merged: AddressRange[] = [];
+  for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
+    const last = merged.at(-1);
+    if (last !== undefined && range.start <= last.end + 1) last.end = Math.max(last.end, range.end);
+    else merged.push({ start: range.start, end: range.end });
+  }
+  return merged;
+}
+
+/** The parts of `range` that no range in `holes` covers, in address order. */
+export function subtract(range: AddressRange, holes: readonly AddressRange[]): AddressRange[] {
+  let pieces = [range];
+  for (const hole of holes) {
+    pieces = pieces.flatMap((piece) => {
+      if (!rangesOverlap(piece, hole)) return [piece];
+      return [...(hole.start > piece.start ? [{ start: piece.start, end: hole.start - 1 }] : []), ...(hole.end < piece.end ? [{ start: hole.end + 1, end: piece.end }] : [])];
+    });
+  }
+  return pieces;
+}
+
+/** True when a read of the address with $01 = $37, as RUN leaves it, gives a ROM byte: RAM is below, so a write there and code that runs there are not the same bytes. */
+export function underRom(address: number): boolean {
+  return (address >= 0xa000 && address <= 0xbfff) || address >= 0xe000;
+}
+
+/** A PRG: the 2-byte load address, then the body. */
+export function prgOf(start: number, body: Uint8Array): Buffer {
+  return Buffer.concat([Buffer.from([start & 0xff, start >> 8]), body]);
 }
 
 /** The knowledge spaces: the C64, the 1541 drive in unit 8, and cartridge banks 0 to 255. */
