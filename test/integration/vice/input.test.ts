@@ -11,10 +11,10 @@ const session = fileSession();
 
 test("typed text reaches BASIC", { skip: liveSkip, timeout: 60_000 }, async () => {
   await session.handle("reset", { mode: "hard", run: true });
-  await waitFor(async () => (await screenOf(session)).includes("READY."), "the READY prompt", 20_000);
+  await waitFor(async () => (await screenOf(session)).includes("READY."), "the READY prompt", 20_000, 100);
   const petscii = textToPetscii("print 7*6\n");
   assert.deepEqual(await session.handle("keyboard", { data: Buffer.from(petscii).toString("hex") }), { queuedBytes: petscii.length });
-  await waitFor(async () => /^ 42 *$/m.test(await screenOf(session)), "the answer 42", 20_000);
+  await waitFor(async () => /^ 42 *$/m.test(await screenOf(session)), "the answer 42", 20_000, 100);
 });
 
 test("a running program reads both joysticks through the CIA ports", { skip: liveSkip, timeout: 60_000 }, async () => {
@@ -32,7 +32,7 @@ test("a running program reads both joysticks through the CIA ports", { skip: liv
   await waitFor(async () => {
     const [dc00, dc01] = Buffer.from(await seen(), "hex");
     return (dc00! & 0x1f) === 0x0a && (dc01! & 0x1f) === 0x17;
-  }, "the joystick lines", 20_000);
+  }, "the joystick lines", 20_000, 100);
   await session.handle("joystick", { port: 2, direction: "center", fire: false });
-  await waitFor(async () => (Buffer.from(await seen(), "hex")[0]! & 0x1f) === 0x1f, "the released joystick", 20_000);
+  await waitFor(async () => (Buffer.from(await seen(), "hex")[0]! & 0x1f) === 0x1f, "the released joystick", 20_000, 100);
 });

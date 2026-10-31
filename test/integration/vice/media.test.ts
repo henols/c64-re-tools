@@ -22,7 +22,7 @@ async function waitForPcIn(start: number, end: number, timeoutMs = 30_000): Prom
     const { pc } = await session.handle("registersGet", { space: "c64" });
     return pc >= start && pc <= end;
   };
-  await waitFor(inRange, `the pc in ${formatC64Address(start)}-${formatC64Address(end)}`, timeoutMs);
+  await waitFor(inRange, `the pc in ${formatC64Address(start)}-${formatC64Address(end)}`, timeoutMs, 100);
 }
 
 test("a program load puts the bytes in memory, stopped, at either address", { skip: liveSkip, timeout: 60_000 }, async () => {
@@ -124,12 +124,12 @@ test("the bytes that a sectors request gives for a sector that no file holds are
   assert.deepEqual(await session.handle("diskAttach", { type: "d64" }, [image]), { attached: true });
   const ready = [0x12, 0x05, 0x01, 0x04, 0x19, 0x2e];
   const screenHas = async (pattern: number[]) => (await session.handle("memorySearch", { start: 0x0400, end: 0x07e7, pattern, space: "c64", view: "cpu", maxResults: 2 })).matches.length;
-  await waitFor(async () => (await screenHas(ready)) > 0, "the READY prompt", 30_000);
+  await waitFor(async () => (await screenHas(ready)) > 0, "the READY prompt", 30_000, 100);
   const line = textToPetscii('open15,8,15:open2,8,2,"#":print#15,"u1 2 0 20 5"\n');
   await session.handle("keyboard", { data: Buffer.from(line).toString("hex") });
   let found: number[] = [];
   const search = async () => (await session.handle("memorySearch", { start: 0x0300, end: 0x07ff, pattern: [...marker.subarray(0, 16)], space: "drive8", view: "cpu", maxResults: 2 })).matches;
-  await waitFor(async () => (found = await search()).length > 0, "the sector in a drive buffer", 40_000);
+  await waitFor(async () => (found = await search()).length > 0, "the sector in a drive buffer", 40_000, 100);
   assert.equal(found.length, 1, "the drive buffer holds the sector");
   const read = await session.handle("memoryRead", { address: found[0]!, size: 256, space: "drive8", view: "cpu" });
   assert.equal(read.data, marker.toString("hex"));

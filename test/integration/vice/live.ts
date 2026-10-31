@@ -226,6 +226,7 @@ export async function waitForStop(session: Pick<ViceSessionHandle, "handle">, ti
     },
     "the stop of the machine",
     timeoutMs,
+    20,
   );
   return pc;
 }

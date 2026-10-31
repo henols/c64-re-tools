@@ -53,7 +53,7 @@ async function withSession(body: (live: { session: ViceSessionHandle; supervisor
 /** Polls the screen (no fixed sleep) until `pattern` shows. The machine must run. */
 async function waitForScreen(session: ViceSessionHandle, pattern: RegExp, timeoutMs = 30_000): Promise<string> {
   let text = "";
-  await waitFor(async () => pattern.test((text = await screenOf(session))), `the screen with ${pattern}`, timeoutMs).catch((error: Error) => {
+  await waitFor(async () => pattern.test((text = await screenOf(session))), `the screen with ${pattern}`, timeoutMs, 100).catch((error: Error) => {
     throw new Error(`${error.message}. The screen:\n${text}`);
   });
   return text;
@@ -154,7 +154,7 @@ test("a running machine runs on after each move, with warp and the joystick kept
       // The machine really runs: the jiffy clock at $a2 moves.
       const jiffy = async () => (await session.handle("memoryRead", { address: 0x00a2, size: 1, space: "c64", view: "ram" })).data;
       const before = await jiffy();
-      await waitFor(async () => (await jiffy()) !== before, `the C64 runs after ${action}: the jiffy clock moves from ${before}`, 5_000);
+      await waitFor(async () => (await jiffy()) !== before, `the C64 runs after ${action}: the jiffy clock moves from ${before}`, 5_000, 20);
     }
   });
 });
@@ -255,7 +255,7 @@ test("the window VICE ends by itself: the session goes back headless from the op
         return !failsWith("machine-unavailable", /window closed/i)(error);
       }
     };
-    await waitFor(noticed, "a notice other than that the window is closed", 60_000);
+    await waitFor(noticed, "a notice other than that the window is closed", 60_000, 100);
     assert.ok(failsWith("machine-state-lost", /window closed before c64_window close/i)(notice), String(notice));
     const status = await session.handle("status", {});
     assert.deepEqual([status.window, status.state], [false, "stopped"]);

@@ -22,7 +22,7 @@ test("a machine stopped at a breakpoint never runs through reads and idle time",
     // The KERNAL waits for a key in a loop through $e5cd.
     await session.breakpoint({ action: "add", address: 0xe5cd, space: "c64" });
     let stopped = await session.status();
-    await waitFor(async () => (stopped = await session.status()).state === "stopped", "the stop at the breakpoint", 20_000);
+    await waitFor(async () => (stopped = await session.status()).state === "stopped", "the stop at the breakpoint", 20_000, 25);
     assert.equal(stopped.state, "stopped");
     await session.timing("start");
 
