@@ -8,7 +8,7 @@ import { StreamBuffer } from "../../protocol/framing.ts";
 import { connectWithTimeout } from "./connect.ts";
 
 export const STX = 0x02;
-export const API_VERSION = 0x02;
+const API_VERSION = 0x02;
 /** Request id VICE uses for responses it sends unprompted (events). */
 export const EVENT_REQUEST_ID = 0xffff_ffff;
 
@@ -238,12 +238,12 @@ interface Pending {
   sequence: number;
 }
 
-export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 /**
  * While an earlier command is overdue, later ones are still sent (VICE runs
  * them in order once it goes on, so cleanup lands) but waited for only this long.
  */
-export const OVERDUE_REQUEST_TIMEOUT_MS = 1_000;
+const OVERDUE_REQUEST_TIMEOUT_MS = 1_000;
 
 /** One binary-monitor connection with request correlation and an event stream. */
 export class BinaryMonitor {

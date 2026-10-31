@@ -300,7 +300,7 @@ export interface MemmapRange {
 // Screen baselines and snapshots
 
 /** 1-64 letters, digits, dots, underscores or hyphens. */
-export const TRANSIENT_NAME = /^[A-Za-z0-9._-]{1,64}$/;
+const TRANSIENT_NAME = /^[A-Za-z0-9._-]{1,64}$/;
 export const MAX_BASELINES = 64;
 export const MAX_SNAPSHOTS = 64;
 /** Most rectangles one screen comparison mask holds. */
@@ -981,7 +981,7 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
  * Validates a typed condition. Raster bounds here cover both video
  * standards; the session checks them against its own standard.
  */
-export function validateCondition(value: unknown): Condition {
+function validateCondition(value: unknown): Condition {
   if (!isObject(value)) invalid("condition must be an object");
   const byte = (field: unknown, name: string) => {
     if (!isInteger(field, 0, 0xff)) invalid(`condition ${name} must be an integer from 0 to 255`);

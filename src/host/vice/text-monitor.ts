@@ -34,7 +34,7 @@ export class TextMonitorTimeoutError extends TextMonitorError {
 }
 
 const PROMPT = /\((?:C|\d+):\$[0-9a-f]{4}\) /g;
-export const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
+const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
 /** The default of TextMonitor.resendAfterMs. */
 const RESEND_AFTER_MS = 3_000;
 /** The default of TextMonitor.overdueTimeoutMs. */

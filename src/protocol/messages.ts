@@ -25,7 +25,7 @@ export interface WireError {
   message: string;
 }
 
-export const ROLES = ["vice-session", "tool"] as const;
+const ROLES = ["vice-session", "tool"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const VIDEO_STANDARDS = ["pal", "ntsc"] as const;
@@ -115,10 +115,6 @@ export function shownMessage(error: { code: string; message: string }): string {
 /** A refusal that crosses the Host Runtime wire. */
 export class WireFailure extends Refusal implements WireError {
   override name = "WireFailure";
-
-  toWire(): WireError {
-    return { code: this.code, message: this.message };
-  }
 }
 
 export type Fields = Record<string, unknown>;
