@@ -132,7 +132,13 @@ async function compare(call: Call): Promise<unknown> {
   const share = identicalShare(comparison.identicalBytes, comparison.differingBytes);
   const show = formatC64RangeFields;
   const compared = {
-    releases: loaded.map((item) => ({ name: item.release.name, shift: item.shift, segments: item.release.segments.map(show) })),
+    releases: loaded.map((item, index) => ({
+      release: index + 1,
+      name: item.release.name,
+      shift: item.shift,
+      segments: item.release.segments.map(show),
+      ...(comparison.outsideCommon[index]!.length === 0 ? {} : { outsideCommon: comparison.outsideCommon[index]!.map(show) }),
+    })),
     common: comparison.common.map(show),
     identicalBytes: comparison.identicalBytes,
     differingBytes: comparison.differingBytes,
@@ -153,12 +159,12 @@ async function compare(call: Call): Promise<unknown> {
     return cut ? reply(mapped, { hint: `A list holds only its first ${MAX_ALIGNED} items: moreBlocks, moreOnlyInA and moreOnlyInB count the others. Give --range to map a part of the releases.` }) : mapped;
   }
   // A poor match at the load addresses can mean that the releases are placed differently.
-  // Each release gets its best shifts: data that stayed can outvote code that moved, so one is not enough.
+  // Each release gets its best shifts for the bytes of release 1 in the range: data that stayed can outvote code that moved, so one is not enough.
   const applied = loaded.map((item) => item.shift);
   const suggestions =
     share < 0.5
       ? releases.slice(1).flatMap((release, index) =>
-          suggestShifts(releases[0]!, release).map((found) => {
+          suggestShifts(releases[0]!, release, range).map((found) => {
             const suggestion = shiftSuggestion(releases, applied, index + 1, found);
             // The shift that the run already has: its votes tell how good the present alignment is.
             return "shift" in suggestion && suggestion.shift === applied[suggestion.release - 1] ? { ...suggestion, current: true } : suggestion;
@@ -169,11 +175,12 @@ async function compare(call: Call): Promise<unknown> {
   const notSuggested = suggestions.filter((suggestion) => "reason" in suggestion);
 
   // The runtime evidence: one emulator for each release, the differences at the release's own addresses.
+  // Each release by its number: a file can be given two times, with another shift.
   const runtime = new Map<string, Array<AddressRange & { first: string; changed: boolean }>>();
   const runs: Record<string, unknown> = {};
   if (frames !== undefined && comparison.differences.length > 0) {
-    for (const item of loaded) {
-      const name = item.release.name;
+    for (const [index, item] of loaded.entries()) {
+      const name = String(index + 1);
       if (item.start.kind === "none") {
         runs[name] = { started: false, reason: item.start.reason };
         continue;
@@ -205,7 +212,8 @@ async function compare(call: Call): Promise<unknown> {
     const shiftArgs = next.flatMap((shift, index) => (shift === 0 ? [] : ["--shift", `${index + 1}:${shift}`]));
     hints.push("identicalShare is low: the releases can be at different addresses. nextAction runs compare with the first suggested shift. Try each shift in suggestedShifts. If no shift gives a high identicalShare, run compare with --align.");
     nextAction = call.next("compare", ...positionals, ...shiftArgs, ...rangeArgs, ...runArgs);
-  } else if (share < 0.5 && positionals.length === 2 && shifts.size === 0 && frames === undefined) {
+  } else if (share < 0.5 && suggestions.length > 0 && positionals.length === 2 && shifts.size === 0 && frames === undefined) {
+    // Only when release 2 has sequences of release 1 at some shift: else --align finds no block either.
     hints.push("identicalShare is low, and no suggested shift is better. The code and the data can be at other addresses in each release. Map the releases in blocks with --align.");
     nextAction = call.next("compare", ...positionals, "--align", ...rangeArgs);
   }
@@ -215,7 +223,7 @@ async function compare(call: Call): Promise<unknown> {
     differences: comparison.differences.map((difference, index) => ({
       start: formatC64Address(difference.start),
       end: formatC64Address(difference.end),
-      values: Object.fromEntries(Object.entries(difference.values).map(([name, bytes]) => [name, hexBytes(bytes.slice(0, 32)) + (bytes.length > 32 ? " ..." : "")])),
+      values: Object.fromEntries(difference.values.map((bytes, at) => [String(at + 1), hexBytes(bytes.slice(0, 32)) + (bytes.length > 32 ? " ..." : "")])),
       groups: difference.groups,
       // runtime gives the release's own addresses: with a shift, they are not the addresses of the difference.
       ...(runtime.size === 0
@@ -552,7 +560,7 @@ const COMMANDS: CommandSpec[] = [
   },
   {
     name: "separate",
-    summary: "Evidence from the program in the knowledge: the unpack stage that wrote each range, its access in the coverage, whether call and jump references, or the run on from the code before it, reach each code region from the entry, and what the program reads or executes outside its segments.",
+    summary: "Evidence from the program in the knowledge: the unpack stage that wrote each range, its access in the coverage, whether call and jump references, a handler that the code stores in an interrupt vector, or the run on from the code before it, reach each code region from the entry, and what the program reads or executes outside its segments.",
     options: { out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write the fields of the body, with all items of each list, to this file" }, "max-listed": OPTIONS["max-listed"] },
     run: separateCommand,
   },

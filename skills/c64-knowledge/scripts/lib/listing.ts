@@ -209,19 +209,29 @@ export function listing(source: ListingSource, start: number, end: number, optio
   return lines;
 }
 
-/** A listing as text, one line for each line, with its line comments above it. */
-export function listingText(lines: readonly ListingLine[]): string {
+/**
+ * A listing as text lines, as the agent reads it: each line comment as a line
+ * of its own, `; <comment>`, before its line, and each line as
+ * `<address>  <bytes>  <access>  <label>: <text>  ; <comment> | refs in <n> out <n> | also <names>`.
+ * Two spaces separate the parts. A part that the line does not have is not there.
+ */
+export function listingLines(lines: readonly ListingLine[]): string[] {
   const out: string[] = [];
   for (const item of lines) {
-    for (const comment of item.lineComments ?? []) out.push(`                         ; ${comment}`);
-    const head = `${formatC64Address(item.address)}  ${item.bytes.padEnd(9)} ${(item.access ?? "").padEnd(3)}`;
-    const body = (item.label === undefined ? "" : `${item.label} `).padEnd(20) + item.text;
+    for (const comment of item.lineComments ?? []) out.push(`; ${comment}`);
     const notes = [
       ...(item.comment === undefined ? [] : [item.comment]),
       ...(item.referencesIn + item.referencesOut === 0 ? [] : [`refs in ${item.referencesIn} out ${item.referencesOut}`]),
       ...(item.analyzerNames === undefined ? [] : [`also ${item.analyzerNames.join(", ")}`]),
     ];
-    out.push(`${head} ${body.padEnd(44)}${notes.length === 0 ? "" : ` ; ${notes.join(" | ")}`}`.trimEnd());
+    const parts = [
+      formatC64Address(item.address),
+      item.bytes,
+      ...(item.access === undefined ? [] : [item.access]),
+      `${item.label === undefined ? "" : `${item.label}: `}${item.text}`,
+      ...(notes.length === 0 ? [] : [`; ${notes.join(" | ")}`]),
+    ];
+    out.push(parts.join("  "));
   }
-  return `${out.join("\n")}\n`;
+  return out;
 }

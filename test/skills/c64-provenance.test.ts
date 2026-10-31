@@ -48,7 +48,7 @@ crackB[0x0a00 - 0x0801] = crackB[0x0a00 - 0x0801]! ^ 0xff; // a changed text byt
 /** A release with one segment from `start`. */
 const at = (name: string, start: number, bytes: Uint8Array) => ({ name, segments: [{ start, end: start + bytes.length - 1 }], byteAt: (address: number) => bytes[address - start]! });
 
-test("differences show the bytes of each release and which releases agree", () => {
+test("differences show the bytes of each release and which releases agree, by the number of the release", () => {
   const releases = [
     at("release", 0x0801, base),
     at("crack-a", 0x0801, crackA),
@@ -56,17 +56,37 @@ test("differences show the bytes of each release and which releases agree", () =
   ];
   const result = compareReleases(releases);
   assert.deepEqual(result.common, [{ start: 0x0801, end: 0x0801 + 2047 }]);
+  assert.deepEqual(result.outsideCommon, [[], [], []]);
   assert.equal(result.differingBytes, 4);
   assert.deepEqual(result.differences.map((difference) => [difference.start, difference.end, difference.groups]), [
-    [0x0900, 0x0902, [["release", "crack-b"], ["crack-a"]]],
-    [0x0a00, 0x0a00, [["release", "crack-a"], ["crack-b"]]],
+    [0x0900, 0x0902, [[1, 3], [2]]],
+    [0x0a00, 0x0a00, [[1, 2], [3]]],
   ]);
-  assert.deepEqual(result.differences[0]!.values["crack-a"], patch);
+  assert.deepEqual(result.differences[0]!.values[1], patch);
   assert.equal(compareReleases(releases, { from: 0x0a00, to: 0x0aff }).differingBytes, 1);
+  // One file two times, for example a copy in the same release: each one keeps its bytes and its place in the groups.
+  const twice = compareReleases([at("release", 0x0801, base), at("crack", 0x0801, crackA), at("crack", 0x0801, base)], { from: 0x0900, to: 0x0902 });
+  assert.deepEqual(twice.differences.map((difference) => [difference.values, difference.groups]), [[[[...base.subarray(0xff, 0x102)], patch, [...base.subarray(0xff, 0x102)]], [[1, 3], [2]]]]);
 });
 
-test("a release at another address gets a suggested shift", () => {
+test("each release lists its addresses in the range that are not in common: another release has no bytes there", () => {
+  const short = at("short", 0x0801, base.subarray(0, 0x100));
+  const result = compareReleases([at("long", 0x0801, base), short, at("late", 0x0880, base.subarray(0, 0x100))], { from: 0x0800, to: 0x0a00 });
+  assert.deepEqual(result.common, [{ start: 0x0880, end: 0x0900 }]);
+  assert.deepEqual(result.outsideCommon, [
+    [{ start: 0x0801, end: 0x087f }, { start: 0x0901, end: 0x0a00 }],
+    [{ start: 0x0801, end: 0x087f }],
+    [{ start: 0x0901, end: 0x097f }],
+  ]);
+});
+
+test("a release at another address gets a suggested shift; the shifts come from the bytes of release 1 in the range, and a range of fewer than 15 bytes gets none", () => {
   assert.deepEqual(suggestShifts(at("release", 0x0801, base), at("moved", 0x0901, base)), [{ shift: -256, matches: 2041 }]);
+  assert.deepEqual(suggestShifts(at("release", 0x0801, base), at("moved", 0x0901, base), { start: 0x0900, end: 0x09ff }), [{ shift: -256, matches: 249 }]);
+  // Release 2 has the bytes of $0900-$090e of release 1 at $0700 and the others at $0901 on: a range sees only its own bytes.
+  const copy = { name: "copy", segments: [{ start: 0x0700, end: 0x070e }, { start: 0x0901, end: 0x0901 + 2047 }], byteAt: (address: number) => (address <= 0x070e ? base[address - 0x0700 + 0x0900 - 0x0801]! : base[address - 0x0901]!) };
+  assert.deepEqual(suggestShifts(at("release", 0x0801, base), copy, { start: 0x0900, end: 0x090e }), [{ shift: -256, matches: 8 }, { shift: 0x200, matches: 8 }]);
+  assert.deepEqual(suggestShifts(at("release", 0x0801, base), copy, { start: 0x0900, end: 0x090d }), [], "7 sequences of 8 bytes in 14 bytes");
 });
 
 test("data that stayed and code that moved both get a shift, and the present alignment is marked current", () => {
@@ -83,6 +103,11 @@ test("data that stayed and code that moved both get a shift, and the present ali
   // The next compare takes the first suggested shift that the run does not have.
   assert.match(run.envelope.hint ?? "", /^identicalShare is low/);
   assert.match(run.envelope.nextAction ?? "", /^node \/\S*provenance\.ts compare stay\.prg grow\.prg --shift 2:-256 --project \//);
+  // 13 bytes are too few to suggest a shift or --align: the result gives the differences and no next compare.
+  const short = provenance(["compare", "stay.prg", "grow.prg", "--range", "$2100-$210c"], project);
+  assert.equal(short.status, 0, short.stdout + short.stderr);
+  assert.ok((short.json as { identicalShare: number }).identicalShare < 0.5);
+  assert.deepEqual([(short.json as Record<string, unknown>).suggestedShifts, short.envelope.hint, short.envelope.nextAction], [undefined, undefined, undefined]);
 });
 
 test("a shift that moves a segment out of $0000-$ffff is not suggested: the opposite shift of release 1 is, or the reason", () => {
@@ -206,8 +231,9 @@ test("an image release counts only inside its segments, and a common range never
   writeFileSync(join(project, "whole.prg"), Buffer.concat([Buffer.from([0x01, 0x08]), crackA]));
   const run = provenance(["compare", "unpacked/image.json", "whole.prg"], project);
   assert.equal(run.status, 0, run.stdout + run.stderr);
-  const result = run.json as { common: unknown; differences: Array<{ start: string; end: string }>; identicalBytes: number };
+  const result = run.json as { releases: Array<{ release: number; outsideCommon?: unknown }>; common: unknown; differences: Array<{ start: string; end: string }>; identicalBytes: number };
   assert.deepEqual(result.common, [{ start: "$0801", end: "$0900" }, { start: "$0a01", end: "$0b00" }]);
+  assert.deepEqual(result.releases.map((release) => [release.release, release.outsideCommon]), [[1, undefined], [2, [{ start: "$0901", end: "$0a00" }, { start: "$0b01", end: "$1000" }]]]);
   assert.deepEqual(result.differences.map((difference) => [difference.start, difference.end]), [["$0900", "$0900"]], "the patch at $0900-$0902 counts only where the image has bytes");
   const steps = provenance(["compare", "unpacked/image.json", "whole.prg", "--steps", "s.json"], project);
   assert.equal(steps.status, 2, "--steps needs --run");

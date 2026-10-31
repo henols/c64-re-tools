@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { COVERAGE } from "../c64.ts";
-import { markIoRamWrites, writtenBlocks } from "./coverage.ts";
+import { markIoRamWrites, readCoverage, writtenBlocks } from "./coverage.ts";
 
 test("a run of writes under the I/O area with a changed byte is RAM written; a run of register writes is not", () => {
   const map = new Uint8Array(0x10000);
@@ -26,4 +26,18 @@ test("written blocks are runs of RAM writes of at least the minimum size", () =>
   map.fill(COVERAGE.ioWrite, 0xd000, 0xd040); // I/O writes are no RAM writes
   assert.deepEqual(writtenBlocks(map, 64), [{ start: 0xc000, end: 0xc07f }]);
   assert.deepEqual(writtenBlocks(map, 2).length, 2);
+});
+
+test("the coverage map is read again from next until no more ranges follow", async () => {
+  // One range for each executed byte in $2000-$27ff: more ranges than one read gives.
+  const executed = Array.from({ length: 0x800 }, (_, index) => ({ start: 0x2000 + index, end: 0x2000 + index, flags: COVERAGE.ramExecute }));
+  const reads: number[] = [];
+  const memmap = async ({ start, maxRanges }: { start: number; maxRanges: number }) => {
+    reads.push(start);
+    const rest = executed.filter((range) => range.start >= start);
+    return rest.length > maxRanges ? { ranges: rest.slice(0, maxRanges), next: rest[maxRanges]!.start } : { ranges: rest };
+  };
+  const map = await readCoverage({ memmap } as unknown as Parameters<typeof readCoverage>[0]);
+  assert.deepEqual([map[0x1fff], map[0x2000], map[0x27ff], map[0x2800]], [0, COVERAGE.ramExecute, COVERAGE.ramExecute, 0]);
+  assert.deepEqual(reads, [0x0000, 0x2000 + 1000, 0x2000 + 2000]);
 });

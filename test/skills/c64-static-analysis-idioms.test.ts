@@ -9,8 +9,9 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
-import { openForRead } from "../../src/knowledge/database.ts";
+import { openForRead, withWrite } from "../../src/knowledge/database.ts";
 import { listReferences, listRegions } from "../../src/knowledge/read.ts";
+import { classifyRegion } from "../../src/knowledge/write.ts";
 import { DXA, findTool } from "../../src/native/discover.ts";
 import { imageReader } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
 import { findIdioms } from "../../skills/c64-static-analysis/scripts/lib/idioms.ts";
@@ -98,6 +99,44 @@ function covered(...runs: Uint8Array[]): { map: Uint8Array; selfModified: Uint8A
   return { map, selfModified };
 }
 
+test("a $2c in an instruction that a run executed is its operand, not a BIT skip", () => {
+  // $1800: LDA #$2c / LDA #$01: the coverage enters $1802 after the LDA, not through the $2c.
+  const { byteAt } = image({ 0x1800: [0xa9, 0x2c, 0xa9, 0x01] });
+  const operand = new Uint8Array(0x10000);
+  operand[0x1800] = operand[0x1802] = COVERAGE.ramExecute;
+  assert.equal(findIdioms(byteAt, RANGE, covered(operand)).counts.bitSkips, 0);
+  // A run that executed the BIT at $1801 and entered $1802 shows a BIT skip.
+  const skip = new Uint8Array(0x10000);
+  skip[0x1801] = skip[0x1802] = COVERAGE.ramExecute;
+  assert.deepEqual(findIdioms(byteAt, RANGE, covered(skip)).findings.regions, [{ start: 0x1802, end: 0x1803, type: "dual-use" }]);
+});
+
+test("the regions and the removals of the user and the LLM win over the idioms", () => {
+  const nothingRemoved = { removedRegions: [], removedReference: () => false };
+  // A code region of the LLM over a BIT skip: no dual-use region, no reference, and no entry point at the operand.
+  const bit = image({ 0x1800: [0x2c, 0xa9, 0x01], 0x1810: [0x4c, 0x01, 0x18] }).byteAt;
+  const overBit = findIdioms(bit, RANGE, undefined, { ...nothingRemoved, regions: [{ start: 0x1800, end: 0x1802, type: "code" }] });
+  assert.deepEqual([overBit.counts.bitSkips, overBit.findings.regions, overBit.findings.references, overBit.entryPoints.includes(0x1801)], [0, [], [], false]);
+  // An RTS dispatch on a word table of three entries: $1300 targets $1500, $1302 $1600, $1304 $1700.
+  const dispatch = image({ 0x1000: [0xbd, 0x01, 0x13, 0x48, 0xbd, 0x00, 0x13, 0x48, 0x60], 0x1300: [0xff, 0x14, 0xff, 0x15, 0xff, 0x16, 0x00, 0x00] }).byteAt;
+  const targetsOf = (found: ReturnType<typeof findIdioms>) => found.findings.references.map((reference) => reference.to);
+  assert.deepEqual(targetsOf(findIdioms(dispatch, RANGE)), [0x1500, 0x1600, 0x1700]);
+  // A shorter table of the LLM ends the table: the entry after it gives no reference and no entry point.
+  const shorter = findIdioms(dispatch, RANGE, undefined, { ...nothingRemoved, regions: [{ start: 0x1300, end: 0x1303, type: "rts-addresses" }] });
+  assert.deepEqual([shorter.findings.regions, targetsOf(shorter), shorter.entryPoints.includes(0x1700)], [[{ start: 0x1300, end: 0x1303, type: "rts-addresses" }], [0x1500, 0x1600], false]);
+  // A target in data of the LLM, or a reference that the LLM removed, gives no reference and no entry point.
+  const decided = findIdioms(dispatch, RANGE, undefined, {
+    regions: [{ start: 0x1600, end: 0x16ff, type: "bytes" }],
+    removedRegions: [],
+    removedReference: (reference) => reference.from === 0x1008 && reference.to === 0x1700 && reference.kind === "jump",
+  });
+  assert.deepEqual([targetsOf(decided), decided.entryPoints.filter((entry) => entry >= 0x1500)], [[0x1500], [0x1500]]);
+  // A removed region over a JMP table: no table and no entry points.
+  const jumps = image({ 0x1400: [0x4c, 0x00, 0x15, 0x4c, 0x00, 0x16, 0x4c, 0x00, 0x17] }).byteAt;
+  const removed = findIdioms(jumps, RANGE, undefined, { regions: [], removedRegions: [{ start: 0x1400, end: 0x1408 }], removedReference: () => false });
+  assert.deepEqual([removed.counts.jumpTables, removed.entryPoints], [0, []]);
+});
+
 test("DOP padding and self-modified opcodes are candidates from the coverage only", () => {
   const { byteAt } = image({ 0x1a00: [0x80, 0x00, 0xa9, 0x01, 0xa9, 0x02] });
   const run = new Uint8Array(0x10000);
@@ -162,6 +201,39 @@ test("an RTS table at the end of a segment ends there: the bytes after the progr
     assert.deepEqual(heuristic.map((reference) => [reference.from, reference.to, reference.kind]), [[0x0817, 0x0820, "jump"]], "no target in the zero bytes after the segment");
     assert.deepEqual(listRegions(db).filter((region) => region.origin === "heuristic").map((region) => [region.start, region.end, region.type]), [[0x0836, 0x0837, "rts-addresses"]]);
     db?.close();
+  } finally {
+    rmSync(own, { recursive: true, force: true });
+  }
+});
+
+test("an RTS table that the LLM makes shorter loses the references of the idiom after its end at the next analysis", { timeout: 120_000 }, () => {
+  // $1000: LDX #0 / LDA $1021,X / PHA / LDA $1020,X / PHA / RTS ; INC $d020 / RTS at $1010, $1014 and $1018 ; the word table at $1020 gives the three.
+  const prg = new Uint8Array(2 + 0x26).fill(0xea);
+  prg.set([0x00, 0x10]);
+  const at = (address: number, bytes: number[]) => prg.set(bytes, address - 0x1000 + 2);
+  at(0x1000, [0xa2, 0x00, 0xbd, 0x21, 0x10, 0x48, 0xbd, 0x20, 0x10, 0x48, 0x60]);
+  for (const target of [0x1010, 0x1014, 0x1018]) at(target, [0xee, 0x20, 0xd0, 0x60]);
+  at(0x1020, [0x0f, 0x10, 0x13, 0x10, 0x17, 0x10]);
+  const own = mkdtempSync(join(tmpdir(), "c64-re-tools-idioms-shorter-"));
+  try {
+    importPrg(own, prg);
+    const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
+    const analyze = () => {
+      const run = spawnSync(process.execPath, [...process.execArgv, script, "analyze", "--entry", "$1000"], { cwd: own, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+      return readEnvelope(run.stdout, run.status).json;
+    };
+    const targets = () => {
+      const db = openForRead(own);
+      const found = listReferences(db).filter((reference) => reference.origin === "heuristic").map((reference) => reference.to);
+      db?.close();
+      return found;
+    };
+    analyze();
+    assert.deepEqual(targets(), [0x1010, 0x1014, 0x1018]);
+    withWrite((db) => classifyRegion(db, { origin: "llm" }, { start: 0x1020, end: 0x1023, type: "rts-addresses" }), own);
+    const again = analyze() as { idioms: { changes: { references: { retired: number } } } };
+    assert.equal(again.idioms.changes.references.retired, 1);
+    assert.deepEqual(targets(), [0x1010, 0x1014]);
   } finally {
     rmSync(own, { recursive: true, force: true });
   }

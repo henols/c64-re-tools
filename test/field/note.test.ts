@@ -5,7 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { findQuote } from "./kit/c64-field-debug/scripts/note.ts";
+import { findQuote, joinedValues } from "./kit/c64-field-debug/scripts/note.ts";
+
+test("joinedValues gives each text option the next argument, also a text that starts with a dash", () => {
+  assert.deepEqual(joinedValues(["--kind", "doc", "--expected", "--compare to pass", "--help", "the text"]), ["--kind=doc", "--expected=--compare to pass", "--help", "the text"]);
+});
 
 const SKILL = [
   "---",

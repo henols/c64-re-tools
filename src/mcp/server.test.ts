@@ -1087,6 +1087,12 @@ test("c64_trace takes points with an optional end and gives the hits with $ addr
     frames: 100,
     pc: "$0440",
     count: 1,
+    summary: {
+      addresses: 1,
+      byAddress: [{ address: "$d011", kind: "write", hits: 1, values: [0x8b], pcs: [{ pc: "$09c1", hits: 1 }] }],
+      pcs: 1,
+      byPc: [{ pc: "$09c1", text: "STA $d011", hits: 1, firstHit: 0, lastHit: 0 }],
+    },
     hits: [{ point: 0, pc: "$09c1", bytes: "8d11d0", text: "STA $d011", a: 0x8b, x: 0, y: 0, sp: 0xf6, frame: 0, rasterLine: 279, rasterCycle: 22, address: "$d011", value: 0x8b }],
   });
   assert.equal(errorOf(await call(client, "c64_trace", { points: [{ kind: "write", start: "$d011", end: "$d010" }], frames: 1 })).code, "invalid-input");
@@ -1094,14 +1100,14 @@ test("c64_trace takes points with an optional end and gives the hits with $ addr
   await client.close();
 });
 
-test("c64_trace with out writes all hits to the file and gives none in the result", async () => {
+test("c64_trace with out writes all hits to the file and gives none in the result, but the summary of all hits", async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-trace-"));
   const home = process.cwd();
   process.chdir(project);
   const client = await connect(async () => new FakeSession());
   try {
     const traced = (await call(client, "c64_trace", { points: [{ kind: "write", start: "$d011" }], frames: 100, out: "trace.jsonl" })).structuredContent as Record<string, unknown>;
-    assert.deepEqual([traced.count, traced.out, "hits" in traced], [1, "trace.jsonl", false]);
+    assert.deepEqual([traced.count, traced.out, "hits" in traced, (traced.summary as { pcs: number }).pcs], [1, "trace.jsonl", false, 1]);
     assert.equal(JSON.parse(readFileSync(join(project, "trace.jsonl"), "utf8")).pc, "$09c1");
   } finally {
     await client.close();

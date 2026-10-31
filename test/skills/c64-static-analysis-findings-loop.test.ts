@@ -67,6 +67,7 @@ test("decompiler findings, a semantic rename and a seeded re-run go through one 
       knowledge: { name: "start_table", kind: "variable", origin: "user", at: "$080d" },
       decompiler: { name: "start_table", kind: "routine" },
       problem: "code and data disagree",
+      references: { count: 0, listed: [] },
     },
   ]);
   const decompiled = (second.decompilations as Array<{ entry: string; text: string }>)[0]!;

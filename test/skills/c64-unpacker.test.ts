@@ -7,9 +7,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { inspect, readMemoryMap, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/lib/evidence.ts";
+import { inspect, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/lib/evidence.ts";
 import { removeStaleFiles } from "../../skills/c64-unpacker/scripts/lib/machine.ts";
-import { callReturn, captureSegments, executedIn, stageCandidates, stagePoints, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
+import { callReturn, captureSegments, executedIn, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
 import { COVERAGE } from "../../src/c64.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
@@ -87,31 +87,23 @@ test("the commands take a PRG and check the call before an emulator starts", () 
   assert.equal(refused("stages", "packed.prg", "--steps", "raster.json"), "--steps raster.json: step 2: stages takes a runUntil step only with an address target without a condition. Use frames steps, or use capture.");
 });
 
-test("the memory map is read again from next until no more ranges follow", async () => {
-  // One range for each executed byte in $2000-$27ff: more than one read gives.
-  const executed = Array.from({ length: 0x800 }, (_, index) => ({ start: 0x2000 + index, end: 0x2000 + index, read: false, write: true, execute: true }));
-  const reads: number[] = [];
-  const ranges = await readMemoryMap(async (start) => {
-    reads.push(start);
-    const rest = executed.filter((range) => range.start >= start);
-    return rest.length > 1000 ? { ranges: rest.slice(0, 1000), next: rest[1000]!.start } : { ranges: rest };
-  });
-  assert.deepEqual(ranges, executed);
-  assert.deepEqual(reads, [0x0000, 0x2000 + 1000, 0x2000 + 2000]);
-});
-
-test("code that runs in a ROM area is not unpacked code, also when the program wrote the RAM below it", () => {
-  const range = (start: number, end: number) => ({ start, end, read: false, write: true, execute: true });
-  const kernal = writtenThenExecuted([range(0xe000, 0xe0ff)], 0xe010);
-  assert.deepEqual(kernal, { written: [{ start: 0xe000, end: 0xe0ff }], counted: [], bytes: 0 });
-  const unpacked = writtenThenExecuted([range(0x0810, 0x0810), range(0x0812, 0x0900), range(0xe000, 0xe0ff)], 0x0820);
-  assert.deepEqual(unpacked, {
+test("written code is RAM that the CPU executed: ROM code over written RAM is not, RAM code under a ROM or in the I/O area is", () => {
+  const map = new Uint8Array(0x10000);
+  const ran = COVERAGE.ramWrite | COVERAGE.ramExecute;
+  // BASIC ROM code that runs over RAM that the load wrote.
+  map.fill(COVERAGE.ramWrite | COVERAGE.romExecute, 0xa486, 0xa49a);
+  // Unpacked code: opcode bytes with at most two operand bytes between them are one piece.
+  map[0x0810] = ran;
+  map.fill(ran, 0x0813, 0x0901);
+  map.fill(ran, 0xe000, 0xe010); // with the KERNAL banked out
+  map.fill(COVERAGE.ioWrite | COVERAGE.ioExecute, 0xd000, 0xd010); // the map gives RAM under the I/O area as I/O
+  assert.deepEqual(writtenThenExecuted(map, 0x0820), {
     written: [
       { start: 0x0810, end: 0x0900 },
-      { start: 0xe000, end: 0xe0ff },
+      { start: 0xd000, end: 0xd00f },
+      { start: 0xe000, end: 0xe00f },
     ],
-    counted: [{ start: 0x0810, end: 0x0900 }],
-    bytes: 0xf1,
+    bytes: 0xf1 + 0x10 + 0x10,
     running: { start: 0x0810, end: 0x0900 },
   });
 });
@@ -248,16 +240,61 @@ test("a small written block is a segment; a block all in pages 0-3 is not, unles
   ]);
 });
 
+test("after the entry, the program uses the RAM that it executes, and the RAM that it reads and does not write; in the I/O area only code", () => {
+  const map = new Uint8Array(0x10000);
+  map[0xe000] = COVERAGE.ramExecute;
+  map[0xcf8f] = COVERAGE.ramRead;
+  map[0xaa00] = COVERAGE.ramRead | COVERAGE.ramWrite; // a work area: the read can be of a value that the program wrote
+  map[0xa486] = COVERAGE.romExecute | COVERAGE.romRead;
+  map[0xd800] = COVERAGE.ioRead; // a chip register or RAM: the map does not tell
+  map[0xd100] = COVERAGE.ioExecute;
+  const used = usedAfterEntry(map);
+  assert.deepEqual(
+    [0xe000, 0xcf8f, 0xaa00, 0xa486, 0xd800, 0xd100, 0x1000].map((address) => used(address)),
+    [true, true, false, false, false, true, false],
+  );
+});
+
+test("a part of a leftover that the program uses after its entry is a segment; a loader variable and the parts that it does not use are not", () => {
+  // The Bruce Lee field run of 2.8.0-rc.2: the decruncher at $0100 writes $0800-$ffff, $0800 copies the game code to
+  // $cf00-$cfff and $d800-$ffff and a relocator to $c000, and the relocator moves the game to $033c-$a9ff.
+  const stages = [
+    { entry: 0x0827, wrote: [range(0x0100, 0x01ff)] },
+    { entry: 0x0100, wrote: [range(0x0800, 0xffff)] },
+    { entry: 0x0800, wrote: [range(0xc000, 0xc1ff), range(0xcf00, 0xcfff), range(0xd800, 0xffff)] },
+    { entry: 0xc000, wrote: [range(0x033c, 0xa9ff), range(0xc020, 0xc020), range(0xc025, 0xc025)] },
+    { entry: 0x0400, wrote: [] },
+  ];
+  assert.deepEqual(captureSegments(stages, 0x0400), [{ start: 0x033c, end: 0xa9ff, writtenBy: 3 }], "without the use after the entry");
+  // After the entry, the game runs its code at $e000, reads $cf8f, and reads and writes its work area at $aa00-$cb3f.
+  const map = new Uint8Array(0x10000);
+  map[0xe000] = COVERAGE.ramExecute;
+  map[0xcf8f] = COVERAGE.ramRead;
+  map.fill(COVERAGE.ramRead | COVERAGE.ramWrite, 0xaa00, 0xcb40);
+  assert.deepEqual(captureSegments(stages, 0x0400, { used: usedAfterEntry(map) }), [
+    { start: 0x033c, end: 0xa9ff, writtenBy: 3 },
+    { start: 0xcf00, end: 0xcfff, writtenBy: 2 },
+    { start: 0xd800, end: 0xffff, writtenBy: 2 },
+  ]);
+  // Code at $c300 that the decruncher wrote and the program runs: the bytes of the decruncher there are a segment, the relocator at $c000 is not.
+  map[0xc300] = COVERAGE.ramExecute;
+  assert.deepEqual(captureSegments(stages, 0x0400, { used: usedAfterEntry(map) }), [
+    { start: 0x033c, end: 0xa9ff, writtenBy: 3 },
+    { start: 0xc200, end: 0xcfff, writtenBy: 2 },
+    { start: 0xd800, end: 0xffff, writtenBy: 2 },
+  ]);
+});
+
 test("a capture entry that no stage wrote is in the loaded bytes: the range of the PRG is a segment, joined with the blocks that it touches", () => {
   // The Hover Bovver memory dump: $0801-$9fff, started by SYS 32768, whose start code wrote two blocks inside it and one after it.
   const dump = [{ entry: 0x8000, wrote: [range(0x2000, 0x27ff), range(0x3000, 0x3fff), range(0xc000, 0xc0ff)] }];
-  assert.deepEqual(captureSegments(dump, 0x81ff, range(0x0801, 0x9fff)), [
+  assert.deepEqual(captureSegments(dump, 0x81ff, { loaded: range(0x0801, 0x9fff) }), [
     { start: 0x0801, end: 0x9fff, loaded: true },
     { start: 0xc000, end: 0xc0ff, writtenBy: 0 },
   ]);
-  assert.deepEqual(captureSegments([{ entry: 0x8000, wrote: [range(0xa000, 0xa0ff)] }], 0x81ff, range(0x0801, 0x9fff)), [{ start: 0x0801, end: 0xa0ff, loaded: true }], "a block that touches the loaded range joins it");
+  assert.deepEqual(captureSegments([{ entry: 0x8000, wrote: [range(0xa000, 0xa0ff)] }], 0x81ff, { loaded: range(0x0801, 0x9fff) }), [{ start: 0x0801, end: 0xa0ff, loaded: true }], "a block that touches the loaded range joins it");
   // A written block holds the entry: the loaded bytes are the packer, not a segment.
-  assert.deepEqual(captureSegments([{ entry: 0x080d, wrote: [range(0xc000, 0xc0ff)] }], 0xc000, range(0x0801, 0x0fff)), [{ start: 0xc000, end: 0xc0ff, writtenBy: 0 }]);
+  assert.deepEqual(captureSegments([{ entry: 0x080d, wrote: [range(0xc000, 0xc0ff)] }], 0xc000, { loaded: range(0x0801, 0x0fff) }), [{ start: 0xc000, end: 0xc0ff, writtenBy: 0 }]);
 });
 
 test("--exclude leaves ranges out of the capture segments, and a segment that a range cuts gives its parts", () => {

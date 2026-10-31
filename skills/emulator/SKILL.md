@@ -28,6 +28,7 @@ A tool takes addresses, not names. The server instructions give the address form
 | Run until an address, a memory value or a raster position | `c64_run_until` |
 | Run to a place and read the machine there in one call | `c64_run_until` with `observe` and `history` |
 | Each access or routine entry over many frames | `c64_trace` |
+| The instructions that write an address most, and the values that they write | `c64_trace` with a write point. Read `summary`. |
 | Stop on an instruction address, stop on a memory access | `c64_breakpoint`, `c64_watchpoint` |
 | Find the instruction that reads or writes an address, and when | `c64_watchpoint` with the access, then `c64_execution` or `c64_run_until`. The stop gives `pc`. |
 | Memory | `c64_memory_read`, `c64_memory_write`, `c64_memory_search`, `c64_memory_compare` |

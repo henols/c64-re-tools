@@ -140,7 +140,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--out <file>` | `export` | Necessary. The JSON file to write. |
 | `--apply` | `join` | Write the joined writes to the project knowledge as one revision. Without it, `join` writes nothing. |
 | `--code` | `listing` | Only the instructions of the code regions. No data lines. |
-| `--out <file>` | `listing` | Write the listing as text to this file in place of the lines in the body. |
+| `--out <file>` | `listing` | Write the lines to this text file in place of the lines in the body. |
 | `--element <n>` | `classify` | The bytes of one element of a table. The length of the range must be a multiple of it. |
 | `--title <text>` | `module` | The title of the file. A `module` write without a title keeps the title that the module has. |
 | `--lo <symbol>` | `operand` | The operand is the low byte of the symbol plus the offset. |
@@ -258,11 +258,18 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 
 ### `listing <range>`
 
-- `body.lines` has `count` and `listed`. Each line has `address`, `bytes`, `text`, `referencesIn` and `referencesOut`. It can also have `label`, `analyzerNames`, `lineComments` (the line comments before the line), `comment` (the side comment) and `access`.
-- `text` is the instruction with the names of its target. An operand expression of the knowledge replaces the operand. A table of addresses or words shows its values as `!word` lines, with the name of each target. A split table and the other bytes show as `!byte` lines.
-- `access` is there when the knowledge has coverage: `x`, `r`, `w` or `-`. See "Reads that the program does not do" of `<skill>/references/coverage.md`.
-- With `--code`, `lines` has only the instructions of the code regions.
-- With `--out`, `body.lines` is a number, and the body has `out`, `bytes` and `sha256` of the text file.
+- `body.lines` has `count` and `listed`. Each item of `listed` is one text line. Read the lines as they are. Do not filter them with code.
+- A line of the program has these parts, with two spaces between them. A part that the line does not have is not there.
+  1. The address, for example `$09bc`.
+  2. The bytes, as hex.
+  3. The access, when the knowledge has coverage: `x` (executed), `r` (read) and `w` (written) as the runs did them, for example `xr`, or `-` for none. See "Reads that the program does not do" of `<skill>/references/coverage.md`.
+  4. The ACME line. The name of the address comes first, with a colon after it, for example `draw_room: lda SCROLY`.
+  5. The notes, after `;` and with `|` between them: the side comment, `refs in <n> out <n>` (the references to the line and from the line), and `also <names>` (the analyzer names).
+- Example: `$09bc  ad 11 d0  x  draw_room: lda SCROLY  ; refs in 3 out 1 | also FUN_09bc`.
+- A line comment is a line of its own before its line, for example `; Draws the room.`.
+- The ACME line is the instruction with the names of its target. An operand expression of the knowledge replaces the operand. A table of addresses or words shows its values as `!word` lines, with the name of each target. A split table and the other bytes show as `!byte` lines.
+- With `--code`, `lines` has only the instructions of the code regions and their line comments.
+- With `--out`, the text file has the lines, one on each line. `body.lines` is the number of lines, and the body has `out`, `bytes` and `sha256` of the text file.
 - Use `listing` in place of your own disassembler. To find the targets of a table, classify the table with its type. Then read its listing. Do not decode the bytes of a table yourself.
 
 ### `export`

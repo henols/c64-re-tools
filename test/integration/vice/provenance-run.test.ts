@@ -78,13 +78,14 @@ test("each difference gets its first access in every release and whether the run
     differences: Array<{ start: string; end: string; runtime: Record<string, { start: string; end: string; first: string; changed: boolean }> }>;
     run: { releases: Record<string, { started: boolean }> };
   };
-  assert.deepEqual(json.run.releases, { "a.prg": { started: true }, "b.prg": { started: true }, "unpacked/image.json": { started: true } });
+  // Each release by its number: 1 is the first on the command line.
+  assert.deepEqual(json.run.releases, { "1": { started: true }, "2": { started: true }, "3": { started: true } });
   const seen = Object.fromEntries(json.differences.map((difference) => [`${difference.start}-${difference.end}`, difference.runtime]));
   // No release has a shift, so each runtime range is the range of the difference.
   const all = (range: string, first: string, changed: boolean) => {
     const [start, end] = range.split("-");
     const access = { start, end, first, changed };
-    return [range, { "a.prg": access, "b.prg": access, "unpacked/image.json": access }];
+    return [range, { "1": access, "2": access, "3": access }];
   };
   assert.deepEqual(
     seen,
@@ -111,10 +112,10 @@ test("each difference gets its first access in every release and whether the run
   assert.deepEqual(moved.releases.map((item) => [item.name, item.shift]), [["a.prg", 16], ["b.prg", 0]]);
   const hex = (text: string) => Number.parseInt(text.slice(1), 16);
   for (const difference of moved.differences) {
-    assert.equal(hex(difference.runtime["a.prg"]!.start), hex(difference.start) - 16);
-    assert.equal(hex(difference.runtime["b.prg"]!.end), hex(difference.end));
+    assert.equal(hex(difference.runtime["1"]!.start), hex(difference.start) - 16);
+    assert.equal(hex(difference.runtime["2"]!.end), hex(difference.end));
   }
   // At its own addresses, a.prg writes $0830, reads $0840 and calls $0850.
-  const own = Object.fromEntries(moved.differences.map((difference) => [`${difference.runtime["a.prg"]!.start}-${difference.runtime["a.prg"]!.end}`, difference.runtime["a.prg"]!.first]));
+  const own = Object.fromEntries(moved.differences.map((difference) => [`${difference.runtime["1"]!.start}-${difference.runtime["1"]!.end}`, difference.runtime["1"]!.first]));
   assert.deepEqual(own, { "$0801-$0821": "read", "$0830-$0830": "write", "$0840-$0841": "read", "$0850-$0852": "execute" });
 });

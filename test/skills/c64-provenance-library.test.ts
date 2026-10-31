@@ -87,12 +87,11 @@ test("a routine keeps its bytes, the addresses that move with it, the operands t
   assert.deepEqual(leftOut, []);
   assert.equal(routine.bytes.length, 0x27);
   assert.deepEqual(routine.instructions, [0x00, 0x02, 0x05, 0x08, 0x09, 0x0b, 0x0d, 0x10, 0x12, 0x13, 0x14, 0x16, 0x18]);
-  // The code regions of the analyzer give the routine its code; other regions come from the user and the LLM.
-  assert.deepEqual(routine.regions, [
-    { start: 0x00, end: 0x13, type: "code" },
-    { start: 0x14, end: 0x18, type: "code" },
-    { start: 0x20, end: 0x26, type: "bytes" },
-  ]);
+  // The code regions of the analyzer give the routine only its instructions; the regions come from the user and the LLM.
+  assert.deepEqual(routine.regions, [{ start: 0x20, end: 0x26, type: "bytes" }]);
+  const coded = routineFrom(source({ regions: [{ ...row, start: A + 0x14, end: A + 0x18, type: "code" }, { ...row, start: A + 0x20, end: A + 0x26, type: "bytes" }] as RegionRow[] }));
+  assert.deepEqual(coded.routine.regions, [{ start: 0x14, end: 0x18, type: "code" }, { start: 0x20, end: 0x26, type: "bytes" }]);
+  assert.deepEqual(coded.routine.instructions, routine.instructions);
   assert.deepEqual(routine.relocations, [
     { at: 0x03, size: "word", value: 0x20 },
     { at: 0x0e, size: "word", value: 0x14 },
@@ -139,7 +138,7 @@ test("an operand expression that names something outside the routine and a table
     }),
   );
   assert.deepEqual(routine.operands, [{ at: 0x14, select: "expr", expression: "<SIGVOL" }]);
-  assert.deepEqual(routine.regions.filter((region) => region.type !== "code"), []);
+  assert.deepEqual(routine.regions, []);
   assert.deepEqual(leftOut.map((item) => item.what), ["the operand at $1016", "the bytes region $1020-$1030"]);
   // Without the operand expressions, the immediates are fixed bytes.
   assert.ok(!routine.relocations.some((relocation) => relocation.size !== "word"));
@@ -226,8 +225,6 @@ test("the changes name the routine at its program addresses, with the operand ex
     { op: "rename", address: "$3000", name: "play", kind: "routine" },
     { op: "rename", address: "$3014", name: "set_pointer", kind: "routine" },
     { op: "rename", address: "$3020", name: "voice_table", kind: "data" },
-    { op: "classify", start: "$3000", end: "$3013", type: "code" },
-    { op: "classify", start: "$3014", end: "$3018", type: "code" },
     { op: "classify", start: "$3020", end: "$3026", type: "bytes" },
     { op: "comment", address: "$3014", placement: "line", text: "Point X/Y at the table." },
     { op: "reference", from: "$300d", to: "$3014", kind: "call" },
@@ -263,7 +260,7 @@ test("the batch leaves out user and LLM rows, names used elsewhere, removals, an
       ["$3016", "operand", "its name voice_table was left out"],
     ],
   );
-  assert.deepEqual(batch.map((write) => write.op), ["classify", "classify", "reference"]);
+  assert.deepEqual(batch.map((write) => write.op), ["reference"]);
 
   const removed = suggest([{ routine, matches: findRoutine(routine, image) }], knowledgeOf({ suppressed: [0x3000] }), image, new Map());
   assert.deepEqual(removed.leftOut[0], { routine: "play", address: "$3000", op: "rename", reason: "a removal of a name holds there" });

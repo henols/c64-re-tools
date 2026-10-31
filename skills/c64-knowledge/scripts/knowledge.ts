@@ -104,7 +104,7 @@ import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectR
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec, type SubjectSpec } from "#src/script.ts";
 import { isoCet } from "#src/time.ts";
 import { CHECK_CLASSES, CHECK_VERDICTS, checkFolder, checkResult, pickSample, seedOfFolder, withVerdict, type CheckClass, type Sample, type Verdicts } from "./lib/check.ts";
-import { listing, listingText, type ListingSource } from "./lib/listing.ts";
+import { listing, listingLines, type ListingSource } from "./lib/listing.ts";
 
 function oneOf<T extends string>(values: readonly T[], value: string | undefined, what: string): T {
   if (value === undefined || !(values as readonly string[]).includes(value)) throw new UsageError(`${what} must be one of: ${values.join(", ")}.`);
@@ -818,20 +818,20 @@ const READ_COMMANDS: CommandSpec[] = [
   readCommand(
     {
       name: "listing",
-      summary: "The program as ACME lines with names, operand expressions, comments, the access of each line in the coverage (x executed, r read, w written) and the references in and out.",
+      summary: "The program as text lines: the address, the bytes, the access in the coverage (x executed, r read, w written), the ACME line with names and operand expressions, the comment, and the references in and out.",
       subjects: [RANGE],
       options: {
         code: { kind: "flag", help: "only the instructions of the code regions: no data lines" },
-        out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write the listing as text to this file in place of the lines in the result" },
+        out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write the lines to this text file, one on each line, in place of the lines in the result" },
         ...LIST,
       },
     },
     (db, call) => {
       const range = call.parseRange(call.subject(0), "<range>");
-      const lines = listing(listingSource(db, call.space, range), range.start, range.end, { code: call.flag("code") });
+      const lines = listingLines(listing(listingSource(db, call.space, range), range.start, range.end, { code: call.flag("code") }));
       const out = call.string("out");
-      if (out !== undefined) return { lines: lines.length, ...writeReported(out, listingText(lines), { what: "--out" }) };
-      return { lines: list(call, lines, (row) => ({ ...row, address: formatC64Address(row.address) }), "a larger --max-listed, a smaller <range>, or --out <file> for all lines") };
+      if (out !== undefined) return { lines: lines.length, ...writeReported(out, lines.map((line) => `${line}\n`).join(""), { what: "--out" }) };
+      return { lines: list(call, lines, (line) => line, "a larger --max-listed, a smaller <range>, or --out <file> for all lines") };
     },
   ),
 ];

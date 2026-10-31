@@ -46,6 +46,36 @@ export function rebuildNames(rebuild: string, symbols: string | undefined, refer
   return existsSync(resolveProjectPath(own)) ? own : reference;
 }
 
+/** The replay of several recordings: FAIL when one failed, else INCONCLUSIVE when one could not compare, else PASS. */
+export interface ReplayAll {
+  result: ReplayResult["result"];
+  passed: number;
+  failed: number;
+  inconclusive: number;
+  recordings: ReplayResult[];
+}
+
+/**
+ * Replays each recording in turn with the same options: replays at the same time share the processor and can go past the
+ * time limit of the core. --out gets a folder for each recording, by the name of its folder. A recording that the script
+ * refuses is INCONCLUSIVE with the refusal as its reason; a missing tool stops all.
+ */
+export async function replayAll(folders: readonly string[], values: Omit<ReplayOptions, "folder" | "screen">, one: (values: ReplayOptions) => Promise<ReplayResult> = replay): Promise<ReplayAll> {
+  const recordings: ReplayResult[] = [];
+  for (const folder of folders) {
+    const name = folder.replace(/\/+$/, "").split("/").at(-1)!;
+    try {
+      recordings.push(await one({ ...values, folder, ...(values.out === undefined ? {} : { out: `${values.out}/${name}` }) }));
+    } catch (error) {
+      if (!isRefusal(error) || error.code === "installation-incomplete") throw error;
+      recordings.push({ result: "INCONCLUSIVE", recording: folder, side: values.rebuild === undefined ? "reference" : "rebuild", checkpoints: 0, compared: 0, reason: error.message });
+    }
+  }
+  const count = (outcome: ReplayResult["result"]) => recordings.filter((item) => item.result === outcome).length;
+  const [passed, failed, inconclusive] = [count("PASS"), count("FAIL"), count("INCONCLUSIVE")];
+  return { result: failed > 0 ? "FAIL" : inconclusive > 0 ? "INCONCLUSIVE" : "PASS", passed, failed, inconclusive, recordings };
+}
+
 /** Replays the recording on the reference, and with `rebuild` on the rebuild: PASS, FAIL or INCONCLUSIVE. */
 export async function replay(values: ReplayOptions): Promise<ReplayResult> {
   if (values.symbols !== undefined && values.rebuild === undefined) throw new UsageError("--symbols gives the names of the rebuild, and --rebuild is missing. Give --rebuild too, or leave out --symbols.");

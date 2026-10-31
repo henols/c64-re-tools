@@ -127,3 +127,33 @@ test("an unreached code region is unknown, not dead, without coverage or while a
   assert.deepEqual(found.unresolved, [{ at: 0x1000, kind: "indirect-jump" }]);
   assert.deepEqual(found.codeRegions.map((region) => region.unknown), [undefined, true, true]);
 });
+
+test("an immediate that the code stores in an interrupt vector goes from each store to the handler; a restore of the vector does not remove it", () => {
+  const memory = new Uint8Array(0x10000);
+  memory.set([0xa9, 0x00, 0x8d, 0x14, 0x03, 0xa9, 0x30, 0x8d, 0x15, 0x03, 0x60], 0x2000); // LDA #$00 / STA $0314 / LDA #$30 / STA $0315 / RTS
+  memory.set([0xad, 0x80, 0x20, 0x8d, 0x14, 0x03, 0xad, 0x81, 0x20, 0x8d, 0x15, 0x03, 0x60], 0x2010); // LDA $2080 / STA $0314 / LDA $2081 / STA $0315 / RTS
+  memory.set([0xa9, 0x31, 0x8d, 0xff, 0xff, 0x60], 0x2020); // LDA #$31 / STA $ffff / RTS: the low byte is the one in the image
+  memory[0xfffe] = 0x40;
+  const starts = [0x2000, 0x2002, 0x2005, 0x2007, 0x200a, 0x2010, 0x2013, 0x2016, 0x2019, 0x201c, 0x2020, 0x2022, 0x2025];
+  const inImage = (address: number) => (address >= 0x2000 && address <= 0x20ff) || address >= 0xfffa;
+  assert.deepEqual(computedFlows({ starts, memory, inImage, references: [] }), {
+    targets: [
+      { from: 0x2002, to: 0x3000 },
+      { from: 0x2007, to: 0x3000 },
+      { from: 0x2022, to: 0x3140 },
+    ],
+    unresolved: [],
+  });
+});
+
+test("a handler in an interrupt vector is reachable when the code that stores it is, and not when only dead code stores it", () => {
+  const memory = new Uint8Array(0x10000);
+  memory.set([0xa9, 0x00, 0x8d, 0x18, 0x03, 0xa9, 0x11, 0x8d, 0x19, 0x03, 0x60], 0x1000); // NMI vector $0318 to $1100
+  memory.set([0xa9, 0x00, 0x8d, 0xfe, 0xff, 0xa9, 0x12, 0x8d, 0xff, 0xff, 0x60], 0x1020); // IRQ vector $fffe to $1200, in code that nothing reaches
+  memory[0x1100] = 0x40;
+  memory[0x1200] = 0x40;
+  const codeRegions = [{ start: 0x1000, end: 0x100a, type: "code" }, { start: 0x1020, end: 0x102a, type: "code" }, { start: 0x1100, end: 0x1100, type: "code" }, { start: 0x1200, end: 0x1200, type: "code" }];
+  const found = separate({ segments: [{ start: 0x1000, end: 0x12ff }], memory, entry: 0x1000, codeRegions, references: [] });
+  assert.deepEqual(found.codeRegions.map((region) => region.reachable), [true, false, true, false]);
+  assert.deepEqual(found.roots, [{ address: 0x1000, from: "entry" }]);
+});

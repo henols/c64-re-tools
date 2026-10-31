@@ -9,7 +9,7 @@
 // RTS or RTI and never runs its own code again.
 
 import { type AddressRange, COVERAGE, inRanges, subtract } from "#src/c64.ts";
-import { writtenBlocks } from "#src/host-client/coverage.ts";
+import { IO_RAM, writtenBlocks } from "#src/host-client/coverage.ts";
 
 const contains = (range: AddressRange, address: number) => address >= range.start && address <= range.end;
 
@@ -92,6 +92,22 @@ export function executedIn(map: Uint8Array, block: AddressRange): AddressRange[]
 export const FIRST_SEGMENT_ADDRESS = 0x0400;
 
 /**
+ * The RAM that a program used after its entry, from the coverage map of a
+ * run from the entry: the RAM that it executed, and the RAM that it read and
+ * did not write. The map keeps no order, so a read of RAM that the run also
+ * wrote can be a read of the program's own value, not of a captured byte. In
+ * the I/O area, the map gives each access as an I/O access: an execution
+ * there is RAM code, but a read can be a chip register.
+ */
+export function usedAfterEntry(map: Uint8Array): (address: number) => boolean {
+  return (address) => {
+    const flags = map[address]!;
+    if (address >= IO_RAM.start && address <= IO_RAM.end) return (flags & (COVERAGE.ramExecute | COVERAGE.ioExecute)) !== 0;
+    return (flags & COVERAGE.ramExecute) !== 0 || ((flags & COVERAGE.ramRead) !== 0 && (flags & COVERAGE.ramWrite) === 0);
+  };
+}
+
+/**
  * The segments of a capture: the blocks that the stages wrote, without loader
  * leftovers and without blocks that are all in pages 0-3 (the entry state
  * holds them), joined into ranges that do not overlap or touch. A block
@@ -101,7 +117,10 @@ export const FIRST_SEGMENT_ADDRESS = 0x0400;
  * it never drops a block, and the block that holds the capture entry is always
  * a segment. A block that an intermediate stage wrote inside a leftover, for
  * example a variable of the loader, is a leftover too. The filter comes before
- * the join: a join first would drop the program with a leftover. `writtenBy` is
+ * the join: a join first would drop the program with a leftover. `used` tells
+ * the addresses that the program used after its entry: a part of a leftover
+ * that no later stage wrote is a segment when the program used an address in
+ * it, as a stage can copy code of the program into a leftover. `writtenBy` is
  * the last stage that wrote into the range. When no written block holds the
  * entry, the code there is as the program loaded it: `loaded`, the range of
  * the PRG, is then a segment too (`loaded: true`), joined with the blocks that
@@ -110,8 +129,9 @@ export const FIRST_SEGMENT_ADDRESS = 0x0400;
 export function captureSegments(
   stages: ReadonlyArray<{ entry: number; wrote: readonly AddressRange[] }>,
   entry: number,
-  loaded?: AddressRange,
+  options: { loaded?: AddressRange; used?: (address: number) => boolean } = {},
 ): Array<AddressRange & ({ writtenBy: number } | { loaded: true })> {
+  const { loaded, used } = options;
   const last = stages.length - 1;
   const replaced = (from: number, address: number) => stages.slice(from).some((stage) => inRanges(stage.wrote, address));
   const leftover = (block: AddressRange, writer: number) =>
@@ -120,8 +140,10 @@ export function captureSegments(
   const leftovers = written.filter((block) => leftover(block, block.writtenBy));
   const inLeftover = (block: AddressRange & { writtenBy: number }) =>
     block.writtenBy < last && !contains(block, entry) && leftovers.some((left) => block.start >= left.start && block.end <= left.end);
-  const blocks = written
-    .filter((block) => !leftover(block, block.writtenBy) && !inLeftover(block) && (block.end >= FIRST_SEGMENT_ADDRESS || contains(block, entry)))
+  const dropped = (block: AddressRange & { writtenBy: number }) => leftover(block, block.writtenBy) || inLeftover(block);
+  const usedLeftovers = used === undefined ? [] : usedParts(written.filter(dropped), lastWriters(stages), used);
+  const blocks = [...written.filter((block) => !dropped(block)), ...usedLeftovers]
+    .filter((block) => block.end >= FIRST_SEGMENT_ADDRESS || contains(block, entry))
     .sort((a, b) => a.start - b.start);
   const segments: Array<AddressRange & { writtenBy: number }> = [];
   for (const block of blocks) {
@@ -140,6 +162,33 @@ export function captureSegments(
     return false;
   });
   return [...apart, joined].sort((a, b) => a.start - b.start);
+}
+
+/** For each address, the last stage that wrote it, or -1. */
+function lastWriters(stages: ReadonlyArray<{ wrote: readonly AddressRange[] }>): Int8Array {
+  const writers = new Int8Array(0x10000).fill(-1);
+  stages.forEach((stage, index) => {
+    for (const range of stage.wrote) writers.fill(index, range.start, range.end + 1);
+  });
+  return writers;
+}
+
+/** The parts of the blocks that hold the bytes of their writer, each when the program used an address in it. */
+function usedParts(blocks: ReadonlyArray<AddressRange & { writtenBy: number }>, writers: Int8Array, used: (address: number) => boolean): Array<AddressRange & { writtenBy: number }> {
+  const parts: Array<AddressRange & { writtenBy: number; used: boolean }> = [];
+  for (const block of blocks) {
+    let part: (AddressRange & { writtenBy: number; used: boolean }) | undefined;
+    for (let address = block.start; address <= block.end; address++) {
+      if (writers[address] !== block.writtenBy) {
+        part = undefined;
+        continue;
+      }
+      if (part === undefined) parts.push((part = { start: address, end: address, writtenBy: block.writtenBy, used: false }));
+      part.end = address;
+      part.used ||= used(address);
+    }
+  }
+  return parts.filter((part) => part.used).map(({ start, end, writtenBy }) => ({ start, end, writtenBy }));
 }
 
 /** The segments without the bytes of `holes`: a segment that a hole cuts gives its parts, each with the fields of the segment. */

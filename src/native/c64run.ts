@@ -130,7 +130,8 @@ export class C64RunSession {
     if (this.#ended !== undefined) return Promise.reject(this.#ended);
     const answer = new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.#ended = new WireFailure("operation-failed", `c64run ${text.split(" ")[0]} did not answer in ${Math.ceil(limitMs / 1000)} s; the core is stopped.`);
+        // The limit assumes the slowest core speed of an idle machine; other programs on the processor make the core slower.
+        this.#ended = new WireFailure("operation-failed", `c64run ${text.split(" ")[0]} did not answer in ${Math.ceil(limitMs / 1000)} s; the core is stopped. Other commands that run at the same time can make it this slow: run the command again alone.`);
         for (const waiting of this.#waiting.splice(0)) waiting.reject(this.#ended);
         void this.#process.stop().catch(() => {});
       }, limitMs);
