@@ -19,16 +19,17 @@ import { analyzedBytes, operandImages, programCoverage, requireProgram } from "#
 import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
 import { importFindings, lastToolVersion, runProvenance, type ImportConflict, type ImportContext, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
 import { currentRevision, listMacros, listMacroUses, listPatches, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
-import { DEFAULT_SPACE, SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
 import { platformAddresses, platformNames, platformNamesFor, romUseOfProgram, type RomUse } from "#src/platform.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call } from "#src/script.ts";
 import { codeEntries, coverageConflicts, imageReader, writtenNotExecuted, explainGaps, type GapReason, type ImageByte } from "./lib/coverage.ts";
-import { dxaFindings, decompilerFindings, seedsFromKnowledge } from "./lib/findings.ts";
+import { decidedFromKnowledge, dxaFindings, decompilerFindings, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
 import { instructionList } from "./lib/instructions.ts";
 import { CATALOGUE, findMacroUses, type MacroCandidate } from "./lib/macros.ts";
 import { findPitfalls, type Pitfall } from "./lib/pitfalls.ts";
 import { findPointers, type PointerCandidate } from "./lib/pointers.ts";
+import { flowFromExecuted, rangeFacts, type RangeFacts } from "./lib/triage.ts";
 
 /** The rest of a cut label or function list: the knowledge has all of them as analyzer names. */
 const ALL_NAMES = "a larger --max-listed. The project knowledge has all of them as analyzer names";
@@ -53,7 +54,7 @@ function withHint(
   }
   // A leftover is data that no reference reads: a retired reference can make one.
   if (retiredReferences > 0) hints.push("The analysis retired references. A data range that only a retired reference used can be a leftover now. Generate the source again, and examine the leftovers that changed.");
-  if (conflicts > 0) hints.push("The analysis and the project knowledge disagree at each place in conflicts. Find the correct answer in the emulator. Then correct the project knowledge.");
+  if (conflicts > 0) hints.push("The analysis and the project knowledge disagree at each place in conflicts. Use access, references and reachable of each conflict. Code that a run executed is code. A range that static flow reaches and that no run executed is usually code on a branch that no run took. A range that no flow reaches and that a run read or wrote is usually data. If these facts do not decide, find the answer in the emulator. Then correct the project knowledge.");
   if (coverageConflicts > 0) hints.push("The coverage shows executed code in each range of coverageConflicts. Classify each range as code, or as dual-use when its bytes are also data, in the project knowledge.");
   if (typeof macros.revision === "string") hints.push("The project knowledge has the macro candidates now. Generate the source again.");
   else if (!macros.applied && macros.candidates > 0) hints.push("Examine idioms.candidates.macros. To write them to the project knowledge, run the analysis again with --apply-macros.");
@@ -157,6 +158,41 @@ function macroCandidates(db: DatabaseSync | undefined, space: string, byteAt: Im
   return { candidates, known, leftOut, writes, skipped: candidates.length - chosen.length, notCandidates, otherMacros: [...other].map((name) => `The knowledge has another macro ${name}: its candidates are not written.`) };
 }
 
+/** The facts of a range with $ addresses; the references are a list that --max-listed cuts. */
+function showFacts(facts: RangeFacts, max: number) {
+  return {
+    ...(facts.access === undefined ? {} : { access: facts.access }),
+    references: listed(facts.references, max, (reference) => ({ from: formatC64Address(reference.from), kind: reference.kind })),
+    ...(facts.reachable === undefined ? {} : { reachable: facts.reachable }),
+  };
+}
+
+/** A conflict of code and data, with the facts of its range; a conflict that evidence decided, or of a name, has no facts. */
+function showConflictFacts(conflict: ImportConflict, analyzer: Analyzer, factsOf: (range: { start: number; end: number }) => RangeFacts, max: number): Record<string, unknown> {
+  const shown = showConflict(conflict, analyzer);
+  if (conflict.category === "region") return { ...shown, ...showFacts(factsOf(conflict), max) };
+  if (conflict.category === "symbol" && conflict.reason === "kind") return { ...shown, ...showFacts(factsOf({ start: conflict.address, end: conflict.address }), max) };
+  return shown;
+}
+
+/**
+ * The facts of the ranges of the conflicts, from the knowledge after both
+ * imports: the coverage, the references, and the flow from executed code
+ * through the program, which ends in data of the user or the LLM.
+ */
+function conflictFacts(db: DatabaseSync | undefined, space: string, memory: Uint8Array, inImage: (address: number) => boolean, coverage: Uint8Array | undefined): (range: { start: number; end: number }) => RangeFacts {
+  const references = listReferences(db, undefined, undefined, undefined, space);
+  const data = listRegions(db, undefined, undefined, [...SEMANTIC_ORIGINS], space).filter((region) => !CODE_REGION_TYPES.includes(region.type) && region.type !== "dual-use");
+  const isData = (address: number) => data.some((region) => address >= region.start && address <= region.end);
+  const { removedReference } = decidedFromKnowledge(db, space);
+  // The flow is computed only when a conflict asks for it.
+  let flow: Set<number> | undefined;
+  return (range) => {
+    if (coverage !== undefined) flow ??= flowFromExecuted({ memory, inImage, coverage, references, isData, removedReference });
+    return rangeFacts(coverage, references, flow)(range);
+  };
+}
+
 /** One conflict: what the knowledge has, and what the analyzer found, under the analyzer's name. */
 function showConflict(conflict: ImportConflict, analyzer: Analyzer): Record<string, unknown> {
   if (conflict.category === "code-evidence") {
@@ -202,7 +238,7 @@ function record(findings: NormalizedFindings, revision: string, description: str
   return {
     revision: imported.revision,
     changes: { names: imported.names, ...(imported.symbols.retired === 0 ? {} : { symbols: { retired: imported.symbols.retired } }), regions: imported.regions, references: imported.references },
-    conflicts: imported.conflicts.map((conflict) => showConflict(conflict, findings.analyzer)),
+    conflicts: imported.conflicts,
   };
 }
 
@@ -234,7 +270,8 @@ async function analyze(call: Call): Promise<unknown> {
   const executed = coverage === undefined ? {} : { executed: (address: number) => (coverage[address]! & COVERAGE.ramExecute) !== 0 };
   const loaded = imageKind === "flat64k" ? { start: 0x0000, end: 0xffff } : prgRange(bytes);
   // The idioms read only the program: a table that runs past a segment gets no targets from the 0 bytes of the 64 KiB.
-  const idioms = findIdioms(inProgram, { start: loaded.start, end: loaded.end }, covered);
+  // The regions and the removals of the user and the LLM win over the idioms.
+  const idioms = findIdioms(inProgram, { start: loaded.start, end: loaded.end }, covered, decidedFromKnowledge(reader, space));
 
   const revision = currentRevision(reader);
   const seeds = seedsFromKnowledge(reader, entries, space, executed.executed);
@@ -279,12 +316,14 @@ async function analyze(call: Call): Promise<unknown> {
       platform: (address) => platform.some((entry) => address >= entry.address && address <= entry.end),
       sprites: listRegions(db, undefined, "sprite", undefined, space),
     });
+    const factsOf = conflictFacts(db, space, program.memory, (address) => inProgram(address) !== undefined, coverage);
     return {
+      factsOf,
       idioms: {
         ...idioms.counts,
         revision: imported.revision,
         changes: { regions: imported.regions, references: imported.references },
-        conflicts: imported.conflicts.map((conflict) => showConflict(conflict, "heuristic")),
+        conflicts: imported.conflicts.map((conflict) => showConflictFacts(conflict, "heuristic", factsOf, max)),
         ...(idioms.leftOut.length === 0 ? {} : { leftOut: listed(idioms.leftOut, max, (item) => ({ ...formatC64RangeFields(item), kind: item.kind, reason: item.reason })) }),
         // Candidates are not knowledge: a larger --max-listed gives more of them.
         candidates: {
@@ -329,22 +368,24 @@ async function analyze(call: Call): Promise<unknown> {
     run: { toolVersion: string | undefined; imported: ReturnType<typeof record>; report: SeedReport; seeds: ReturnType<typeof seedsResult>; found: ReturnType<typeof idiomsResult>; gaps?: Record<string, unknown>; tail: Record<string, unknown> },
   ) => {
     const runOnWritten = coverage === undefined ? [] : writtenNotExecuted(db, analyzer, coverage, space);
+    const { factsOf, ...found } = run.found;
     const body = {
       analyzer,
       ...(run.toolVersion === undefined ? {} : { analyzerVersion: run.toolVersion }),
       ...(space === DEFAULT_SPACE ? {} : { space }),
       ...run.imported,
+      conflicts: run.imported.conflicts.map((conflict) => showConflictFacts(conflict, analyzer, factsOf, max)),
       seeds: run.seeds,
       ...coverageResult(db),
       ...run.gaps,
       ...(runOnWritten.length === 0 ? {} : { writtenNotExecuted: listed(runOnWritten, max, showWritten) }),
-      ...run.found,
+      ...found,
       ...run.tail,
     };
     return withHint(body, {
-      conflicts: run.imported.conflicts.length + run.found.idioms.conflicts.length,
+      conflicts: run.imported.conflicts.length + found.idioms.conflicts.length,
       coverageConflicts: body.coverageConflicts?.length ?? 0,
-      macros: { candidates: run.found.idioms.candidates.macros.count, applied: applyMacros, revision: run.found.idioms.candidates.macros.revision },
+      macros: { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision },
       version: { now: run.toolVersion, last: lastVersion, revision: run.imported.revision },
       retiredReferences: run.imported.changes.references.retired,
       guards: { refused: toCorrect(run.report.refused, entries), writtenNotExecuted: runOnWritten.length },

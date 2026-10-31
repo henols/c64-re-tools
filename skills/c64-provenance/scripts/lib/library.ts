@@ -181,10 +181,10 @@ export function routineFrom(source: RoutineSource): { routine: Routine; leftOut:
   }
   for (const at of relocations.keys()) variable.delete(at);
 
-  // The code regions of every origin, cut at the border: the routine's instructions are its code in any program.
-  // Other regions only from the user and the LLM, and only inside the routine.
-  const regions: Routine["regions"] = codeRegions.map((region) => ({ start: Math.max(region.start, start) - start, end: Math.min(region.end, end) - start, type: region.type }));
-  for (const region of source.regions.filter((item) => !CODE_TYPES.includes(item.type))) {
+  // The regions of the user and the LLM inside the routine. The code regions of the analyzers give only the instructions:
+  // as a region, a match writes them again as the LLM's, also in the program that the routine came from.
+  const regions: Routine["regions"] = [];
+  for (const region of source.regions) {
     if (region.start >= start && region.end <= end) regions.push({ start: region.start - start, end: region.end - start, type: region.type, ...(region.element === undefined ? {} : { element: region.element }) });
     else leftOut.push({ what: `the ${region.type} region ${where(region.start)}-${where(region.end)}`, reason: "it crosses the border of the routine" });
   }

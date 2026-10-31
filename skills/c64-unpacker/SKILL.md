@@ -154,7 +154,7 @@ The script never names a packer. Do not name a packer from this evidence.
 `body` holds:
 
 - `traced`: true when the run completed. `frames` and `pc` give where the run ended.
-- `writtenThenExecuted`: the ranges that the program wrote and then executed, as a list. `underRom: true` marks a range in RAM under a ROM.
+- `writtenThenExecuted`: the ranges of RAM that the program wrote and then executed, as a list. This list can have RAM under a ROM. It does not have code that runs in a ROM.
 - `bytes`: the count of written bytes that the CPU executed.
 - `packing`, with the reason in `evidence`:
   - `likely`: the program wrote code and then executed it. It unpacked, decrypted or moved code.
@@ -210,6 +210,8 @@ A segment is a block that a stage wrote, also a small block. These blocks are no
 - A block that holds the entry of a later stage before the program, when no stage wrote over that entry.
 - A block that a stage before the program wrote in such a block, for example a variable of a loader.
 - A block that is fully in pages 0 to 3. `entry_state.json` holds these pages.
+
+The script runs the program for 250 frames after the entry. If the program executes a part of a block of the first two types in that time, that part is a segment. If the program reads a part of such a block and does not write it, that part is also a segment. A stage can copy code of the program into the block of a loader.
 
 The block with the capture entry is always a segment. Segments do not overlap.
 

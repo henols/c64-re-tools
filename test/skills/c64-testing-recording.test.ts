@@ -10,7 +10,7 @@ import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
 import { firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
-import { rebuildNames, replay } from "../../skills/c64-testing/scripts/lib/replay.ts";
+import { rebuildNames, replay, replayAll } from "../../skills/c64-testing/scripts/lib/replay.ts";
 import { Refusal } from "../../src/errors.ts";
 import { C64RUN_PROTOCOL } from "../../src/native/c64run.ts";
 import { namesOf } from "../../skills/c64-testing/scripts/lib/scenario.ts";
@@ -273,6 +273,25 @@ test("the rebuild of a replay has the symbol file of its build, else the names o
   assert.equal(rebuildNames("build/clean_loader.prg", undefined, "knowledge"), "build/symbols/clean_loader.json");
   assert.equal(rebuildNames("build/clean.prg", undefined, "knowledge"), "knowledge");
   assert.equal(rebuildNames("build/clean_loader.prg", "names.json", "knowledge"), "names.json");
+});
+
+test("replayAll replays the recordings in turn with the same options and an --out folder for each, a refused recording is INCONCLUSIVE, and a missing tool stops all", async () => {
+  const calls: string[] = [];
+  const one = async (values: { folder: string; checkpoint?: string; state: string[]; rebuild?: string; out?: string }) => {
+    calls.push(`${values.folder} ${values.checkpoint} ${values.state.join(",")} ${values.rebuild} ${values.out}`);
+    if (values.folder === "c") throw new Refusal("invalid-input", "c is no recording");
+    return { result: values.folder === "b/" ? ("FAIL" as const) : ("PASS" as const), recording: values.folder, side: "rebuild" as const, checkpoints: 3, compared: values.folder === "b/" ? 1 : 3 };
+  };
+  const all = await replayAll(["tests/recordings/a", "b/", "c"], { checkpoint: "main_loop", state: ["room"], pin: [], rebuild: "build/clean.prg", out: "results" }, one);
+  assert.deepEqual(calls, ["tests/recordings/a main_loop room build/clean.prg results/a", "b/ main_loop room build/clean.prg results/b", "c main_loop room build/clean.prg results/c"]);
+  assert.deepEqual({ ...all, recordings: all.recordings.map((item) => `${item.recording} ${item.result}${item.reason === undefined ? "" : ` ${item.reason}`}`) }, { result: "FAIL", passed: 1, failed: 1, inconclusive: 1, recordings: ["tests/recordings/a PASS", "b/ FAIL", "c INCONCLUSIVE c is no recording"] });
+  assert.equal((await replayAll(["a", "c"], { state: [], pin: [] }, one)).result, "INCONCLUSIVE");
+  await assert.rejects(
+    replayAll(["a"], { state: [], pin: [] }, async () => {
+      throw new Refusal("installation-incomplete", "c64run is missing");
+    }),
+    /c64run is missing/,
+  );
 });
 
 test("a record file names itself and the step of a key that the replay core does not have, and refuses the 2.0 forms", () => {

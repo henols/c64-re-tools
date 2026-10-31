@@ -34,6 +34,7 @@ To get the command list, run the script with no arguments.
 | Make sure that a recording replays on the reference | `replay tests/recordings/rooms` |
 | Keep the screen at the end of a recorded session | `replay tests/recordings/final --screen .c64-re-tools/local/results/final.png` |
 | Compare the rebuild with a recording | `replay tests/recordings/rooms --checkpoint main_loop --state room --state lives --pin random_ptr:2 --rebuild build/clean.prg --out .c64-re-tools/local/results/rooms` |
+| Replay each recording on the default build | `replay tests/recordings/rooms tests/recordings/fight --rebuild build/clean.prg` |
 | Find what changed between two snapshot files | `diff .c64-re-tools/local/runs/rooms/before.vsf .c64-re-tools/local/runs/rooms/after.vsf` |
 | Find what changed between two observations of runs | `diff .c64-re-tools/local/runs/rooms/results.json:room0 .c64-re-tools/local/runs/rooms/results.json:room3` |
 | Find what changed between two memory files of runs | `diff .c64-re-tools/local/runs/a/all.bin .c64-re-tools/local/runs/b/all.bin --gap 4` |
@@ -261,9 +262,11 @@ The script tells what a recording holds. It does not replay the recording. Use i
 - `coverage`: the number of RAM addresses in the coverage map that the session `executed`, `read` and `written`.
 - `evidence`: the test evidence for a finding that the recording shows.
 
-### `replay <recording>`
+### `replay <recording>...`
 
 The script first replays the recording on the reference. The reference must end the session with the recorded state. With `--rebuild`, the script then replays the recording on the rebuild and compares the state at each checkpoint. Without `--rebuild`, it replays only on the reference.
+
+Give all recordings to one `replay` command. The script replays them one after the other. Do not run replays at the same time: a replay that waits for the processor can stop before its end. With more than one recording, `--checkpoint`, `--state` and `--pin` apply to each recording, `--out` gets a folder for each recording, and the script refuses `--screen`.
 
 `--checkpoint` and `--state` go together. `--pin` needs both of them. `--symbols` needs `--rebuild`. Give at most 16 `--state` and `--pin` items. Without `--checkpoint`, the script uses the comparison of the record file.
 A `$` address is an address of the reference. On the rebuild, it moves with the name before it. Give each state item a name when you can.
@@ -283,6 +286,8 @@ A `$` address is an address of the reference. On the rebuild, it moves with the 
 - `idleReads`: the number of input reads of the rebuild that the recording had no value for.
 - `files`: with `--out` and a FAIL, the RAM of each side at the first different checkpoint.
 - `screen`: with `--screen`, the PNG file of the screen of the reference at the end of the session.
+
+With more than one recording, `body` holds `result`, the counts `passed`, `failed` and `inconclusive`, and `recordings` with the fields above for each recording. `result` is `FAIL` when a recording failed, else `INCONCLUSIVE` when a recording was inconclusive, else `PASS`. When a recording did not pass, `nextAction` replays it alone. Run `nextAction`, and do the step for its result.
 
 Do this for each result:
 

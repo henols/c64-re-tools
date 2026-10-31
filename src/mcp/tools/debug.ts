@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { COVERAGE, executedRamCode, EXECUTE, formatC64Address, READ, WRITE, type CodeRange } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
-import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, TRACE_ENDS, MAX_MEMMAP_RANGES, MAX_MEMORY_READ, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type Watchpoint } from "../../protocol/vice.ts";
+import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, TRACE_ENDS, MAX_MEMMAP_RANGES, MAX_MEMORY_READ, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type TraceHit, type TraceKind, type Watchpoint } from "../../protocol/vice.ts";
 import { readCoverage } from "../../host-client/coverage.ts";
 import { linesText, OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, Byte, SpaceInput, TOOL_INPUTS } from "../inputs.ts";
@@ -176,8 +176,76 @@ export const c64CpuHistory = defineTool({
   },
 });
 
-/** The hits that a trace result gives inline; out gives all of them in the file, and none inline. */
-const TRACE_LISTED = 200;
+/** The hits that a trace result gives inline; out gives all of them in the file, and none inline. The summary counts all hits. */
+const TRACE_LISTED = 50;
+/** The addresses and the pcs that the summary of a trace lists, the values of each address, and the pcs of each address. */
+const SUMMARY_LISTED = 20;
+const SUMMARY_VALUES = 16;
+const SUMMARY_PCS = 4;
+
+/** Most hits first, then the lowest address. */
+const byHits = <T extends { hits: number }>(entries: Iterable<T>, at: (entry: T) => number) => [...entries].sort((a, b) => b.hits - a.hits || at(a) - at(b));
+
+/**
+ * The summary of all hits of a trace: the read and write hits of each address
+ * (with the kind of its point) and the hits of each pc, most hits first. An
+ * address gives its values from low to high and the pcs with the most hits
+ * there. A pc gives its instruction and the numbers of its first and last hit.
+ */
+export function traceSummary(hits: readonly TraceHit[], kinds: readonly TraceKind[]) {
+  const addresses = new Map<string, { kind: TraceKind; address: number; hits: number; values: Set<number>; pcs: Map<number, number> }>();
+  const pcs = new Map<number, { pc: number; text: string; hits: number; firstHit: number; lastHit: number }>();
+  hits.forEach((hit, index) => {
+    const pc = pcs.get(hit.pc) ?? pcs.set(hit.pc, { pc: hit.pc, text: hit.text, hits: 0, firstHit: index, lastHit: index }).get(hit.pc)!;
+    pc.hits++;
+    pc.lastHit = index;
+    if (hit.address === undefined) return;
+    const kind = kinds[hit.point]!;
+    const key = `${kind} ${hit.address}`;
+    const address = addresses.get(key) ?? addresses.set(key, { kind, address: hit.address, hits: 0, values: new Set(), pcs: new Map() }).get(key)!;
+    address.hits++;
+    if (hit.value !== undefined) address.values.add(hit.value);
+    address.pcs.set(hit.pc, (address.pcs.get(hit.pc) ?? 0) + 1);
+  });
+  return {
+    addresses: addresses.size,
+    byAddress: byHits(addresses.values(), (entry) => entry.address)
+      .slice(0, SUMMARY_LISTED)
+      .map((entry) => {
+        const values = [...entry.values].sort((a, b) => a - b);
+        return {
+          address: formatC64Address(entry.address),
+          kind: entry.kind,
+          hits: entry.hits,
+          values: values.slice(0, SUMMARY_VALUES),
+          ...(values.length > SUMMARY_VALUES ? { moreValues: values.length - SUMMARY_VALUES } : {}),
+          pcs: byHits([...entry.pcs].map(([pc, count]) => ({ pc, hits: count })), (item) => item.pc)
+            .slice(0, SUMMARY_PCS)
+            .map((item) => ({ pc: formatC64Address(item.pc), hits: item.hits })),
+        };
+      }),
+    pcs: pcs.size,
+    byPc: byHits(pcs.values(), (entry) => entry.pc)
+      .slice(0, SUMMARY_LISTED)
+      .map((entry) => ({ ...entry, pc: formatC64Address(entry.pc) })),
+  };
+}
+
+const TraceSummaryOutput = z.object({
+  addresses: z.number().int().min(0),
+  byAddress: z.array(
+    z.object({
+      address: AddressOutput,
+      kind: z.enum(TRACE_KINDS),
+      hits: z.number().int().min(1),
+      values: z.array(Byte),
+      moreValues: z.number().int().min(1).optional(),
+      pcs: z.array(z.object({ pc: AddressOutput, hits: z.number().int().min(1) })),
+    }),
+  ),
+  pcs: z.number().int().min(0),
+  byPc: z.array(z.object({ pc: AddressOutput, text: z.string(), hits: z.number().int().min(1), firstHit: z.number().int().min(0), lastHit: z.number().int().min(0) })),
+});
 
 export const c64Trace = defineTool({
   name: "c64_trace",
@@ -193,6 +261,11 @@ export const c64Trace = defineTool({
     "At $D000-$DFFF only a load or a store gives value: a read after the access can give another byte. " +
     `The trace ends after frames frames (1 to ${MAX_TRACE_FRAMES}), at maxHits hits (at most ${MAX_TRACE_HITS}), or at a breakpoint, a watchpoint or a JAM. ` +
     `The result lists the first ${TRACE_LISTED} hits. With out, it writes all hits as JSON lines to that project file, and the result gives no hits. ` +
+    "summary counts all hits, also with out. " +
+    `summary.byAddress gives the read and write hits of each address, most hits first, at most ${SUMMARY_LISTED}. An address with read hits and write hits has an item for each kind. ` +
+    `Each item gives kind, hits and values, the values from low to high, at most ${SUMMARY_VALUES}. moreValues is the number of the other values. pcs are the pcs with the most hits at the address, at most ${SUMMARY_PCS}. ` +
+    `summary.byPc gives the hits of each pc, most hits first, at most ${SUMMARY_LISTED}, with text. firstHit and lastHit are the numbers of its first and last hit. The first hit of the trace is 0. ` +
+    "summary.addresses and summary.pcs are the numbers of all different addresses and pcs. " +
     "Each hit stops the machine for a short time. Thus a point with many hits in each frame makes the trace slow. Use a small range and a maxHits. " +
     "The machine is stopped after the trace.",
   inputSchema: z
@@ -209,6 +282,7 @@ export const c64Trace = defineTool({
     frames: z.number().int().min(0),
     pc: AddressOutput,
     count: z.number().int().min(0),
+    summary: TraceSummaryOutput,
     hits: z
       .array(
         z.object({
@@ -238,9 +312,10 @@ export const c64Trace = defineTool({
     if (ranges.some((point) => point.end < point.start)) throw new WireFailure("invalid-input", "A point end must not be before its start.");
     const traced = await session.trace({ points: ranges, ...request });
     const shown = traced.hits.map(({ address, ...hit }) => ({ ...hit, pc: formatC64Address(hit.pc), ...(address === undefined ? {} : { address: formatC64Address(address) }) }));
-    const summary = { end: traced.end, frames: traced.frames, pc: formatC64Address(traced.pc), count: traced.hits.length };
-    if (out === undefined) return { ...summary, hits: shown.slice(0, TRACE_LISTED) };
-    return { ...summary, ...writeOut(out, linesText(shown.map((hit) => JSON.stringify(hit))), project) };
+    const head = { end: traced.end, frames: traced.frames, pc: formatC64Address(traced.pc), count: traced.hits.length };
+    const summary = traceSummary(traced.hits, ranges.map((point) => point.kind));
+    if (out === undefined) return { ...head, summary, hits: shown.slice(0, TRACE_LISTED) };
+    return { ...head, summary, ...writeOut(out, linesText(shown.map((hit) => JSON.stringify(hit))), project) };
   },
 });
 

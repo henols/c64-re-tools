@@ -20,15 +20,17 @@ export interface Release {
 export interface DifferingRange {
   start: number;
   end: number;
-  /** The bytes of each release in this range, by release name. */
-  values: Record<string, number[]>;
-  /** Releases with the same bytes here, largest group first. */
-  groups: string[][];
+  /** The bytes of each release in this range, in the order of the releases: a name can be given two times. */
+  values: number[][];
+  /** The numbers of the releases (1 is the first) with the same bytes here, largest group first. */
+  groups: number[][];
 }
 
 export interface Comparison {
   /** The addresses where every release has bytes. */
   common: AddressRange[];
+  /** For each release, in order: its addresses in the range that are not in common, because another release has no bytes there. */
+  outsideCommon: AddressRange[][];
   identicalBytes: number;
   differingBytes: number;
   differences: DifferingRange[];
@@ -58,6 +60,11 @@ function commonRanges(releases: Release[], from = 0x0000, to = 0xffff): AddressR
   return rangesOf(Array.from({ length: to - from + 1 }, (_, offset) => from + offset).filter((address) => releases.every((release) => covers(release, address))));
 }
 
+/** The addresses of a release inside from..to where another release has no bytes. */
+function outsideOthers(release: Release, releases: Release[], from: number, to: number): AddressRange[] {
+  return rangesOf(addressesOf(release).filter((address) => address >= from && address <= to && !releases.every((other) => covers(other, address))));
+}
+
 /** Consecutive addresses in order as ranges. */
 function rangesOf(addresses: number[]): AddressRange[] {
   const ranges: AddressRange[] = [];
@@ -71,6 +78,7 @@ function rangesOf(addresses: number[]): AddressRange[] {
 
 export function compareReleases(releases: Release[], options: { from?: number; to?: number; maxRanges?: number } = {}): Comparison {
   const common = commonRanges(releases, options.from, options.to);
+  const outsideCommon = releases.map((release) => outsideOthers(release, releases, options.from ?? 0x0000, options.to ?? 0xffff));
   let identicalBytes = 0;
   const differing: number[] = [];
   for (const range of common) {
@@ -90,17 +98,15 @@ export function compareReleases(releases: Release[], options: { from?: number; t
   }
   const limit = options.maxRanges ?? 64;
   const differences = ranges.slice(0, limit).map((range) => {
-    const values: Record<string, number[]> = {};
-    const groups = new Map<string, string[]>();
-    for (const release of releases) {
-      const bytes = Array.from({ length: range.end - range.start + 1 }, (_, offset) => release.byteAt(range.start + offset));
-      values[release.name] = bytes;
+    const values = releases.map((release) => Array.from({ length: range.end - range.start + 1 }, (_, offset) => release.byteAt(range.start + offset)));
+    const groups = new Map<string, number[]>();
+    for (const [index, bytes] of values.entries()) {
       const key = bytes.join(",");
-      groups.set(key, [...(groups.get(key) ?? []), release.name]);
+      groups.set(key, [...(groups.get(key) ?? []), index + 1]);
     }
     return { ...range, values, groups: [...groups.values()].sort((a, b) => b.length - a.length) };
   });
-  return { common, identicalBytes, differingBytes: differing.length, differences, moreDifferences: ranges.length > limit };
+  return { common, outsideCommon, identicalBytes, differingBytes: differing.length, differences, moreDifferences: ranges.length > limit };
 }
 
 /** The addresses of a release in order, so that a window of bytes can run over its segments. */
@@ -129,13 +135,17 @@ function indexWindows(release: Release, addresses: number[]): Map<string, number
 /** Most shifts that suggestShifts gives: data that did not move can outvote code that did. */
 const MAX_SUGGESTED_SHIFTS = 3;
 
+/** The fewest equal 8-byte sequences for a shift: fewer occur by chance, and a range of fewer than 15 bytes has fewer. */
+export const MIN_MATCHING_SEQUENCES = 8;
+
 /**
- * The shifts that put `other` over `base` best: the most common address
- * differences between equal 8-byte sequences, most votes first. A shift with
- * less than a tenth of the best one's votes is chance. Empty when nothing matches.
+ * The shifts that put `other` over the bytes of `base` in `range` best: the
+ * most common address differences between equal 8-byte sequences, most votes
+ * first. A shift with fewer than MIN_MATCHING_SEQUENCES votes, or with less than
+ * a tenth of the best one's votes, is chance. Empty when nothing matches.
  */
-export function suggestShifts(base: Release, other: Release): Array<{ shift: number; matches: number }> {
-  const positions = indexWindows(base, addressesOf(base));
+export function suggestShifts(base: Release, other: Release, range: AddressRange = { start: 0x0000, end: 0xffff }): Array<{ shift: number; matches: number }> {
+  const positions = indexWindows(base, addressesOf(base).filter((address) => address >= range.start && address <= range.end));
   const otherAddresses = addressesOf(other);
   const votes = new Map<number, number>();
   for (let at = 0; at + WINDOW <= otherAddresses.length; at++) {
@@ -145,7 +155,7 @@ export function suggestShifts(base: Release, other: Release): Array<{ shift: num
     }
   }
   const ranked = [...votes].map(([shift, matches]) => ({ shift, matches })).sort((a, b) => b.matches - a.matches || Math.abs(a.shift) - Math.abs(b.shift));
-  return ranked.filter((found) => found.matches * 10 >= ranked[0]!.matches).slice(0, MAX_SUGGESTED_SHIFTS);
+  return ranked.filter((found) => found.matches >= MIN_MATCHING_SEQUENCES && found.matches * 10 >= ranked[0]!.matches).slice(0, MAX_SUGGESTED_SHIFTS);
 }
 
 export interface Block {

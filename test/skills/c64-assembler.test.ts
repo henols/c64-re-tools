@@ -161,6 +161,22 @@ test("--compare checks the build against the program in the knowledge and fails 
   assert.match(JSON.stringify(segment!.firstDifference), /^\{"address":"\$0809","built":"\$[0-9a-f]{2}","reference":"\$[0-9a-f]{2}"\}$/);
 });
 
+test("--compare names each different byte in a leftover that the build leaves out with LEFTOVERS = 0", { skip: acmeSkip }, () => {
+  const folder = mkdtempSync(join(tmpdir(), "c64-re-tools-assembler-leftovers-"));
+  projects.push(folder);
+  mkdirSync(join(folder, "src", "leftovers"), { recursive: true });
+  writeFileSync(join(folder, "src", "config.asm"), "LEFTOVERS = 0\n");
+  writeFileSync(join(folder, "src", "main.asm"), '!source "config.asm"\n* = $1000\n        lda #$01\n!if LEFTOVERS { !source "leftovers/leftover_1002.asm" } else { !skip 2 }\n        rts\n');
+  writeFileSync(join(folder, "src", "leftovers", "leftover_1002.asm"), "; Leftovers $1002-$1003: 2 bytes that nothing uses.\n        !byte $0c,$0d\n");
+  importPrg(folder, Buffer.from([0x00, 0x10, 0xa9, 0x01, 0x0c, 0x0d, 0x60]));
+  const leftovers = [{ start: "$1002", end: "$1003", file: "leftovers/leftover_1002.asm", differences: 2 }];
+  const clean = buildIn(folder, ["src", "main.asm", "--compare"]);
+  assert.equal(clean.json.result, "FAIL");
+  assert.deepEqual(clean.json.compare.segments, [{ start: "$1000", end: "$1004", result: "different", differences: 2, leftovers }]);
+  assert.match(String(clean.envelope.hint), /^The program is different from the reference program only in the leftovers that this build leaves out\. All other bytes are identical\. 2 different bytes are in leftovers .* give --switch LEFTOVERS=1\./);
+  assert.equal(buildIn(folder, ["src", "main.asm", "--compare", "--switch", "LEFTOVERS=1"]).json.result, "PASS");
+});
+
 /**
  * A captured program whose loader has the packed form: 40 parts, more copies than the plain copier does.
  * $1000 LDA #$00 / STA $d020 / RTS with the patch of TRAINER at $1000-$1001, 80 bytes at $1010 that nothing uses (a leftover),
@@ -204,7 +220,7 @@ function packedProject(): { project: string; segments: Array<{ start: number; en
 }
 
 /** Runs the script in another project folder. */
-function buildIn(folder: string, args: string[], env: NodeJS.ProcessEnv = {}): { status: number | null; json: any } {
+function buildIn(folder: string, args: string[], env: NodeJS.ProcessEnv = {}): { status: number | null; json: any; envelope: ScriptEnvelope } {
   const run = spawnSync(process.execPath, [...process.execArgv, script, "build", ...args], { cwd: folder, env: { ...process.env, C64RT_HOST: "127.0.0.1:1", ...env }, encoding: "utf8" });
   return { status: run.status, ...readEnvelope(run.stdout, run.status) };
 }

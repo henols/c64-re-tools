@@ -53,7 +53,8 @@ To get the command list, run the script with no arguments.
 
 A source that you generated from the project knowledge has switches in `config.asm`.
 
-- Without `--release`, the build uses the values in `config.asm`. With the default values, the program is the clean program: no copy protection, no trainers, no cheats, no crack changes, and all corrections. This program can be different from the base release. Thus `--compare` can give `FAIL`.
+- Without `--release`, the build uses the values in `config.asm`. With the default values, the program is the clean program: no copy protection, no trainers, no cheats, no crack changes, no leftovers, and all corrections. This program can be different from the base release. Thus `--compare` can give `FAIL`.
+- The default build leaves out the leftovers, because `LEFTOVERS` is 0. A leftover is a range that nothing uses, in a file in `leftovers/`. To build the leftovers, give `--switch LEFTOVERS=1`.
 - To build other switch values, give `--switch` for each switch, for example `--switch TRAINER=1`. `config.asm` does not change. Do not use `--define` for a switch.
 - With `--switch` and the entry `main.asm`, a source with `loader.asm` also gives its loader program with these switch values. See "Build".
 - With `--release <label>`, each switch has the value of that release. A release build does not read `config.asm`.
@@ -132,8 +133,9 @@ Assembles the source and writes the program to `--out`, or to `build/<name>.prg`
 - `diagnostics`: each item has `severity` (`error`, `warning` or `note`), `file`, `line` and `message`. `file` is relative to the source root. A file in an include folder outside the source root starts with `../`. `file` and `line` are not in an item without a location in the source.
 - `compare`: only with `--compare`. `identical` is `true` when each segment is identical. `segments` has one item for each segment of the reference program, with `start`, `end` and `result`:
   - `identical`.
-  - `different`, with `differences` and `firstDifference`. `firstDifference` gives `address`, and the byte of the build (`built`) and of the reference (`reference`), each as `$` and two hex digits.
+  - `different`, with `differences` and `firstDifference`. `firstDifference` gives `address`, and the byte of the build (`built`) and of the reference (`reference`), each as `$` and two hex digits. It is the first different byte outside the leftovers that the build leaves out. When all different bytes are in these leftovers, the segment has no `firstDifference`.
   - `not covered`, with `uncovered`: the build does not hold all bytes of the segment.
+- A segment in `compare.segments` can also have `leftovers`. These are the leftovers that the build leaves out, where a byte is different or not in the build. Each item has `start`, `end`, `file` (the leftover file, relative to the source root) and `differences`. `differences` and `uncovered` of the segment also count these bytes.
 - `loader`: only with `--switch`, the entry `main.asm` and a `loader.asm` in the source root. It is the loader program of these switch values, with `out`, `bytes` and `sha256`. `symbolsFile` is its symbols file. `packed` gives `packedBytes` and `unpackedBytes` of the packed form. `verified` is always `false`, because no check of the loader program runs. When the script cannot make the loader program, `loader` holds only `written`, which is `false`, and `reason`.
 
 Do as the result tells:
@@ -141,6 +143,7 @@ Do as the result tells:
 - `result` is `PASS`: the program is at `out`. To run or debug the program, load the file at `out` into the emulator. A generated source with a loader is different: the build of `main.asm` does not set the entry state, and it can hold bytes for $d000-$dfff. Load the loader program in its place: `loader.program` of the generation of the source with the loader, or `loader.out` of a build with `--switch`. Test the loader program of `loader.out` before you trust it.
 - `result` is `FAIL` and `assembled` is `false`: the source has errors, and the script wrote no program. `hint` tells you to correct the source. Correct the source at the file and the line of each diagnostic. Then run `build` again.
 - `result` is `FAIL` and `assembled` is `true`: the program is not identical to the reference. The script wrote the program. Read the first difference of each segment in `compare.segments`. Without `--release`, read the section "Switches" first.
+- A segment has `leftovers`: these bytes are different because the build leaves out the leftovers. They are not an error in the source. `hint` tells when all other bytes are identical. To build the leftovers, give `--switch LEFTOVERS=1`.
 - `hint` tells that `symbols` is cut: give a larger `--max-listed`, or read the symbols file for the full list.
 - `loader.written` is `false`: the script wrote the program of `main.asm`, but it cannot make the loader program of these switch values. Do as `loader.reason` tells.
 - Error `not-found` names the entry: give the main source file relative to the source root.

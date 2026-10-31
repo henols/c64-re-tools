@@ -11,7 +11,7 @@ import { after, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
 import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
-import { listing, type ListingSource } from "../../skills/c64-knowledge/scripts/lib/listing.ts";
+import { listing, listingLines, type ListingSource } from "../../skills/c64-knowledge/scripts/lib/listing.ts";
 import { checkResult, pickSample, withVerdict } from "../../skills/c64-knowledge/scripts/lib/check.ts";
 
 const script = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
@@ -377,12 +377,24 @@ test("listing reads the program and the coverage in the knowledge", () => {
   coverage[0x1020] = COVERAGE.ramRead;
   writeFileSync(join(root, "run.bin"), coverage);
   assert.equal(knowledge(root, "coverage", "run.bin").status, 0);
-  const listed = items(knowledge(root, "listing", "$1000-$1021").json.lines);
-  assert.deepEqual(listed[0], { address: "$1000", bytes: "20 10 10", label: "main", text: "jsr helper", access: "x", referencesIn: 0, referencesOut: 1 });
-  assert.deepEqual(listed[1], { address: "$1003", bytes: "ad 20 10", text: "lda table", access: "x", referencesIn: 0, referencesOut: 0, comment: "First entry." });
-  assert.equal(listed[2]!.text, "sta EXTCOL", "a platform name");
-  assert.deepEqual(listed.at(-1), { address: "$1020", bytes: "07 08", label: "table", text: "!byte $07,$08", access: "r", referencesIn: 0, referencesOut: 0 });
+  const listed = items<string>(knowledge(root, "listing", "$1000-$1021").json.lines);
+  assert.deepEqual(listed.slice(0, 3), ["$1000  20 10 10  x  main: jsr helper  ; refs in 0 out 1", "$1003  ad 20 10  x  lda table  ; First entry.", "$1006  8d 20 d0  -  sta EXTCOL"]);
+  assert.equal(listed.at(-1), "$1020  07 08  r  table: !byte $07,$08");
+  const written = knowledge(root, "listing", "$1000-$1021", "--out", "listing.txt").json;
+  assert.equal(written.lines, listed.length);
+  assert.equal(readFileSync(join(root, "listing.txt"), "utf8"), listed.map((line) => `${line}\n`).join(""), "--out writes the lines of the result");
   assert.equal(knowledge(project(), "listing", "$1000-$1001").status, 2, "listing needs the program in the knowledge");
+});
+
+test("a listing line is the address, the bytes, the access and the ACME line, then the notes; a line comment is a line of its own before it", () => {
+  const line = { address: 0x09bc, bytes: "ad 11 d0", text: "lda SCROLY", referencesIn: 3, referencesOut: 1 };
+  assert.deepEqual(
+    listingLines([
+      { ...line, label: "draw_room", analyzerNames: ["FUN_09bc"], access: "x", lineComments: ["Draws the room."], comment: "Blank the display." },
+      { ...line, address: 0x09bf, referencesIn: 0, referencesOut: 0 },
+    ]),
+    ["; Draws the room.", "$09bc  ad 11 d0  x  draw_room: lda SCROLY  ; Blank the display. | refs in 3 out 1 | also FUN_09bc", "$09bf  ad 11 d0  lda SCROLY"],
+  );
 });
 
 test("listing writes an operand expression in the syntax of the addressing mode, as c64-source does", () => {
