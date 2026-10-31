@@ -14,7 +14,7 @@ import { Refusal } from "#src/errors.ts";
 import { c64AddressOf, COVERAGE, formatC64Address, hexWord, parseC64Address } from "#src/c64.ts";
 import { keyTaps, type KeyTap } from "#src/c64-keys.ts";
 import { READY_FRAMES } from "#src/host-client/entry-state.ts";
-import { ACTION_STEP_KINDS, checkActionStep, keyboardBytes, renamedField, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, checkActionStep, keyboardBytes, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { isInteger, isObject } from "#src/host-client/tools.ts";
 import { readProjectFile, readProjectJson, type Written } from "#src/host-client/transfer.ts";
 import { RECORDING_FILES } from "#src/knowledge/recording-files.ts";
@@ -167,10 +167,7 @@ function checkState(value: unknown, fail: (message: string) => never, what = "st
   return (value as unknown[]).map((item, index) => {
     const spec = typeof item === "string" ? { address: item } : item;
     if (isObject(spec)) {
-      for (const key of Object.keys(spec)) {
-        const renamed = renamedField(key, ["address", "size"]);
-        if (key !== "address" && key !== "size") fail(`${what} item ${index + 1} has the field ${key}. ${renamed ?? "A memory item has address and size, and nothing else"}`);
-      }
+      for (const key of Object.keys(spec)) if (key !== "address" && key !== "size") fail(`${what} item ${index + 1} has the field ${key}. A memory item has address and size, and nothing else`);
     }
     if (!isObject(spec) || typeof spec.address !== "string") fail(`${what} item ${index + 1} must be a name, a $ address, or { address, size }`);
     const size = (spec as { size?: unknown }).size ?? 1;
@@ -267,8 +264,8 @@ export function readRecording(folder: string): Recording {
   for (const key of ["name", "program", "sha256", "symbols", "hash"]) if (typeof value[key] !== "string") fail(`${key} is missing`);
   for (const key of ["inputs", "events", "sites"]) if (!Array.isArray(value[key])) fail(`${key} is missing`);
   if (!isInteger(value.ticks, 1, Number.MAX_SAFE_INTEGER)) fail("ticks is missing");
-  // A recording of an older version can have the step forms of the 2.0 files: refused with the form to write, never replayed wrong.
-  const remedy = "Record the session again with record, or write the 2.1 form in recording.json";
+  // A recording that does not check is refused, never replayed wrong.
+  const remedy = "Record the session again with record";
   if (value.compare !== undefined) {
     const compare = isObject(value.compare) ? value.compare : fail("compare must be an object with checkpoint, state and pin");
     const where = (message: string): never => fail(`compare: ${message}. ${remedy}`);
@@ -285,10 +282,6 @@ export function readRecording(folder: string): Recording {
     // The action with the defaults filled in, as the record file gave it.
     const action = checkActionStep(stepKind(event.action, ACTION_STEP_KINDS, named, where), event.action, named, where);
     event.action = action;
-    // Before 2.6.0-rc.16, a runUntil to an address had the point of another event: a replay cannot find its target again.
-    if ("runUntil" in action && action.runUntil.target.kind === "address" && !("pc" in event.key)) {
-      fail(`${named}: a runUntil step to an address has a point of an older version, which a replay cannot find. Record the session again with record`);
-    }
   });
   return value as unknown as Recording;
 }

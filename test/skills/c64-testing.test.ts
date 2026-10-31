@@ -390,11 +390,9 @@ test("a run refuses a wrong expect step before it opens an emulator, and names t
   assert.match(await refused([{ expect: "e", registers: { pc: "main_loop" } }]), /^run expect\.json: step 1: main_loop is a name, and the run file has no symbols/);
 });
 
-test("a run and a scenario refuse the 2.0 step and memory forms with the field and the 2.1 form", async () => {
+test("a run and a scenario refuse a step with no step kind or with two", async () => {
   writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
   const run = async (steps: unknown[]) => (await runRefusal("old-run.json", { name: "old", start: { program: "game.prg" }, steps })).message.split("\n")[0]!;
-  assert.equal(await run([{ observe: "x", memory: [{ at: "$0400", size: 2 }] }]), "run old-run.json: step 1: a memory object has the field at. at is a 2.0 field. Write address in place of at");
-  assert.equal(await run([{ trace: "t", points: [{ kind: "exec", at: "$c000" }], frames: 5 }]), "run old-run.json: step 1: a point has the field at. at is a 2.0 field. Write start in place of at");
   assert.equal(await run([{ wait: 5 }]), "run old-run.json: step 1 must have exactly one of write, registers, joystick, type, press, frames, runUntil, snapshot, save, screen, coverage, observe, expect, trace");
   const scenario = (steps: unknown[]) => {
     try {
@@ -404,9 +402,6 @@ test("a run and a scenario refuse the 2.0 step and memory forms with the field a
     }
     return assert.fail("not refused");
   };
-  assert.equal(scenario([{ type: " ", side: "reference" }, valid.steps[2]]), 'scenario old-scenario.json: step 1 has the 2.0 form (type as text). Write {"type": {"mode": "text", "text": " "}, "side": "reference"}, or {"type": {"mode": "petscii", "bytes": [...]}} for PETSCII codes');
-  assert.equal(scenario([{ observe: "x", memory: [{ at: "$0002", size: 254 }] }]), "scenario old-scenario.json: step 1: a memory object has the field at. at is a 2.0 field. Write address in place of at");
-  assert.equal(scenario([{ observe: "x", memory: [{ address: "$d01e", exclude: [{ at: "$d01e", reason: "latched" }] }] }]), "scenario old-scenario.json: step 1: an exclude has the field at. at is a 2.0 field. Write address in place of at");
   assert.equal(scenario([{ frames: 5, type: { mode: "text", text: " " } }, valid.steps[2]]), "scenario old-scenario.json: step 1 has 2 step kinds: frames, type. Give each one its own step");
   assert.equal(scenario([{ sleep: 5 }, valid.steps[2]]), "scenario old-scenario.json: step 1 must have exactly one of reset, load, autostart, snapshot, normalize, write, registers, joystick, type, press, frames, runUntil, observe");
 });

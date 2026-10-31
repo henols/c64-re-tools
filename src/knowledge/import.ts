@@ -96,8 +96,6 @@ export interface ImportResult {
   revision: string | null;
   /** The analyzer names. */
   names: ImportCounts;
-  /** The analyzer's own rows from an older version that the run closed in symbols: only `retired` counts. */
-  symbols: ImportCounts;
   regions: ImportCounts;
   references: ImportCounts & {
     /** Findings from an address in a data region of the user, the LLM or a heuristic: false code, not written. */
@@ -163,13 +161,6 @@ function validateFindings(findings: NormalizedFindings): AddressRange[] {
   return coverage;
 }
 
-function ownSymbols(db: DatabaseSync, analyzer: Analyzer, range: AddressRange, space: Space): SymbolRow[] {
-  return db
-    .prepare(`SELECT ${FACTS.symbols.columns} FROM current_symbols WHERE space = ? AND origin = ? AND address BETWEEN ? AND ? ORDER BY address`)
-    .all(space, analyzer, range.start, range.end)
-    .map((row) => FACTS.symbols.map(row as Record<string, unknown>));
-}
-
 function ownReferences(db: DatabaseSync, analyzer: Analyzer, range: AddressRange, space: Space): ReferenceRow[] {
   return db
     .prepare(`SELECT ${FACTS.references.columns} FROM current_references WHERE space = ? AND origin = ? AND from_address BETWEEN ? AND ? ORDER BY from_address`)
@@ -187,20 +178,13 @@ function ownNames(db: DatabaseSync, analyzer: Analyzer, range: AddressRange, spa
 /**
  * The names of an analyzer are second names: they go to analyzer_names,
  * one for each analyzer at an address, and never to symbols. A run replaces
- * the analyzer's own names in its coverage, and closes the analyzer's old rows
- * in symbols there (knowledge from an older version). A name that the user or the LLM
+ * the analyzer's own names in its coverage. A name that the user or the LLM
  * gave the address already is not kept twice. A code or data kind that
  * disagrees with the name of the address is a conflict.
  */
 function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
   const space = findings.space ?? DEFAULT_SPACE;
-  for (const range of coverage) {
-    for (const own of ownSymbols(db, analyzer, range, space)) {
-      change.close("symbols", "space = ? AND address = ? AND origin = ?", space, own.address, analyzer);
-      result.symbols.retired++;
-    }
-  }
   const wanted = new Map(findings.symbols.map((symbol) => [symbol.address, symbol]));
   const settled = new Set<number>();
   const replaced = new Set<number>();
@@ -466,7 +450,7 @@ export function importFindings(db: DatabaseSync, findings: NormalizedFindings, c
   const coverage = validateFindings(findings);
   return transaction(db, () => {
     const change = new Change(db, { origin: findings.analyzer, ...context }, `import-${findings.analyzer}`);
-    const result: ImportResult = { revision: null, names: counts(), symbols: counts(), regions: counts(), references: { ...counts(), inData: 0 }, conflicts: [] };
+    const result: ImportResult = { revision: null, names: counts(), regions: counts(), references: { ...counts(), inData: 0 }, conflicts: [] };
     importNames(db, change, findings, coverage, result);
     importRegions(db, change, findings, coverage, result);
     importReferences(db, change, findings, coverage, result);

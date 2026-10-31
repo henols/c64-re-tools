@@ -69,8 +69,6 @@ export interface Field {
   column: string;
   format: Format;
   optional?: boolean;
-  /** What to do when a line does not have this key: a key that an earlier toolkit version did not write. */
-  remedy?: string;
 }
 
 /** One fact table: its file, its fields in line order, and the column that sorts its lines after the space (an address, or a name). */
@@ -231,11 +229,7 @@ export const TABLES: readonly TableSpec[] = [
     sort: "map",
     fields: [
       space,
-      {
-        ...field("map", "map", "text"),
-        remedy:
-          "The coverage of an earlier toolkit version does not keep the ranges of each map. Delete .c64-re-tools/knowledge/coverage.jsonl. Then put the coverage maps that you have into the project knowledge again.",
-      },
+      field("map", "map", "text"),
       field("kind", "kind", "text"),
       field("ranges", "ranges", "ranges"),
       origin,
@@ -388,8 +382,6 @@ const keysOf = (fields: readonly Field[], extra: readonly string[] = []): Readon
 
 /** The column values of one line, checked against its fields; `allowed` holds the keys of the line (keysOf). */
 function columnsOf(file: string, line: number, value: Raw, fields: readonly Field[], allowed: ReadonlySet<string>): Raw {
-  // A line of an earlier format: the key that this format added is missing, and the remedy tells what to do.
-  for (const { key, remedy } of fields) if (remedy !== undefined && (value[key] === undefined || value[key] === null)) bad(file, line, `the key ${JSON.stringify(key)} is missing. ${remedy}`);
   for (const key of Object.keys(value)) if (!allowed.has(key)) bad(file, line, `the key ${JSON.stringify(key)} is not known.`);
   const columns: Raw = {};
   for (const { key, column, format, optional } of fields) {

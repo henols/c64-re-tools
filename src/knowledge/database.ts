@@ -11,8 +11,6 @@ import { ensureLocal, KNOWLEDGE_INDEX_FILE, KNOWLEDGE_TEXT_DIRECTORY, LOCAL_DIRE
 import { ensureSchema } from "./schema.ts";
 import { compareText, knowledgeFiles, loadText, readText, REVISIONS_FILE, revisionsText, sha256, sqlName, TABLES, tableText, writeAtomic } from "./text.ts";
 
-/** The project folder, for the one-time conversion script, which imports only the knowledge. */
-export const KNOWLEDGE_DIRECTORY = PROJECT_DIRECTORY;
 /** Git keeps the lines of both sides when two computers changed the same knowledge file. */
 // eol=lf: with core.autocrlf (the Windows default) git would check the files out with CRLF, so two computers would hold other bytes.
 export const GIT_ATTRIBUTES = "# The knowledge of c64-re-tools: git keeps the lines of both sides of a merge, with LF line ends on every system.\n*.jsonl merge=union text eol=lf\n.gitattributes text eol=lf\n";
@@ -25,16 +23,6 @@ export function textPath(root: string = projectRoot()): string {
 /** The index: .c64-re-tools/local/knowledge.db. */
 export function indexPath(root: string = projectRoot()): string {
   return join(root, PROJECT_DIRECTORY, LOCAL_DIRECTORY, KNOWLEDGE_INDEX_FILE);
-}
-
-/** Refuses a project that has only the knowledge.db of an older c64-re-tools. */
-function refuseOldLayout(root: string): void {
-  if (!existsSync(textPath(root)) && existsSync(join(root, PROJECT_DIRECTORY, KNOWLEDGE_INDEX_FILE))) {
-    throw new Refusal(
-      "unsupported-schema",
-      `${PROJECT_DIRECTORY}/${KNOWLEDGE_INDEX_FILE} is the knowledge of an older c64-re-tools. This c64-re-tools keeps the knowledge as text in ${PROJECT_DIRECTORY}/${KNOWLEDGE_TEXT_DIRECTORY}/. Convert it one time with distribution/convert-knowledge.ts of the c64-re-tools source repository.`,
-    );
-  }
 }
 
 /** The prepared statements of each database by their SQL: a query that runs again is not prepared again. */
@@ -134,7 +122,6 @@ const projects = new WeakMap<DatabaseSync, string>();
  * knowledge text: that reads as empty knowledge, and a read creates nothing.
  */
 export function openForRead(root: string = projectRoot()): DatabaseSync | undefined {
-  refuseOldLayout(root);
   if (!existsSync(textPath(root))) return undefined;
   const index = openIndex(root);
   try {
@@ -163,7 +150,6 @@ export function withRead<T>(work: (db: DatabaseSync | undefined) => T, root: str
  * files.
  */
 export function openForWrite(root: string = projectRoot()): DatabaseSync {
-  refuseOldLayout(root);
   mkdirSync(textPath(root), { recursive: true });
   const attributes = join(textPath(root), ".gitattributes");
   if (!existsSync(attributes)) writeFileSync(attributes, GIT_ATTRIBUTES);
@@ -185,7 +171,6 @@ export function openForWrite(root: string = projectRoot()): DatabaseSync {
  * nothing outside the database it gets.
  */
 export function withWrite<T>(work: (db: DatabaseSync) => T, root: string = projectRoot()): T {
-  refuseOldLayout(root);
   if (!existsSync(textPath(root))) {
     const trial = new DatabaseSync(":memory:");
     try {

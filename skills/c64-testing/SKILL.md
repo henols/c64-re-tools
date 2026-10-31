@@ -300,7 +300,6 @@ Traps:
 
 - A run does not have the timing of a recording. The same steps in a run can give a different session, for example a lost fight. To show the screen of a recorded session, use `replay --screen`. Do not do the steps again in a run.
 - On the reference, an input read with no recorded value makes the result INCONCLUSIVE. The rebuild can read input where the reference does not, for example in its loader before the start screen. `idleReads` counts these reads. They do not change a PASS of the rebuild.
-- The script refuses a recording of an older version in an old form with `invalid-input`. Record the session again.
 
 ---
 
