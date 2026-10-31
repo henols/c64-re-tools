@@ -57,6 +57,11 @@ export function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** The stack of a caught Error (its message when it has none), for a log; a value that is not an Error as text. */
+export function describeErrorStack(error: unknown): string {
+  return error instanceof Error ? (error.stack ?? error.message) : String(error);
+}
+
 /** True for an Error with a code from ERROR_CODES: a refusal, whatever its class. */
 export function isRefusal(error: unknown): error is Error & { code: ErrorCode } {
   const code = (error as { code?: unknown } | undefined)?.code;

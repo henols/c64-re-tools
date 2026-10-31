@@ -2,7 +2,7 @@
 // .c64-re-tools/knowledge/; .c64-re-tools/local/knowledge.db is an index
 // that is made again from the text when the text changed.
 
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { join } from "node:path";
 
@@ -102,28 +102,10 @@ function textHashes(files: ReadonlyMap<string, { sha256: string }>): Record<stri
   return Object.fromEntries([...files].map(([name, file]): [string, string] => [name, file.sha256]).sort(([a], [b]) => compareText(a, b)));
 }
 
-/** The SHA-256 of each knowledge file that this process read, with the stat that the file had then. */
-const knownHashes = new Map<string, { stat: string; sha256: string }>();
-
-/** The stat of a file that changes with its bytes: a write gives a new time, and writeAtomic a new inode. */
-function statOf(path: string): string {
-  const stat = statSync(path, { bigint: true });
-  return `${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
-}
-
-/** The SHA-256 of each knowledge file of the project, by file name, in name order. A file is read again only when its stat changed. */
+/** The SHA-256 of each knowledge file of the project, by file name: the bytes only, without the text of the rows. */
 function currentHashes(root: string): Record<string, string> {
   const directory = textPath(root);
-  const hashes: Record<string, string> = {};
-  for (const name of knowledgeFiles(directory)) {
-    const path = join(directory, name);
-    // The stat before the read: a file that changes after it has another stat next time.
-    const stat = statOf(path);
-    let known = knownHashes.get(path);
-    if (known?.stat !== stat) knownHashes.set(path, (known = { stat, sha256: sha256(readFileSync(path)) }));
-    hashes[name] = known.sha256;
-  }
-  return hashes;
+  return Object.fromEntries(knowledgeFiles(directory).map((name) => [name, sha256(readFileSync(join(directory, name)))]));
 }
 
 const sameHashes = (a: Record<string, string>, b: Record<string, string>) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
@@ -227,20 +209,12 @@ function newest(db: DatabaseSync): string {
   return (db.prepare("SELECT max(id) AS id FROM revisions").get() as { id: string | null }).id ?? "0";
 }
 
-/** The tables that the open transaction of each database changed. */
-const changedTables = new WeakMap<DatabaseSync, Set<string>>();
-
-/** Marks a table that the open transaction changed: its knowledge file is written when the transaction commits. */
-export function markChanged(db: DatabaseSync, table: string): void {
-  changedTables.get(db)?.add(table);
-}
-
 /**
- * Writes the revision log and the knowledge files of the changed tables, then
+ * Writes the knowledge files that the revisions after `before` changed, then
  * keeps their SHA-256 in the index. The text is written before the index
  * commits: when the commit fails, the next open makes the index from the text.
  */
-function writeText(db: DatabaseSync, root: string, changed: ReadonlySet<string>): void {
+function writeText(db: DatabaseSync, root: string, before: string): void {
   const directory = textPath(root);
   const hashes = storedHashes(db);
   const write = (file: string, text: string) => {
@@ -248,7 +222,10 @@ function writeText(db: DatabaseSync, root: string, changed: ReadonlySet<string>)
     hashes[file] = sha256(text);
   };
   write(REVISIONS_FILE, revisionsText(db));
-  for (const spec of TABLES) if (changed.has(spec.table)) write(spec.file, tableText(db, spec));
+  for (const spec of TABLES) {
+    const changed = prepare(db, `SELECT 1 FROM ${sqlName(spec.table)} WHERE valid_from_revision > ? OR valid_to_revision > ? LIMIT 1`).get(before, before);
+    if (changed !== undefined) write(spec.file, tableText(db, spec));
+  }
   storeHashes(db, hashes);
 }
 
@@ -260,19 +237,15 @@ function writeText(db: DatabaseSync, root: string, changed: ReadonlySet<string>)
 export function transaction<T>(db: DatabaseSync, work: () => T): T {
   const root = projects.get(db);
   db.exec("BEGIN IMMEDIATE");
-  const changed = new Set<string>();
-  changedTables.set(db, changed);
   try {
     if (root !== undefined) freshen(db, root);
     const before = root === undefined ? "0" : newest(db);
     const result = work();
-    if (root !== undefined && newest(db) !== before) writeText(db, root, changed);
+    if (root !== undefined && newest(db) !== before) writeText(db, root, before);
     db.exec("COMMIT");
     return result;
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
-  } finally {
-    changedTables.delete(db);
   }
 }

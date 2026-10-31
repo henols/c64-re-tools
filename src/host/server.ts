@@ -1,7 +1,7 @@
 import { createServer, type Server, type Socket } from "node:net";
 
 import { encodeFrame, FrameTooLarge, MessageReader } from "../protocol/framing.ts";
-import { describeError, isRefusal } from "../errors.ts";
+import { describeError, describeErrorStack, isRefusal } from "../errors.ts";
 import { PACKAGE } from "../package.ts";
 import { checkHello, isOneOf, HEARTBEAT_TIMEOUT_MS, parseClientMessage, ProtocolError, type HostMessage, type ReceivedRequest, type VideoStandard, type WireError, WireFailure } from "../protocol/messages.ts";
 import { TOOL_OPERATIONS, validateToolParams, type ToolOperation, type ToolOperations } from "../protocol/tools.ts";
@@ -64,10 +64,6 @@ const DEFAULT_HANDSHAKE_TIMEOUT_MS = 10_000;
 const REFUSED_CLOSE_MS = 1_000;
 
 /** A caught value for the log, with its stack when it has one. */
-function describe(error: unknown): string {
-  return error instanceof Error ? (error.stack ?? error.message) : String(error);
-}
-
 function toWireError(error: unknown, fallback: WireError): WireError {
   return isRefusal(error) ? { code: error.code, message: error.message } : fallback;
 }
@@ -182,13 +178,13 @@ class Connection {
     } catch (error) {
       // Any failure closes only this connection; the listener and the other connections go on.
       if (error instanceof ProtocolError) this.#abort(`protocol error: ${error.message}`);
-      else this.#abort(`internal error: ${describe(error)}`);
+      else this.#abort(`internal error: ${describeErrorStack(error)}`);
     }
   }
 
   /** Closes this connection when work that runs after its message fails in an unexpected way. */
   #contain(work: Promise<void>): void {
-    work.catch((error: unknown) => this.#abort(`internal error: ${describe(error)}`));
+    work.catch((error: unknown) => this.#abort(`internal error: ${describeErrorStack(error)}`));
   }
 
   #dispatch(raw: unknown, attachments: Buffer[]): void {
@@ -294,7 +290,7 @@ class Connection {
       record({ ok: true, result });
     } catch (error) {
       if (!isRefusal(error)) {
-        this.#log(`operation ${request.op} failed: ${describe(error)}`);
+        this.#log(`operation ${request.op} failed: ${describeErrorStack(error)}`);
       }
       const wire = toWireError(error, { code: "operation-failed", message: "The operation failed inside the host runtime." });
       this.#send({ type: "reply", id: request.id, error: wire });

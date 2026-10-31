@@ -3,7 +3,7 @@
 // the bytes from coverage files, and the references in and out. Nothing here
 // reads files: knowledge.ts gives the lookups.
 
-import { COVERAGE, formatC64Address, formatC64Byte, POINTER_TABLE_TYPES, pointerEntryText, pointerTableEntries, type PointerTableType, splitEntryByte } from "#src/c64.ts";
+import { COVERAGE, formatC64Address, formatC64Byte, hexByte, POINTER_TABLE_TYPES, pointerEntryText, pointerTableEntries, type PointerTableType, splitEntryByte } from "#src/c64.ts";
 import { CODE_REGION_TYPES, INSTRUCTION_REGION_TYPES } from "#src/knowledge/schema.ts";
 import { instructionWith, MODE_LENGTH, OPCODES, type Mode } from "#src/opcodes.ts";
 
@@ -120,7 +120,7 @@ export function listing(source: ListingSource, start: number, end: number, optio
   const lines: ListingLine[] = [];
   const data = options.code !== true;
   const line = (address: number, length: number, text: string): ListingLine => {
-    const bytes = Array.from({ length }, (_, offset) => source.byteAt(address + offset)!.toString(16).padStart(2, "0")).join(" ");
+    const bytes = Array.from({ length }, (_, offset) => hexByte(source.byteAt(address + offset)!)).join(" ");
     const label = source.nameOf(address);
     const second = source.secondNames(address).filter((name) => name !== label);
     const { line: lineComments, side: own } = source.comments(address);

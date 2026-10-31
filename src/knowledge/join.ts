@@ -7,7 +7,8 @@
 // expressions and macro args too. The join writes no knowledge.
 
 import { replaceIdentifiers } from "./expression.ts";
-import { spaceOf, type BatchOperation } from "./write.ts";
+import { spaceOf } from "./schema.ts";
+import type { BatchOperation } from "./write.ts";
 
 export interface Batch {
   /** The file the batch came from, for the report. */

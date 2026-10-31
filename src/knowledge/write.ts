@@ -7,7 +7,7 @@ import { Refusal } from "../errors.ts";
 import { type AddressRange, formatC64Address, formatC64Range, instructionLength, type ReferenceKind, REFERENCE_KINDS, SPACE_PATTERN, subtract, SYMBOL_NAME } from "../c64.ts";
 import { isoCet } from "../time.ts";
 import { CONFLICT_RULES, conflicts, conflictTable, type Conflict, type ConflictRow } from "./conflicts.ts";
-import { markChanged, prepare, transaction } from "./database.ts";
+import { prepare, transaction } from "./database.ts";
 import { labelProblem, MNEMONICS } from "../opcodes.ts";
 import { checkExpression, evaluate, identifiers, OPERAND_SELECTS, operandText, replaceIdentifiers, type OperandSelect } from "./expression.ts";
 import {
@@ -52,7 +52,7 @@ import {
   type SwitchRow,
   type SymbolRow,
 } from "./read.ts";
-import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MEMORY_ROW, MODULE_FILE, DEFAULT_SPACE, GENERATED_FILES, GENERATED_FOLDERS, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, LEFTOVERS_SWITCH, START_SCREEN_MODES, START_SCREEN_SWITCH, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, POINTER_KIND, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type Origin, type RegionType, type Space, type StartScreenMode, type SwitchKind, type SymbolKind } from "./schema.ts";
+import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MEMORY_ROW, MODULE_FILE, DEFAULT_SPACE, spaceOf, GENERATED_FILES, GENERATED_FOLDERS, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, LEFTOVERS_SWITCH, START_SCREEN_MODES, START_SCREEN_SWITCH, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, POINTER_KIND, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type Origin, type RegionType, type Space, type StartScreenMode, type SwitchKind, type SymbolKind } from "./schema.ts";
 import { newRevisionId, rowId, sqlName, TABLES, tableSpec } from "./text.ts";
 
 type Raw = Record<string, unknown>;
@@ -146,6 +146,8 @@ export class Change {
   #rows = 0;
   /** The tables that this write inserted rows into. */
   readonly #inserted = new Set<string>();
+  /** The program bytes of each space: no step of a write changes the program, so a write reads them once. */
+  readonly #programs = new Map<Space, (address: number) => number | undefined>();
   readonly #db: DatabaseSync;
   readonly #context: ChangeContext;
   readonly #operation: string;
@@ -198,6 +200,25 @@ export class Change {
     if (found !== undefined) throw new Refusal("conflict", `The write would leave ${describe(found)}. Nothing was written.`);
   }
 
+  /**
+   * The bytes of the program of a space in the knowledge, by address: undefined
+   * outside it. A module and a comment are checked against them.
+   */
+  programBytes(space: Space): (address: number) => number | undefined {
+    let byteAt = this.#programs.get(space);
+    if (byteAt === undefined) {
+      const memory = new Uint8Array(0x10000);
+      const held = new Uint8Array(0x10000);
+      for (const row of prepare(this.#db, "SELECT address, bytes FROM current_memory WHERE space = ?").all(space) as Array<{ address: number; bytes: string }>) {
+        const bytes = Buffer.from(row.bytes, "hex");
+        memory.set(bytes, row.address);
+        held.fill(1, row.address, row.address + bytes.length);
+      }
+      this.#programs.set(space, (byteAt = (address) => (held[address] === 1 ? memory[address] : undefined)));
+    }
+    return byteAt;
+  }
+
   /** The id of the next row this write inserts. */
   #rowId(): string {
     return rowId(this.id(), ++this.#rows);
@@ -205,8 +226,7 @@ export class Change {
 
   /** Closes the current rows of `table` that `where` selects. */
   close(table: string, where: string, ...values: Array<number | string>): void {
-    const { changes } = prepare(this.#db, `UPDATE ${sqlName(table)} SET valid_to_revision = ? WHERE valid_to_revision IS NULL AND ${where}`).run(this.id(), ...values);
-    if (Number(changes) > 0) markChanged(this.#db, table);
+    prepare(this.#db, `UPDATE ${sqlName(table)} SET valid_to_revision = ? WHERE valid_to_revision IS NULL AND ${where}`).run(this.id(), ...values);
   }
 
   /** Inserts a row of `table` with the values of its columns, in the order of its fields. */
@@ -214,7 +234,6 @@ export class Change {
     const columns = tableSpec(table).fields.map((field) => field.column);
     prepare(this.#db, `INSERT INTO ${sqlName(table)} (id, ${columns.join(", ")}, valid_from_revision) VALUES (?, ${columns.map(() => "?").join(", ")}, ?)`).run(this.#rowId(), ...values, this.id());
     this.#inserted.add(table);
-    markChanged(this.#db, table);
   }
 
   /** Inserts a row of `table` with the values that `row` has by column name, as a query of the table gives them. */
@@ -373,30 +392,6 @@ function confirms(existing: Origin, origin: Origin): boolean {
   return existing !== origin && (!isSemantic(existing) || origin === "user");
 }
 
-/** The program bytes of each space for each write: no step of a write changes the program, so a write reads them once. */
-const programs = new WeakMap<Change, Map<Space, (address: number) => number | undefined>>();
-
-/**
- * The bytes of the program of a space in the knowledge, by address: undefined
- * outside it. A module and a comment are checked against them.
- */
-function programBytes(db: DatabaseSync, change: Change, space: Space): (address: number) => number | undefined {
-  let known = programs.get(change);
-  if (known === undefined) programs.set(change, (known = new Map()));
-  let byteAt = known.get(space);
-  if (byteAt === undefined) {
-    const memory = new Uint8Array(0x10000);
-    const held = new Uint8Array(0x10000);
-    for (const row of prepare(db, "SELECT address, bytes FROM current_memory WHERE space = ?").all(space) as Array<{ address: number; bytes: string }>) {
-      const bytes = Buffer.from(row.bytes, "hex");
-      memory.set(bytes, row.address);
-      held.fill(1, row.address, row.address + bytes.length);
-    }
-    known.set(space, (byteAt = (address) => (held[address] === 1 ? memory[address] : undefined)));
-  }
-  return byteAt;
-}
-
 /** Every request names its space; without one it is the C64. */
 type InSpace = { space?: Space };
 type SymbolRequest = InSpace & { address: number; name: string; kind?: SymbolKind };
@@ -406,8 +401,6 @@ type CommentRequest = InSpace & { address: number; placement: CommentPlacement; 
 type PlacementRequest = InSpace & { address: number; placement: CommentPlacement };
 type ReferenceRequest = InSpace & { from: number; to: number; kind: ReferenceKind };
 type AddressRequest = InSpace & { address: number };
-
-export const spaceOf = (request: InSpace): Space => request.space ?? DEFAULT_SPACE;
 
 export function checkSpace(request: InSpace): void {
   if (request.space !== undefined && !SPACE_PATTERN.test(request.space)) throw new Refusal("invalid-input", "space must be c64, drive8, or bank0 to bank255.");
@@ -547,7 +540,7 @@ function commentStep(db: DatabaseSync, change: Change, request: CommentRequest, 
   const existing = commentsAt(db, request.address, space).find((comment) => comment.placement === request.placement);
   if (existing?.text === text && !confirms(existing.origin, origin)) return { current: existing };
   // A comment belongs to an instruction: the listing and the source show it at the start of the instruction only.
-  checkInstructionStart(db, space, programBytes(db, change, space), request.address, "comment");
+  checkInstructionStart(db, space, change.programBytes(space), request.address, "comment");
   if (existing !== undefined) change.close("comments", "space = ? AND address = ? AND placement = ?", space, request.address, request.placement);
   change.insertComment({ space, address: request.address, placement: request.placement, text, origin });
   const current = commentsAt(db, request.address, space).find((comment) => comment.placement === request.placement)!;
@@ -756,7 +749,7 @@ function moduleStep(db: DatabaseSync, change: Change, request: ModuleRequest, { 
   const title = request.title === undefined ? existing?.title : request.title.trim();
   if (existing !== undefined && existing.file === request.file && existing.title === title && !confirms(existing.origin, origin)) return { current: existing };
   // A file of the source starts at an instruction: a start inside one splits it into bytes.
-  checkInstructionStart(db, space, programBytes(db, change, space), request.start, "module");
+  checkInstructionStart(db, space, change.programBytes(space), request.start, "module");
   const owner = moduleWithFile(db, request.file, space);
   if (owner !== undefined && owner.start !== request.start) {
     throw new Refusal("conflict", `The file ${request.file} already belongs to the module at ${formatC64Address(owner.start)}. Give this module another file, or remove that module first.`);
@@ -1151,7 +1144,7 @@ function checkStartScreen(request: StartScreenRequest): void {
 /** The bytes of a start screen of a stage, and its call, must be in the program of that space. */
 function checkStage(db: DatabaseSync, change: Change, request: StartScreenRequest): void {
   if (request.stage === undefined) return;
-  const byteAt = programBytes(db, change, request.stage);
+  const byteAt = change.programBytes(request.stage);
   if (byteAt(request.screen) === undefined && db.prepare("SELECT 1 FROM current_memory WHERE space = ? LIMIT 1").get(request.stage) === undefined) {
     throw new Refusal("not-found", `The knowledge has no program in ${request.stage}. Capture the stage while it shows the start screen, and put the capture into the project knowledge with image --space ${request.stage}. Then record the start screen again.`);
   }

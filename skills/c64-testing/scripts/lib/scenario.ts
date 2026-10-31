@@ -4,7 +4,7 @@
 // explicit, and the result is PASS, FAIL or INCONCLUSIVE.
 
 import { isRefusal, Refusal } from "#src/errors.ts";
-import { c64AddressOf, formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
+import { c64AddressOf, formatC64Address, formatSprite, formatVicii, hexByte, parseC64Address } from "#src/c64.ts";
 import { isInteger, isObject, MAX_BASELINES, MAX_MASK_RECTANGLES, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
 import { LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
 import { ACTION_STEP_KINDS, aStep, checkActionStep, checkLocation, refuseOldStep, renamedField, runActionStep, type ActionStep, type ActionStepKind, type Location } from "#src/host-client/steps.ts";
@@ -508,10 +508,9 @@ type MemoryItem = Observation["memory"][number];
 
 /** The bytes of a memory item whose bits of the mask differ by more than its tolerance, without the excluded bytes. */
 function differingBytes(item: MemoryItem, other: MemoryItem): DifferingByte[] {
-  const hex = (byte: number) => byte.toString(16).padStart(2, "0");
   const skipped = new Set(item.excluded.map((excluded) => excluded.offset));
   const bits = (offset: number) => (item.mask === undefined ? 0xff : item.mask.length === 1 ? item.mask[0]! : item.mask[offset]!);
-  return item.bytes.flatMap((byte, offset) => (!skipped.has(offset) && Math.abs((byte & bits(offset)) - (other.bytes[offset]! & bits(offset))) > item.tolerance ? [{ address: formatC64Address(item.address + offset), reference: hex(byte), rebuild: hex(other.bytes[offset]!) }] : []));
+  return item.bytes.flatMap((byte, offset) => (!skipped.has(offset) && Math.abs((byte & bits(offset)) - (other.bytes[offset]! & bits(offset))) > item.tolerance ? [{ address: formatC64Address(item.address + offset), reference: hexByte(byte), rebuild: hexByte(other.bytes[offset]!) }] : []));
 }
 
 /** The most differing bytes of one memory item that a result lists when no --max-listed is given. */

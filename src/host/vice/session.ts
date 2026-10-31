@@ -367,6 +367,7 @@ export class ViceSession implements ViceSessionHandle {
     attachments: Buffer[] = [],
     reply: Buffer[] = [],
   ): Promise<ViceOperations[O]["result"]> {
+    if (!Object.hasOwn(this.#operations, op)) return Promise.reject(new WireFailure("invalid-input", `unknown operation: ${String(op)}`));
     // A window request for the mode the session is in sends nothing to VICE, so a held VICE does not stop it.
     return this.#enqueue(() => this.#operations[op](params, attachments, reply), { whileHeld: op === "window" });
   }
@@ -589,7 +590,7 @@ export class ViceSession implements ViceSessionHandle {
       const outcome = await this.#runFrames(params.count, undefined, params.anchor);
       return {
         state: "stopped",
-        pc: await this.#stopPc(outcome),
+        pc: await this.#recordStop(outcome),
         space: outcome.space,
         advancedFrames: outcome.frames,
         stopReason: outcome.end === "target" ? "frames" : outcome.end,
@@ -631,8 +632,8 @@ export class ViceSession implements ViceSessionHandle {
     return { state: "stopped", pc: await this.#pc(), ...(point.pointId === undefined ? { executed: count } : point) };
   }
 
-  /** The pc of the CPU that a frame-clocked run stopped in, which status gives from then on: a stop event carries the computer's pc, a stop in the drive reports the drive's. */
-  async #stopPc(outcome: { pc: number; space: "c64" | "drive8" }): Promise<number> {
+  /** Records the CPU that a frame-clocked run stopped in, which status gives from then on, and returns its pc: a stop event carries the computer's pc, a stop in the drive reports the drive's. */
+  async #recordStop(outcome: { pc: number; space: "c64" | "drive8" }): Promise<number> {
     this.#stopSpace = outcome.space;
     return outcome.space === "drive8" ? (await this.#machine.readRegisters("drive8")).pc : outcome.pc;
   }
@@ -1025,7 +1026,7 @@ export class ViceSession implements ViceSessionHandle {
       if (expression !== undefined) await this.#machine.setCondition(checkpoint, expression);
       const outcome = await this.#runFrames(params.timeoutFrames, { checkpoint, deferred });
       const stopReason = outcome.end === "frames" ? "timeout" : outcome.end;
-      const pc = await this.#stopPc(outcome);
+      const pc = await this.#recordStop(outcome);
       return { reached: stopReason === "target", stopReason, state: "stopped", pc, space: outcome.space, ...(outcome.pointId === undefined ? {} : { pointId: outcome.pointId }) };
     } finally {
       await this.#machine.deleteCheckpoint(checkpoint);
@@ -1189,7 +1190,7 @@ export class ViceSession implements ViceSessionHandle {
           taps,
           state: "stopped",
           stopReason: end.end as PointStopReason,
-          pc: await this.#stopPc(end),
+          pc: await this.#recordStop(end),
           space: end.space,
           ...(end.pointId === undefined ? {} : { pointId: end.pointId }),
         };

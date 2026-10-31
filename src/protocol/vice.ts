@@ -1301,6 +1301,7 @@ const RESULTS: Record<ViceOperation, (value: Fields) => boolean> = {
 
 /** Validates a reply result on the client. Throws ProtocolError on a malformed result. */
 export function validateViceResult<O extends ViceOperation>(op: O, value: unknown): ViceOperations[O]["result"] {
+  if (!Object.hasOwn(RESULTS, op)) throw new ProtocolError(`unknown operation: ${String(op)}`);
   if (!isObject(value)) throw new ProtocolError(`${op} result is not an object`);
   if (!RESULTS[op](value)) throw new ProtocolError(`${op} result is malformed`);
   return value as unknown as ViceOperations[O]["result"];

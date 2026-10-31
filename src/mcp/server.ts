@@ -9,7 +9,7 @@ import { formatC64Address } from "../c64.ts";
 import { Byte, TOOL_INPUTS } from "./inputs.ts";
 import { LostBeforeAnswer, type ViceSessionClient } from "../host-client/vice-session.ts";
 import { checkOut } from "../host-client/transfer.ts";
-import { isRefusal } from "../errors.ts";
+import { describeErrorStack, isRefusal } from "../errors.ts";
 import { PACKAGE } from "../package.ts";
 import { shownMessage, WireFailure, type WireError } from "../protocol/messages.ts";
 import { COMPARISONS, CONDITION_REGISTERS, MEMORY_VIEWS, SPACES, type Condition } from "../protocol/vice.ts";
@@ -246,7 +246,7 @@ async function runCall(
     return { result: { content: [{ type: "text", text: JSON.stringify(result) }, ...extra], structuredContent: result } };
   } catch (error) {
     if (isRefusal(error)) return { failed: { code: error.code, message: error.message } };
-    log(`${name} failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+    log(`${name} failed: ${describeErrorStack(error)}`);
     return { failed: INTERNAL_FAILURE };
   }
 }

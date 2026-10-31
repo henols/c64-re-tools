@@ -76,7 +76,7 @@ function vicScreen(state: Record<string, unknown> | undefined, named: Named): Om
   const bitmap = (d011 & 0x20) !== 0;
   const multicolour = (d016 & 0x10) !== 0;
   if (!bitmap && multicolour) throw new Refusal("invalid-input", `${named.capture} shows a multicolour text screen, which a start screen does not have.`);
-  const bank = vicBankBase(cia2[0]!);
+  const bank = vicBankBase(cia2[0]!, cia2[2]);
   const offsets = d018Offsets(d018);
   return {
     mode: bitmap ? (multicolour ? "multicolour" : "hires") : "text",
