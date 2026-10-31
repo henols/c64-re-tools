@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
-import { hostServer, liveFlaws, liveSkip } from "./live.ts";
+import { hostServer, viceFlawsOfLive, liveSkip } from "./live.ts";
 
 const host = hostServer();
 
@@ -18,7 +18,7 @@ const program = [0x78, 0xa9, 0x00, 0x8d, 0x00, 0xdc, 0xad, 0x01, 0xdc, 0xc9, 0xf
 
 test("a wait for any key that reads all keyboard columns ends without input only on a VICE with the known flaw", { skip: liveSkip, timeout: 120_000 }, async () => {
   // The version as the host reads it, from the running emulator: the Homebrew x64sc on macOS stops on -version.
-  const flawed = (await liveFlaws()).length > 0;
+  const flawed = (await viceFlawsOfLive()).length > 0;
   const client = await ViceSessionClient.open({ videoStandard: "pal", env: { ...process.env, C64RT_HOST: await host() } });
   try {
     await client.reset({ mode: "hard", run: true });

@@ -153,7 +153,7 @@ export function liveLog(line: string): void {
 export interface LiveSessionOptions {
   /** PAL when not given. */
   videoStandard?: VideoStandard;
-  /** The known flaws of the VICE version (liveFlaws). */
+  /** The known flaws of the VICE version (viceFlawsOfLive). */
   flaws?: readonly ViceFlaw[];
   /** The supervisor that starts the VICE processes; a new one when not given. */
   supervisor?: ProcessSupervisor;
@@ -209,7 +209,7 @@ export function hostServer(): () => Promise<string> {
 }
 
 /** The known flaws of the live VICE, from its version as the Host Runtime reads it from the running emulator. */
-export async function liveFlaws(): Promise<ViceFlaw[]> {
+export async function viceFlawsOfLive(): Promise<ViceFlaw[]> {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
   return viceFlaws(await checkViceStarts({ supervisor, env: liveEnv() }));

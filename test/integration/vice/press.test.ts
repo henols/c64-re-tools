@@ -9,13 +9,13 @@ import { textToPetscii } from "../../../src/c64.ts";
 import type { ViceSessionHandle } from "../../../src/host/server.ts";
 import type { ViceFlaw } from "../../../src/native/discover.ts";
 import { buildD64 } from "../../fixtures/d64.ts";
-import { liveFlaws, liveSkip, openLiveSession, screenOf } from "./live.ts";
+import { viceFlawsOfLive, liveSkip, openLiveSession, screenOf } from "./live.ts";
 
 let session: ViceSessionHandle;
 let flaws: ViceFlaw[] = [];
 before(async () => {
   if (liveSkip !== false) return;
-  flaws = await liveFlaws();
+  flaws = await viceFlawsOfLive();
   session = await openLiveSession({ flaws });
 });
 after(async () => {

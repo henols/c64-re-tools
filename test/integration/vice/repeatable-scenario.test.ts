@@ -15,7 +15,7 @@ import { formatC64Address } from "../../../src/c64.ts";
 import { readPng } from "../../../src/graphics.testkit.ts";
 import { FRAMES_SEEN, joystickCounterPrg, LEFT_SEEN } from "../../fixtures/prg/joystick-counter.ts";
 import { scratchDir, startMcp } from "../../kit.ts";
-import { callTool, liveFlaws, liveSkip, startHost, stopHosts, toolResult } from "./live.ts";
+import { callTool, viceFlawsOfLive, liveSkip, startHost, stopHosts, toolResult } from "./live.ts";
 
 after(stopHosts);
 const project = scratchDir("scenario");
@@ -57,7 +57,7 @@ test("a scenario of load, input, run-until, frame advance, reads and a capture g
   mkdirSync(join(project, "build"));
   writeFileSync(join(project, "build", "counter.prg"), joystickCounterPrg);
   // The version as the host reads it: a VICE whose known flaw breaks the joystick refuses it.
-  const joystickBroken = (await liveFlaws()).some((flaw) => flaw.breaks.includes("joystick"));
+  const joystickBroken = (await viceFlawsOfLive()).some((flaw) => flaw.breaks.includes("joystick"));
 
   const host = await startHost();
   const { client } = await startMcp(host.address, { cwd: project });
