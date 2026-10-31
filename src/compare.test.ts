@@ -4,9 +4,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { prg } from "./c64.testkit.ts";
 import { compareBuild, type Reference } from "./compare.ts";
-
-const prg = (start: number, bytes: number[]) => Uint8Array.from([start & 0xff, start >> 8, ...bytes]);
 
 /** A program with these bytes at their addresses. */
 function program(...parts: Array<[number, number[]]>): Reference {

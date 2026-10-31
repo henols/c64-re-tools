@@ -31,44 +31,38 @@ test("--target splits into harnesses; no value means all", () => {
   assert.deepEqual(parseTargets("claude, gemini,,"), ["claude", "gemini"]);
 });
 
-test("empty directories go up to the stop directory; a directory with a file stays", () => {
+test("empty directories go up to the stop directory; a directory with a file stays", (t) => {
   const root = mkdtempSync(join(tmpdir(), "c64-re-tools-tidy-"));
-  try {
-    mkdirSync(join(root, ".claude", "skills", "c64-disk", "src", "host-client"), { recursive: true });
-    mkdirSync(join(root, ".claude", "agents"), { recursive: true });
-    writeFileSync(join(root, ".claude", "agents", "mine.md"), "kept");
-    mkdirSync(join(root, ".ap-sdk"));
-    writeFileSync(join(root, ".mcp.json"), JSON.stringify({ mcpServers: {} }));
-    writeFileSync(join(root, "opencode.json"), JSON.stringify({ $schema: "https://opencode.ai/config.json", mcp: {}, theme: "dark" }));
-    tidyAfterUninstall(
-      [
-        { harness: "claude", kind: "skill", name: "c64-disk", files: [".claude/skills/c64-disk/src/host-client/tools.ts"] },
-        { harness: "claude", kind: "mcp", name: "c64-re-tools", files: [".mcp.json"], detail: { mergeKey: "mcpServers", names: ["c64-re-tools"] } },
-        { harness: "opencode", kind: "mcp", name: "c64-re-tools", files: ["opencode.json"], detail: { mergeKey: "mcp", names: ["c64-re-tools"] } },
-      ],
-      "project",
-      root,
-    );
-    assert.deepEqual(readdirSync(root).sort(), [".claude", "opencode.json"], "the configuration with other settings stays");
-    assert.deepEqual(readdirSync(join(root, ".claude")), ["agents"]);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, ".claude", "skills", "c64-disk", "src", "host-client"), { recursive: true });
+  mkdirSync(join(root, ".claude", "agents"), { recursive: true });
+  writeFileSync(join(root, ".claude", "agents", "mine.md"), "kept");
+  mkdirSync(join(root, ".ap-sdk"));
+  writeFileSync(join(root, ".mcp.json"), JSON.stringify({ mcpServers: {} }));
+  writeFileSync(join(root, "opencode.json"), JSON.stringify({ $schema: "https://opencode.ai/config.json", mcp: {}, theme: "dark" }));
+  tidyAfterUninstall(
+    [
+      { harness: "claude", kind: "skill", name: "c64-disk", files: [".claude/skills/c64-disk/src/host-client/tools.ts"] },
+      { harness: "claude", kind: "mcp", name: "c64-re-tools", files: [".mcp.json"], detail: { mergeKey: "mcpServers", names: ["c64-re-tools"] } },
+      { harness: "opencode", kind: "mcp", name: "c64-re-tools", files: ["opencode.json"], detail: { mergeKey: "mcp", names: ["c64-re-tools"] } },
+    ],
+    "project",
+    root,
+  );
+  assert.deepEqual(readdirSync(root).sort(), [".claude", "opencode.json"], "the configuration with other settings stays");
+  assert.deepEqual(readdirSync(join(root, ".claude")), ["agents"]);
 });
 
-test("an empty directory outside the stop directory stays", () => {
+test("an empty directory outside the stop directory stays", (t) => {
   const base = mkdtempSync(join(tmpdir(), "c64-re-tools-tidy-"));
-  try {
-    const root = join(base, "root");
-    const sibling = join(base, "elsewhere", "empty");
-    mkdirSync(root);
-    mkdirSync(sibling, { recursive: true });
-    removeEmptyDirectories(sibling, root);
-    assert.deepEqual(readdirSync(base).sort(), ["elsewhere", "root"]);
-    assert.deepEqual(readdirSync(join(base, "elsewhere")), ["empty"]);
-  } finally {
-    rmSync(base, { recursive: true, force: true });
-  }
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const root = join(base, "root");
+  const sibling = join(base, "elsewhere", "empty");
+  mkdirSync(root);
+  mkdirSync(sibling, { recursive: true });
+  removeEmptyDirectories(sibling, root);
+  assert.deepEqual(readdirSync(base).sort(), ["elsewhere", "root"]);
+  assert.deepEqual(readdirSync(join(base, "elsewhere")), ["empty"]);
 });
 
 /** Runs `body` with a temporary home directory and project; both go afterwards. */
@@ -133,75 +127,66 @@ test("a project install removes the Windsurf home file and directories that it m
   });
 });
 
-test("a directory in the root whose name starts with two dots is inside the root", () => {
+test("a directory in the root whose name starts with two dots is inside the root", (t) => {
   const root = mkdtempSync(join(tmpdir(), "c64-re-tools-tidy-"));
-  try {
-    mkdirSync(join(root, "..skills", "c64-disk"), { recursive: true });
-    tidyAfterUninstall([{ harness: "claude", kind: "skill", name: "c64-disk", files: ["..skills/c64-disk/SKILL.md"] }], "project", root);
-    assert.deepEqual(readdirSync(root), [], "the empty directories go");
-    mkdirSync(join(root, "..x", "deep"), { recursive: true });
-    removeEmptyDirectories(join(root, "..x", "deep"), root);
-    assert.deepEqual(readdirSync(root), []);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "..skills", "c64-disk"), { recursive: true });
+  tidyAfterUninstall([{ harness: "claude", kind: "skill", name: "c64-disk", files: ["..skills/c64-disk/SKILL.md"] }], "project", root);
+  assert.deepEqual(readdirSync(root), [], "the empty directories go");
+  mkdirSync(join(root, "..x", "deep"), { recursive: true });
+  removeEmptyDirectories(join(root, "..x", "deep"), root);
+  assert.deepEqual(readdirSync(root), []);
 });
 
-test("an install removes the skill files of the earlier version that it no longer has, and keeps the rest", () => {
+test("an install removes the skill files of the earlier version that it no longer has, and keeps the rest", (t) => {
   const root = mkdtempSync(join(tmpdir(), "c64-re-tools-dropped-"));
-  try {
-    const write = (path: string) => {
-      mkdirSync(dirname(join(root, path)), { recursive: true });
-      writeFileSync(join(root, path), "x");
-    };
-    const skill = (harness: string, name: string, files: string[]) => ({ harness, kind: "skill", name, files });
-    const before = [
-      skill("claude", "c64-emulator", [".claude/skills/c64-emulator/SKILL.md", ".claude/skills/shared.md"]),
-      skill("claude", "c64-disk", [".claude/skills/c64-disk/SKILL.md"]),
-      skill("codex", "c64-emulator", [".agents/skills/c64-emulator/SKILL.md"]),
-      { harness: "claude", kind: "mcp", name: "c64-re-tools", files: [".mcp.json"] },
-    ];
-    for (const item of before) for (const file of item.files) write(file);
-    write(".claude/skills/c64-emulator/notes.md");
-    // The new install: claude only, c64-emulator renamed to emulator, and no MCP item recorded.
-    const after = [skill("claude", "emulator", [".claude/skills/emulator/SKILL.md", ".claude/skills/shared.md"]), skill("claude", "c64-disk", [".claude/skills/c64-disk/SKILL.md"])];
-    for (const item of after) for (const file of item.files) write(file);
-    write(".ap-sdk/install-manifest.json");
-    writeFileSync(join(root, ".ap-sdk", "install-manifest.json"), JSON.stringify({ version: 1, plugins: { "c64-re-tools": { items: after } } }));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const write = (path: string) => {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), "x");
+  };
+  const skill = (harness: string, name: string, files: string[]) => ({ harness, kind: "skill", name, files });
+  const before = [
+    skill("claude", "c64-emulator", [".claude/skills/c64-emulator/SKILL.md", ".claude/skills/shared.md"]),
+    skill("claude", "c64-disk", [".claude/skills/c64-disk/SKILL.md"]),
+    skill("codex", "c64-emulator", [".agents/skills/c64-emulator/SKILL.md"]),
+    { harness: "claude", kind: "mcp", name: "c64-re-tools", files: [".mcp.json"] },
+  ];
+  for (const item of before) for (const file of item.files) write(file);
+  write(".claude/skills/c64-emulator/notes.md");
+  // The new install: claude only, c64-emulator renamed to emulator, and no MCP item recorded.
+  const after = [skill("claude", "emulator", [".claude/skills/emulator/SKILL.md", ".claude/skills/shared.md"]), skill("claude", "c64-disk", [".claude/skills/c64-disk/SKILL.md"])];
+  for (const item of after) for (const file of item.files) write(file);
+  write(".ap-sdk/install-manifest.json");
+  writeFileSync(join(root, ".ap-sdk", "install-manifest.json"), JSON.stringify({ version: 1, plugins: { "c64-re-tools": { items: after } } }));
 
-    // An install that failed before it wrote its manifest: the manifest still has every earlier item.
-    const manifest = readFileSync(join(root, ".ap-sdk", "install-manifest.json"), "utf8");
-    writeFileSync(join(root, ".ap-sdk", "install-manifest.json"), JSON.stringify({ version: 1, plugins: { "c64-re-tools": { items: before } } }));
-    assert.deepEqual(removeDroppedItems(before, "project", root), [], "an unchanged manifest drops nothing");
-    assert.equal(readdirSync(join(root, ".claude", "skills", "c64-emulator")).includes("SKILL.md"), true);
-    writeFileSync(join(root, ".ap-sdk", "install-manifest.json"), manifest);
+  // An install that failed before it wrote its manifest: the manifest still has every earlier item.
+  const manifest = readFileSync(join(root, ".ap-sdk", "install-manifest.json"), "utf8");
+  writeFileSync(join(root, ".ap-sdk", "install-manifest.json"), JSON.stringify({ version: 1, plugins: { "c64-re-tools": { items: before } } }));
+  assert.deepEqual(removeDroppedItems(before, "project", root), [], "an unchanged manifest drops nothing");
+  assert.equal(readdirSync(join(root, ".claude", "skills", "c64-emulator")).includes("SKILL.md"), true);
+  writeFileSync(join(root, ".ap-sdk", "install-manifest.json"), manifest);
 
-    assert.deepEqual(removeDroppedItems(before, "project", root), ["c64-emulator"]);
-    const exists = (path: string) => readdirSync(dirname(join(root, path))).includes(path.split("/").at(-1)!);
-    assert.equal(exists(".claude/skills/c64-emulator/SKILL.md"), false);
-    assert.equal(exists(".claude/skills/c64-emulator/notes.md"), true, "a file that no install wrote stays");
-    assert.equal(exists(".claude/skills/shared.md"), true, "a file that the new install also wrote stays");
-    assert.equal(exists(".agents/skills/c64-emulator/SKILL.md"), true, "a harness that this install did not write stays");
-    assert.equal(exists(".mcp.json"), true, "an MCP file stays");
-    assert.equal(exists(".claude/skills/c64-disk/SKILL.md"), true);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  assert.deepEqual(removeDroppedItems(before, "project", root), ["c64-emulator"]);
+  const exists = (path: string) => readdirSync(dirname(join(root, path))).includes(path.split("/").at(-1)!);
+  assert.equal(exists(".claude/skills/c64-emulator/SKILL.md"), false);
+  assert.equal(exists(".claude/skills/c64-emulator/notes.md"), true, "a file that no install wrote stays");
+  assert.equal(exists(".claude/skills/shared.md"), true, "a file that the new install also wrote stays");
+  assert.equal(exists(".agents/skills/c64-emulator/SKILL.md"), true, "a harness that this install did not write stays");
+  assert.equal(exists(".mcp.json"), true, "an MCP file stays");
+  assert.equal(exists(".claude/skills/c64-disk/SKILL.md"), true);
 });
 
-test("the directories of a removed skill go when nothing else is in them", () => {
+test("the directories of a removed skill go when nothing else is in them", (t) => {
   const root = mkdtempSync(join(tmpdir(), "c64-re-tools-dropped-"));
-  try {
-    mkdirSync(join(root, ".claude", "skills", "old", "scripts"), { recursive: true });
-    writeFileSync(join(root, ".claude", "skills", "old", "SKILL.md"), "x");
-    writeFileSync(join(root, ".claude", "skills", "old", "scripts", "old.ts"), "x");
-    mkdirSync(join(root, ".claude", "skills", "new"), { recursive: true });
-    mkdirSync(join(root, ".ap-sdk"));
-    const after = [{ harness: "claude", kind: "skill", name: "new", files: [".claude/skills/new/SKILL.md"] }];
-    writeFileSync(join(root, ".ap-sdk", "install-manifest.json"), JSON.stringify({ version: 1, plugins: { "c64-re-tools": { items: after } } }));
-    removeDroppedItems([{ harness: "claude", kind: "skill", name: "old", files: [".claude/skills/old/SKILL.md", ".claude/skills/old/scripts/old.ts"] }], "project", root);
-    assert.deepEqual(readdirSync(join(root, ".claude", "skills")), ["new"]);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, ".claude", "skills", "old", "scripts"), { recursive: true });
+  writeFileSync(join(root, ".claude", "skills", "old", "SKILL.md"), "x");
+  writeFileSync(join(root, ".claude", "skills", "old", "scripts", "old.ts"), "x");
+  mkdirSync(join(root, ".claude", "skills", "new"), { recursive: true });
+  mkdirSync(join(root, ".ap-sdk"));
+  const after = [{ harness: "claude", kind: "skill", name: "new", files: [".claude/skills/new/SKILL.md"] }];
+  writeFileSync(join(root, ".ap-sdk", "install-manifest.json"), JSON.stringify({ version: 1, plugins: { "c64-re-tools": { items: after } } }));
+  removeDroppedItems([{ harness: "claude", kind: "skill", name: "old", files: [".claude/skills/old/SKILL.md", ".claude/skills/old/scripts/old.ts"] }], "project", root);
+  assert.deepEqual(readdirSync(join(root, ".claude", "skills")), ["new"]);
 });

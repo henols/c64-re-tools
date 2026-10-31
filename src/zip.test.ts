@@ -33,14 +33,11 @@ test("a duplicate path and an unsafe path are refused", () => {
   for (const path of ["/abs", "a/../b", "a\\b", "a//b", ""]) assert.throws(() => zipFiles([{ path, bytes: Buffer.alloc(1) }]), /not a relative path/);
 });
 
-test("unzip reads the archive", { skip: spawnSync("unzip", ["-v"]).status !== 0 ? "no unzip on this machine" : false }, () => {
+test("unzip reads the archive", { skip: spawnSync("unzip", ["-v"]).status !== 0 ? "no unzip on this machine" : false }, (t) => {
   const folder = mkdtempSync(join(tmpdir(), "zip-test-"));
-  try {
-    const path = join(folder, "game.zip");
-    writeFileSync(path, zipFiles(files));
-    const checked = spawnSync("unzip", ["-t", path], { encoding: "utf8" });
-    assert.equal(checked.status, 0, checked.stdout + checked.stderr);
-  } finally {
-    rmSync(folder, { recursive: true, force: true });
-  }
+  t.after(() => rmSync(folder, { recursive: true, force: true }));
+  const path = join(folder, "game.zip");
+  writeFileSync(path, zipFiles(files));
+  const checked = spawnSync("unzip", ["-t", path], { encoding: "utf8" });
+  assert.equal(checked.status, 0, checked.stdout + checked.stderr);
 });

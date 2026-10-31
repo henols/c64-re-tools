@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { WireFailure } from "../protocol/messages.ts";
+import { failsWith } from "../errors.testkit.ts";
 import { C64RUN_PROTOCOL, C64RunSession, commandLimitMs, parseStatus } from "./c64run.ts";
-import { ProcessSupervisor } from "./processes.ts";
+import { toolContext } from "./context.testkit.ts";
+import { shellStandIn } from "./standin.testkit.ts";
 
 const skip = process.platform === "win32" ? "the stand-in c64run is a shell script" : false;
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-c64run-"));
@@ -16,32 +17,22 @@ const STATE = "tick=0 sync=1 pc=fce2 a=00 x=00 y=00 s=fd p=16 line=0 cycle=7 has
 
 /** A stand-in c64run: answers version, init, peek and quit; protocol and ROMs as given. */
 function standInCore(name: string, options: { protocol?: number; roms?: boolean } = {}): string {
-  const path = join(scratch, name);
   const init = options.roms === false ? 'echo "err init: no ROM /none/kernal-901227-03.bin (8192 bytes)"' : `echo "ok ${STATE}"`;
-  writeFileSync(
-    path,
-    [
-      "#!/bin/sh",
-      "while read cmd rest; do",
-      '  case "$cmd" in',
-      `    version) echo "ok c64run protocol=${options.protocol ?? C64RUN_PROTOCOL} chips=test" ;;`,
-      `    init) ${init} ;;`,
-      '    peek) echo "ok 0102" ;;',
-      "    hang) sleep 600 ;;",
-      "    quit) exit 0 ;;",
-      '    *) echo "err unknown $cmd" ;;',
-      "  esac",
-      "done",
-      "",
-    ].join("\n"),
-  );
-  chmodSync(path, 0o755);
-  return path;
+  return shellStandIn(scratch, name, [
+    "while read cmd rest; do",
+    '  case "$cmd" in',
+    `    version) echo "ok c64run protocol=${options.protocol ?? C64RUN_PROTOCOL} chips=test" ;;`,
+    `    init) ${init} ;;`,
+    '    peek) echo "ok 0102" ;;',
+    "    hang) sleep 600 ;;",
+    "    quit) exit 0 ;;",
+    '    *) echo "err unknown $cmd" ;;',
+    "  esac",
+    "done",
+  ]);
 }
 
-function context(env: NodeJS.ProcessEnv) {
-  return { supervisor: new ProcessSupervisor(), signal: new AbortController().signal, env: { PATH: "/usr/bin:/bin", ...env } };
-}
+const context = (env: NodeJS.ProcessEnv) => toolContext({ PATH: "/usr/bin:/bin", ...env });
 
 test("a status answer gives the machine state and the word after ok", () => {
   const state = parseStatus(`ok reached ${STATE}`);
@@ -55,7 +46,7 @@ test("a session sends commands in order and turns an err answer into operation-f
   try {
     assert.equal((await session.init()).pc, 0xfce2);
     assert.deepEqual([...(await session.peek(0x0400, 2))], [1, 2]);
-    await assert.rejects(session.command("fly"), (error: unknown) => error instanceof WireFailure && error.code === "operation-failed" && /c64run fly: unknown fly/.test(error.message));
+    await assert.rejects(session.command("fly"), failsWith("operation-failed", /c64run fly: unknown fly/));
   } finally {
     await session.close();
   }
@@ -75,7 +66,7 @@ test("a run to a far tick gets the time of its cycles at 1 million per second; o
 test("a command that c64run does not answer in time fails, stops the core and fails every later command", { skip, timeout: 20_000 }, async () => {
   const run = context({ C64RT_C64RUN: standInCore("c64run-hang") });
   const session = await C64RunSession.open(run);
-  const stopped = (error: unknown) => error instanceof WireFailure && error.code === "operation-failed" && /c64run hang did not answer in 1 s; the core is stopped/.test(error.message);
+  const stopped = failsWith("operation-failed", /c64run hang did not answer in 1 s; the core is stopped/);
   try {
     await assert.rejects(session.command("hang", 300), stopped);
     await assert.rejects(session.command("peek 0400 2"), stopped);
@@ -87,13 +78,12 @@ test("a command that c64run does not answer in time fails, stops the core and fa
 });
 
 test("a missing c64run, another protocol or missing ROMs refuse with installation-incomplete", { skip, timeout: 20_000 }, async () => {
-  const refused = (pattern: RegExp) => (error: unknown) => error instanceof WireFailure && error.code === "installation-incomplete" && pattern.test(error.message);
-  await assert.rejects(C64RunSession.open(context({ C64RT_C64RUN: join(scratch, "no-c64run") })), refused(/C64RT_C64RUN/));
-  await assert.rejects(C64RunSession.open(context({})), refused(/c64run is not installed on this machine/));
-  await assert.rejects(C64RunSession.open(context({ C64RT_C64RUN: standInCore("c64run-1", { protocol: 1 }) })), refused(new RegExp("protocol 1; c64-re-tools needs protocol " + C64RUN_PROTOCOL)));
+  await assert.rejects(C64RunSession.open(context({ C64RT_C64RUN: join(scratch, "no-c64run") })), failsWith("installation-incomplete", /C64RT_C64RUN/));
+  await assert.rejects(C64RunSession.open(context({})), failsWith("installation-incomplete", /c64run is not installed on this machine/));
+  await assert.rejects(C64RunSession.open(context({ C64RT_C64RUN: standInCore("c64run-1", { protocol: 1 }) })), failsWith("installation-incomplete", new RegExp("protocol 1; c64-re-tools needs protocol " + C64RUN_PROTOCOL)));
   const session = await C64RunSession.open(context({ C64RT_C64RUN: standInCore("c64run-no-roms", { roms: false }) }));
   try {
-    await assert.rejects(session.init(), refused(/no ROM .*dev container of c64-re-tools/));
+    await assert.rejects(session.init(), failsWith("installation-incomplete", /no ROM .*dev container of c64-re-tools/));
   } finally {
     await session.close();
   }

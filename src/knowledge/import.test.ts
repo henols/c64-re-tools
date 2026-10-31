@@ -1,50 +1,16 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
-import { Refusal } from "../errors.ts";
-import { openForWrite } from "./database.ts";
+import { failsWith } from "../errors.testkit.ts";
 import { revision as revisionChanges, revisions } from "./history.ts";
 import { importFindings, lastToolVersion, runProvenance, type NormalizedFindings } from "./import.ts";
-import type { Analyzer } from "./schema.ts";
 import { analyzerNamesAt, currentRevision, listAnalyzerNames, listReferences, listSuppressions, listSymbols, regionsOverlapping, symbolAt } from "./read.ts";
 import { addReference, classifyRegion, removeReference, removeSymbol, renameSymbol, revert, unclassifyRegion } from "./write.ts";
+import { count, findings, fresh } from "./project.testkit.ts";
 import { nth } from "./revisions.testkit.ts";
 
-const roots: string[] = [];
-const databases: DatabaseSync[] = [];
-after(() => {
-  for (const db of databases) db.close();
-  for (const root of roots) rmSync(root, { recursive: true, force: true });
-});
-
-function fresh(): DatabaseSync {
-  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-import-"));
-  roots.push(root);
-  const db = openForWrite(root);
-  databases.push(db);
-  return db;
-}
-
-const failsWith = (code: string) => (error: unknown) => error instanceof Refusal && error.code === code;
-
-function findings(analyzer: Analyzer, start: number, end: number, parts: Partial<NormalizedFindings> = {}): NormalizedFindings {
-  return {
-    analyzer,
-    coverage: [{ start, end }],
-    authoritative: { symbols: true, regions: true, references: true },
-    symbols: [],
-    regions: [],
-    references: [],
-    ...parts,
-  };
-}
-
 const regionList = (db: DatabaseSync) => regionsOverlapping(db, 0, 0xffff).map((region) => [region.start, region.end, region.type, region.origin]);
-const count = (db: DatabaseSync, sql: string) => (db.prepare(sql).get() as { n: number }).n;
 
 test("a re-analysis closes the analyzer's own name that it no longer finds; analyzer names are second names, not symbols", () => {
   const db = fresh();
@@ -229,9 +195,7 @@ test("an analyzer does not replace another analyzer; a contradiction is a confli
 test("a non-authoritative category adds facts but retires none", () => {
   const db = fresh();
   importFindings(db, findings("decompiler", 0x2000, 0x20ff, { references: [{ from: 0x2010, to: 0x3000, kind: "read" }] }));
-  const partial = findings("decompiler", 0x2000, 0x20ff, { references: [{ from: 0x2020, to: 0x3001, kind: "write" }] });
-  partial.authoritative.references = false;
-  const result = importFindings(db, partial);
+  const result = importFindings(db, findings("decompiler", 0x2000, 0x20ff, { authoritative: { references: false }, references: [{ from: 0x2020, to: 0x3001, kind: "write" }] }));
   assert.deepEqual(result.references, { added: 1, changed: 0, retired: 0, unchanged: 0, suppressed: 0, inData: 0 });
   assert.equal(listReferences(db).length, 2);
 });
@@ -240,9 +204,7 @@ test("a non-authoritative run still closes its own reference from heuristic data
   const db = fresh();
   importFindings(db, findings("decompiler", 0x7000, 0x70ff, { references: [{ from: 0x7010, to: 0x3000, kind: "read" }] }));
   importFindings(db, findings("heuristic", 0x7000, 0x70ff, { regions: [{ start: 0x7000, end: 0x70ff, type: "bytes" }] }));
-  const partial = findings("decompiler", 0x7000, 0x70ff);
-  partial.authoritative.references = false;
-  assert.equal(importFindings(db, partial).references.retired, 1);
+  assert.equal(importFindings(db, findings("decompiler", 0x7000, 0x70ff, { authoritative: { references: false } })).references.retired, 1);
   assert.deepEqual(listReferences(db), []);
 });
 
@@ -293,13 +255,6 @@ test("a failure in the middle of an import rolls all of it back", () => {
   assert.equal(count(db, "SELECT count(*) AS n FROM symbols") + count(db, "SELECT count(*) AS n FROM regions"), 0);
 });
 
-test("history shows an import as one revision of the analyzer", () => {
-  const db = fresh();
-  importFindings(db, findings("dxa", 0x0801, 0x08ff, { symbols: [{ address: 0x080d, name: "l080d", kind: "label" }], regions: [{ start: 0x080d, end: 0x0812, type: "code" }] }));
-  const changes = revisionChanges(db, nth(db, 1));
-  assert.equal(changes.revision.origin, "dxa");
-});
-
 test("an analyzer import records the image hash and the analyzer version in its revision", () => {
   const db = fresh();
   const image = Buffer.from("abc");
@@ -323,11 +278,7 @@ test("an analyzer import records the image hash and the analyzer version in its 
 
 test("a re-run replaces all of the analyzer's own names in its coverage, also when its labels are not complete", () => {
   const db = fresh();
-  const partial = (symbols: NormalizedFindings["symbols"]) => {
-    const result = findings("decompiler", 0x2000, 0x2fff, { symbols });
-    result.authoritative.symbols = false;
-    return result;
-  };
+  const partial = (symbols: NormalizedFindings["symbols"]) => findings("decompiler", 0x2000, 0x2fff, { authoritative: { symbols: false }, symbols });
   importFindings(db, partial([
     { address: 0x2100, name: "FUN_main", kind: "routine" },
     { address: 0x2200, name: "FUN_2200", kind: "routine" },
@@ -340,11 +291,7 @@ test("a re-run replaces all of the analyzer's own names in its coverage, also wh
 
 test("a non-authoritative region import changes the type of the analyzer's own region under a finding", () => {
   const db = fresh();
-  const partial = (regions: NormalizedFindings["regions"]) => {
-    const result = findings("dxa", 0x2000, 0x2fff, { regions });
-    result.authoritative.regions = false;
-    return result;
-  };
+  const partial = (regions: NormalizedFindings["regions"]) => findings("dxa", 0x2000, 0x2fff, { authoritative: { regions: false }, regions });
   importFindings(db, partial([{ start: 0x2000, end: 0x20ff, type: "bytes" }, { start: 0x2400, end: 0x24ff, type: "code" }]));
   const result = importFindings(db, partial([{ start: 0x2080, end: 0x217f, type: "code" }, { start: 0x2400, end: 0x24ff, type: "code" }]));
   assert.deepEqual(result.regions, { added: 1, changed: 1, retired: 0, unchanged: 1, suppressed: 0 });
@@ -395,10 +342,7 @@ test("a non-authoritative region import also leaves a suppressed range free", ()
   const db = fresh();
   classifyRegion(db, { origin: "llm" }, { start: 0x1000, end: 0x10ff, type: "bytes" });
   unclassifyRegion(db, { origin: "llm" }, { start: 0x1000, end: 0x10ff });
-  const result = importFindings(db, {
-    ...findings("dxa", 0x0f00, 0x11ff, { regions: [{ start: 0x0f00, end: 0x11ff, type: "code" }] }),
-    authoritative: { symbols: true, regions: false, references: true },
-  });
+  const result = importFindings(db, findings("dxa", 0x0f00, 0x11ff, { authoritative: { regions: false }, regions: [{ start: 0x0f00, end: 0x11ff, type: "code" }] }));
   assert.equal(result.regions.suppressed, 1);
   assert.deepEqual(regionList(db), [
     [0x0f00, 0x0fff, "code", "dxa"],

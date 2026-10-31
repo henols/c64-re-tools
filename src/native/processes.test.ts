@@ -6,6 +6,7 @@ import { test } from "node:test";
 
 import { WireFailure } from "../protocol/messages.ts";
 import { batchInvocation, isAlive, killTree, ProcessSupervisor, windowsQuote, type SupervisedProcess } from "./processes.ts";
+import { waitFor } from "./wait.testkit.ts";
 
 // Windows has no process groups: taskkill cannot find the descendants of a leader that has ended.
 const orphansNotFindable = process.platform === "win32" ? "Windows cannot find the descendants of a process that has ended" : false;
@@ -18,14 +19,8 @@ console.log(grandchild.pid);
 setInterval(() => {}, 1000);
 `;
 
-async function eventuallyDead(pid: number, timeoutMs = 3000): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (isAlive(pid)) {
-    if (Date.now() > deadline) return false;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  return true;
-}
+/** Waits until the process has ended; throws with `what` when it still runs after 3 s. */
+const ended = (pid: number, what: string) => waitFor(() => !isAlive(pid), what, 3_000);
 
 async function firstLine(child: SupervisedProcess): Promise<string> {
   const [line] = (await once(createInterface({ input: child.child.stdout! }), "line")) as [string];
@@ -39,8 +34,8 @@ test("stop terminates the child and every descendant in its group", { timeout: 3
   assert.ok(isAlive(child.pid) && isAlive(grandchild));
 
   await child.stop();
-  assert.ok(await eventuallyDead(child.pid), "child survived");
-  assert.ok(await eventuallyDead(grandchild), "grandchild survived");
+  await ended(child.pid, "the child ended");
+  await ended(grandchild, "the grandchild ended");
   assert.equal(supervisor.size, 0);
 });
 
@@ -58,7 +53,7 @@ test("stop reaches descendants after the leader has already exited", { skip: orp
   assert.ok(isAlive(grandchild), "the orphaned grandchild must still be running before stop");
 
   await child.stop();
-  assert.ok(await eventuallyDead(grandchild), "grandchild survived");
+  await ended(grandchild, "the grandchild ended");
 });
 
 test("a child that ignores SIGTERM is killed after the grace period", { skip: process.platform === "win32" ? "Windows has no SIGTERM: a stop ends the process at once" : false, timeout: 30_000 }, async () => {
@@ -83,7 +78,7 @@ test("stop is idempotent and stopAll stops every group", { timeout: 30_000 }, as
 
   await Promise.all([supervisor.stopAll(), children[0]!.stop(), children[0]!.stop()]);
   for (const pid of [...children.map((child) => child.pid), ...grandchildren]) {
-    assert.ok(await eventuallyDead(pid), `pid ${pid} survived`);
+    await ended(pid, `pid ${pid} ended`);
   }
   assert.equal(supervisor.size, 0);
 });
@@ -115,7 +110,7 @@ test("the exit guard kills every group when the owning process exits", { timeout
   const [line] = (await once(createInterface({ input: run.stdout }), "line")) as [string];
   await once(run, "exit");
   for (const pid of line.split(" ").map(Number)) {
-    assert.ok(await eventuallyDead(pid), `pid ${pid} survived its owner's exit`);
+    await ended(pid, `pid ${pid} ended after its owner's exit`);
   }
 });
 

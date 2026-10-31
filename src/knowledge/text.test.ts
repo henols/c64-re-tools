@@ -1,29 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
-import { Refusal } from "../errors.ts";
-import { openForWrite, textPath } from "./database.ts";
+import { failsWith } from "../errors.testkit.ts";
+import { textPath } from "./database.ts";
 import { ensureSchema } from "./schema.ts";
 import { loadText, newRevisionId, REVISION_ID, REVISIONS_FILE, revisionsText, TABLES, tableText } from "./text.ts";
 import { importFindings } from "./import.ts";
 import { applyBatch, renameSymbol, setRelease, setStartScreen, setSwitch, unclassifyRegion } from "./write.ts";
 import { addCoverage, setImage } from "./program.ts";
 import { COVERAGE } from "../c64.ts";
-
-const roots: string[] = [];
-after(() => {
-  for (const root of roots) rmSync(root, { recursive: true, force: true });
-});
-
-function root(): string {
-  const folder = mkdtempSync(join(tmpdir(), "c64-re-tools-text-"));
-  roots.push(folder);
-  return folder;
-}
+import { findings, scratchKnowledge } from "./project.testkit.ts";
 
 function emptyIndex(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
@@ -43,10 +32,9 @@ function allText(db: DatabaseSync): Map<string, { text: string }> {
 const bytes = new Map([[0x8079, 0xa9], [0x807a, 0xc0], [0x8100, 0xe6], [0x8101, 0xfb], [0x8102, 0xd0], [0x8103, 0x02], [0x8104, 0xe6], [0x8105, 0xfc]]);
 const image = () => ({ byteAt: (address: number) => bytes.get(address) ?? (address >= 0x8000 && address < 0x8079 ? 0xea : undefined), platform: new Map<string, number>() });
 
-/** A project with a row in every table and a revision with evidence. */
+/** A project with a row in every table and a revision with evidence; the tests only read it. */
 function fullProject(): { folder: string; db: DatabaseSync } {
-  const folder = root();
-  const db = openForWrite(folder);
+  const { root: folder, db } = scratchKnowledge();
   applyBatch(db, { origin: "llm", description: "everything", evidence: [{ kind: "note", ref: "seen in a run" }, { kind: "file", ref: "notes.md", sha256: "a".repeat(64) }] }, [
     { op: "rename", address: 0x80c0, name: "irq_handler", kind: "routine" },
     { op: "rename", address: 0x0400, name: "screen", space: "drive8" },
@@ -73,9 +61,11 @@ function fullProject(): { folder: string; db: DatabaseSync } {
   const run = new Uint8Array(0x10000);
   run[0x8000] = COVERAGE.ramExecute | COVERAGE.ramWrite;
   addCoverage(db, { origin: "user" }, { maps: [{ name: "local/run.bin", bytes: run }] });
-  importFindings(db, { analyzer: "decompiler", coverage: [{ start: 0xa000, end: 0xa0ff }], authoritative: { symbols: true, regions: true, references: true }, symbols: [{ address: 0xa000, name: "FUN_a000", kind: "routine" }], regions: [], references: [] });
+  importFindings(db, findings("decompiler", 0xa000, 0xa0ff, { symbols: [{ address: 0xa000, name: "FUN_a000", kind: "routine" }] }));
   return { folder, db };
 }
+
+const full = fullProject();
 
 test("a revision id is the CET time and a random part, and it sorts after the one before", () => {
   const now = new Date("2026-10-15T20:45:01.123Z");
@@ -91,18 +81,15 @@ test("a revision id is the CET time and a random part, and it sorts after the on
 });
 
 test("every table and the revision log go to text and back unchanged", () => {
-  const { db } = fullProject();
-  const files = allText(db);
+  const files = allText(full.db);
   const again = emptyIndex();
   loadText(again, files);
   assert.deepEqual(allText(again), files);
   for (const spec of TABLES) assert.notEqual(files.get(spec.file)!.text, "", spec.file);
-  db.close();
 });
 
 test("each line has its keys in a fixed order and the lines are sorted by space and address", () => {
-  const { folder, db } = fullProject();
-  const lines = (file: string) => readFileSync(join(textPath(folder), file), "utf8").trimEnd().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+  const lines = (file: string) => readFileSync(join(textPath(full.folder), file), "utf8").trimEnd().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
   const keys = (file: string) => lines(file).map((line) => Object.keys(line).join(","));
   assert.deepEqual(keys("symbols.jsonl"), [
     "id,space,address,name,kind,origin,added,closed",
@@ -133,7 +120,6 @@ test("each line has its keys in a fixed order and the lines are sorted by space 
   const [first] = lines(REVISIONS_FILE);
   assert.deepEqual(Object.keys(first!), ["id", "time", "origin", "operation", "reason", "evidence"]);
   assert.deepEqual(first!.evidence, [{ kind: "note", ref: "seen in a run" }, { kind: "file", ref: "notes.md", sha256: "a".repeat(64) }]);
-  db.close();
 });
 
 const revision = "20261015T214501.123-aaaaaa";
@@ -158,7 +144,7 @@ test("the lines of one row from the two sides of a merge are joined: a closed li
   assert.deepEqual(closedOf(load(symbolLine("main", null) + symbolLine("main", null))), [null]);
   assert.throws(
     () => load(symbolLine("main", null) + symbolLine("other", null)),
-    (error: unknown) => error instanceof Refusal && error.code === "invalid-database" && /symbols\.jsonl:2: the id .* is also on line 1 with other values/.test(error.message),
+    failsWith("invalid-database", /symbols\.jsonl:2: the id .* is also on line 1 with other values/),
   );
 });
 
@@ -169,16 +155,14 @@ test("a row must be added in the revision of its id, and its revisions must be i
 });
 
 test("the evidence of a coverage map keeps a space other than the C64 in the text, and a space that is not known is refused", () => {
-  const { db } = fullProject();
-  const log = revisionsText(db);
-  db.close();
+  const log = revisionsText(full.db);
   // The C64 is the space of evidence without one, as of a row.
   assert.match(log, /"evidence":\[\{"kind":"coverage","ref":"local\/run\.bin","sha256":"[0-9a-f]{64}"\}\]/);
   const line = (space: string) => `{"id":"${revision}","time":"2026-10-15T21:45:01.123+01:00","origin":"llm","operation":"coverage","evidence":[{"kind":"coverage","ref":"a.bin","sha256":"${"b".repeat(64)}","space":"${space}"}]}\n`;
   const loaded = emptyIndex();
   loadText(loaded, new Map([[REVISIONS_FILE, { text: line("drive8") }]]));
   assert.deepEqual({ ...(loaded.prepare("SELECT space FROM evidence").get() as object) }, { space: "drive8" });
-  assert.throws(() => loadText(emptyIndex(), new Map([[REVISIONS_FILE, { text: line("drive9") }]])), (error: unknown) => error instanceof Refusal && error.code === "invalid-database");
+  assert.throws(() => loadText(emptyIndex(), new Map([[REVISIONS_FILE, { text: line("drive9") }]])), failsWith("invalid-database"));
 });
 
 test("coverage keeps the ranges of each map as text, and a line without a map or with bad ranges is refused", () => {
@@ -186,7 +170,7 @@ test("coverage keeps the ranges of each map as text, and a line without a map or
   const loaded = emptyIndex();
   loadText(loaded, coverage('"map":"tests/a/coverage.bin","kind":"x","ranges":"$1000-$1002 $1005"'));
   assert.deepEqual({ ...(loaded.prepare("SELECT map, ranges FROM coverage").get() as object) }, { map: "tests/a/coverage.bin", ranges: "$1000-$1002 $1005" });
-  const refused = (error: unknown) => error instanceof Refusal && error.code === "invalid-database";
+  const refused = failsWith("invalid-database");
   // A line of the earlier format: one range of the union, with no map.
   assert.throws(() => loadText(emptyIndex(), coverage('"kind":"x","start":"$1000","end":"$1002"')), refused);
   for (const ranges of ["", "$1000,$1002", "$1000  $1002", "1000"]) assert.throws(() => loadText(emptyIndex(), coverage(`"map":"a.bin","kind":"x","ranges":"${ranges}"`)), refused, ranges);

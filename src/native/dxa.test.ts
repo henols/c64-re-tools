@@ -1,26 +1,21 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { WireFailure } from "../protocol/messages.ts";
+import { toolContext } from "./context.testkit.ts";
 import { analyze, DXA_VERSION, dxaArguments, dxaVersion, parseListing, versionLine } from "./dxa.ts";
-import { ProcessSupervisor } from "./processes.ts";
+import { shellStandIn } from "./standin.testkit.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-dxa-test-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const posixOnly = process.platform === "win32" ? "the stand-in dxa is a shell script" : false;
 
 /** A stand-in dxa: a shell script with the given body. It runs in the request workspace. */
-function standInDxa(name: string, body: string): NodeJS.ProcessEnv {
-  const path = join(scratch, name);
-  writeFileSync(path, `#!/bin/sh\n${body}\n`);
-  chmodSync(path, 0o755);
-  return { ...process.env, C64RT_DXA: path };
-}
+const standInDxa = (name: string, body: string): NodeJS.ProcessEnv => ({ ...process.env, C64RT_DXA: shellStandIn(scratch, name, [body]) });
 
-const context = (env: NodeJS.ProcessEnv) => ({ supervisor: new ProcessSupervisor(), signal: new AbortController().signal, env });
 const PRG = Buffer.from([0x01, 0x08, 0x60]);
 const SEEDS = { imageKind: "prg" as const, entryPoints: [], dataRanges: [], labels: [] };
 const refusedWith = (message: string) => (error: unknown) => error instanceof WireFailure && error.code === "operation-failed" && error.message === message;
@@ -116,20 +111,20 @@ test("argv carries only the fixed options, the seed files that have lines, and t
 
 test("a dxa failure quotes the last output of dxa without the workspace path", { skip: posixOnly }, async () => {
   const env = standInDxa("dxa-fails", 'echo "dxa: cannot read $PWD/input/image.bin" >&2\nexit 2');
-  await assert.rejects(analyze(SEEDS, PRG, context(env)), refusedWith("dxa could not analyze the program.\nThe last output of dxa:\n  dxa: cannot read input/image.bin"));
+  await assert.rejects(analyze(SEEDS, PRG, toolContext(env)), refusedWith("dxa could not analyze the program.\nThe last output of dxa:\n  dxa: cannot read input/image.bin"));
 });
 
 test("a rejected listing says what the check found and quotes the messages of dxa", { skip: posixOnly }, async () => {
   const env = standInDxa("dxa-no-listing", 'echo "; nothing here"\necho "dxa: odd input" >&2');
   await assert.rejects(
-    analyze(SEEDS, PRG, context(env)),
+    analyze(SEEDS, PRG, toolContext(env)),
     refusedWith("dxa returned an incomplete or inconsistent listing. Nothing was imported. The check found: the listing has no statements.\nThe last output of dxa:\n  dxa: odd input"),
   );
 });
 
 test("a label seed with a leading dot reaches dxa and comes back as a label", { skip: posixOnly }, async () => {
   const env = standInDxa("dxa-dot-label", "grep -qxF '.loop, 0x0801, 0x0000' labels.txt || exit 3\nprintf '0801          .loop:\\n0801 60       \\trts\\n'");
-  const { result } = await analyze({ ...SEEDS, labels: [{ address: 0x0801, name: ".loop" }] }, PRG, context(env));
+  const { result } = await analyze({ ...SEEDS, labels: [{ address: 0x0801, name: ".loop" }] }, PRG, toolContext(env));
   assert.deepEqual(result.labels, [{ address: 0x0801, name: ".loop" }]);
   assert.equal(result.toolVersion, undefined, "this dxa prints no version line");
 });
@@ -139,28 +134,28 @@ test("a DXA result carries the version line that dxa -V prints", { skip: posixOn
     "dxa-versioned",
     `if [ "$1" = -V ]; then echo "/opt/xa/bin/dxa v0.1.5 -- symbolic 65xx disassembler" >&2; echo "Usage: /opt/xa/bin/dxa [options] [filename]" >&2; exit 1; fi\nprintf '0801 60       \\trts\\n'`,
   );
-  const { result } = await analyze(SEEDS, PRG, context(env));
+  const { result } = await analyze(SEEDS, PRG, toolContext(env));
   assert.equal(result.toolVersion, "dxa v0.1.5 -- symbolic 65xx disassembler");
   assert.deepEqual(result.regions, [{ start: 0x0801, end: 0x0801, classification: "code" }]);
 });
 
 test("the dxa version line names dxa without the directory and .exe that Windows prints", { skip: posixOnly }, async () => {
   const env = standInDxa("dxa-windows-version", "printf '%s\\n' 'D:\\tools\\dxa.exe v0.1.5 -- symbolic 65xx disassembler' >&2\nexit 1");
-  assert.equal(await dxaVersion(env.C64RT_DXA!, scratch, context(env)), "dxa v0.1.5 -- symbolic 65xx disassembler");
+  assert.equal(await dxaVersion(env.C64RT_DXA!, scratch, toolContext(env)), "dxa v0.1.5 -- symbolic 65xx disassembler");
 });
 
 test("a listing larger than the limit is refused with the limit", { skip: posixOnly }, async () => {
   const env = standInDxa("dxa-too-much", "head -c 9000000 /dev/zero | tr '\\0' a");
-  await assert.rejects(analyze(SEEDS, PRG, context(env)), refusedWith("dxa printed a listing that is larger than 8 MiB. Nothing was imported."));
+  await assert.rejects(analyze(SEEDS, PRG, toolContext(env)), refusedWith("dxa printed a listing that is larger than 8 MiB. Nothing was imported."));
 });
 
 test("a request beyond the seed bounds is refused by name before dxa runs", async () => {
   const many = (count: number) => Array.from({ length: count }, (_, index) => index);
   const env = { PATH: "" };
   const refused = (message: string) => (error: unknown) => error instanceof WireFailure && error.code === "invalid-input" && error.message === message;
-  await assert.rejects(analyze({ ...SEEDS, entryPoints: many(1025) }, PRG, context(env)), refused("The request has 1025 entry points. Give at most 1024 entry points."));
-  await assert.rejects(analyze({ ...SEEDS, dataRanges: many(1025).map((start) => ({ start, end: start })) }, PRG, context(env)), refused("The request has 1025 data ranges. Give at most 1024 data ranges."));
-  await assert.rejects(analyze({ ...SEEDS, labels: many(4097).map((address) => ({ address, name: "x" })) }, PRG, context(env)), refused("The request has 4097 labels. Give at most 4096 labels."));
+  await assert.rejects(analyze({ ...SEEDS, entryPoints: many(1025) }, PRG, toolContext(env)), refused("The request has 1025 entry points. Give at most 1024 entry points."));
+  await assert.rejects(analyze({ ...SEEDS, dataRanges: many(1025).map((start) => ({ start, end: start })) }, PRG, toolContext(env)), refused("The request has 1025 data ranges. Give at most 1024 data ranges."));
+  await assert.rejects(analyze({ ...SEEDS, labels: many(4097).map((address) => ({ address, name: "x" })) }, PRG, toolContext(env)), refused("The request has 4097 labels. Give at most 4096 labels."));
 });
 
 test("a version line is found among notices and colour codes", () => {

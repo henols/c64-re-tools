@@ -1,27 +1,16 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
-import { Refusal } from "../errors.ts";
+import { failsWith } from "../errors.testkit.ts";
 import { COVERAGE } from "../c64.ts";
 import { indexPath, openForRead, textPath, withWrite } from "./database.ts";
 import { coverageRuns, listSpaces } from "./read.ts";
 import { addCoverage, analyzedBytes, coverageAccess, memoryRows, programCoverage, programImage, releaseCode, setImage, type ImageRequest } from "./program.ts";
 import { revision as revisionChanges } from "./history.ts";
 import { revert, setRelease } from "./write.ts";
-
-const projects: string[] = [];
-after(() => {
-  for (const root of projects) rmSync(root, { recursive: true, force: true });
-});
-
-function project(): string {
-  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-program-"));
-  projects.push(root);
-  return root;
-}
+import { scratchProject, withRead } from "./project.testkit.ts";
 
 const llm = { origin: "llm" as const };
 const text = (root: string, file: string) => readFileSync(join(textPath(root), file), "utf8");
@@ -35,16 +24,11 @@ function image(segments: Array<{ start: number; end: number }>, seed = 0, extra:
 /** Reads the program again from the text only: the index is made again. */
 function fromText(root: string) {
   rmSync(indexPath(root), { force: true });
-  const db = openForRead(root)!;
-  try {
-    return { image: programImage(db), coverage: programCoverage(db), spaces: listSpaces(db) };
-  } finally {
-    db.close();
-  }
+  return withRead(root, (db) => ({ image: programImage(db), coverage: programCoverage(db), spaces: listSpaces(db) }));
 }
 
 test("an image goes into the text in rows of at most 64 bytes and comes back the same", () => {
-  const root = project();
+  const root = scratchProject();
   const state = { registers: { pc: "$0400", a: 1 }, pages: { $0000: "2f37" } };
   const stages = [{ stage: 0, entry: "$0871", wrote: [{ start: "$0400", end: "$07e7" }] }];
   const written = withWrite((db) => setImage(db, llm, image([{ start: 0x0801, end: 0x0900 }, { start: 0xc000, end: 0xc003 }], 0, { entry: 0x0810, state, stages })), root);
@@ -64,7 +48,7 @@ test("an image goes into the text in rows of at most 64 bytes and comes back the
 });
 
 test("an image that the knowledge has writes nothing, and a changed byte replaces only its row", () => {
-  const root = project();
+  const root = scratchProject();
   const segments = [{ start: 0x1000, end: 0x10ff }];
   withWrite((db) => setImage(db, llm, image(segments)), root);
   const again = withWrite((db) => setImage(db, llm, image(segments)), root);
@@ -80,30 +64,25 @@ test("an image that the knowledge has writes nothing, and a changed byte replace
 });
 
 test("a PRG without an entry closes the entry of an earlier capture, and spaces stay apart", () => {
-  const root = project();
+  const root = scratchProject();
   withWrite((db) => setImage(db, llm, image([{ start: 0x0400, end: 0x04ff }], 0, { entry: 0x0400, state: { registers: {} } })), root);
   withWrite((db) => setImage(db, llm, image([{ start: 0x0300, end: 0x03ff }], 7, { space: "drive8" })), root);
   withWrite((db) => setImage(db, llm, image([{ start: 0x0400, end: 0x04ff }])), root);
-  const db = openForRead(root)!;
-  try {
-    assert.equal(programImage(db)!.entry, undefined);
-    assert.equal(programImage(db, "drive8")!.byteAt(0x0300), 7);
-    assert.deepEqual(listSpaces(db), ["c64", "drive8"]);
-    assert.equal(programImage(db, "bank0"), undefined);
-  } finally {
-    db.close();
-  }
+  using db = openForRead(root)!;
+  assert.equal(programImage(db)!.entry, undefined);
+  assert.equal(programImage(db, "drive8")!.byteAt(0x0300), 7);
+  assert.deepEqual(listSpaces(db), ["c64", "drive8"]);
+  assert.equal(programImage(db, "bank0"), undefined);
 });
 
 test("an image is refused when its segments overlap or a state has no entry", () => {
-  const root = project();
-  const refused = (code: string) => (error: unknown) => error instanceof Refusal && error.code === code;
-  assert.throws(() => withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x1010 }, { start: 0x1010, end: 0x1020 }])), root), refused("invalid-input"));
-  assert.throws(() => withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x1010 }], 0, { state: {} })), root), refused("invalid-input"));
+  const root = scratchProject();
+  assert.throws(() => withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x1010 }, { start: 0x1010, end: 0x1020 }])), root), failsWith("invalid-input"));
+  assert.throws(() => withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x1010 }], 0, { state: {} })), root), failsWith("invalid-input"));
 });
 
 test("analyzed bytes are a PRG for one segment without a state, else the 64 KiB", () => {
-  const root = project();
+  const root = scratchProject();
   withWrite((db) => setImage(db, llm, image([{ start: 0x0801, end: 0x0803 }])), root);
   assert.deepEqual(analyzedBytes(fromText(root).image!), { bytes: Buffer.from([0x01, 0x08, 0x01, 0x02, 0x03]), kind: "prg" });
   withWrite((db) => setImage(db, llm, image([{ start: 0x0801, end: 0x0803 }], 0, { entry: 0x0801, state: {} })), root);
@@ -113,7 +92,7 @@ test("analyzed bytes are a PRG for one segment without a state, else the 64 KiB"
 });
 
 test("analyzed bytes hold the entry-state pages below the segments, without the CPU port", () => {
-  const root = project();
+  const root = scratchProject();
   // $0080 holds an RTS in the entry state; $03ff is in the segment and keeps the byte of the program.
   const zeroPage = Array.from({ length: 0x100 }, (_, offset) => (offset === 0x80 ? "60" : offset < 2 ? "ff" : "00")).join("");
   const page3 = "ab".repeat(0x100);
@@ -136,7 +115,7 @@ function map(...ranges: Array<[number, number, number]>): Uint8Array {
 }
 
 test("the coverage is the union of the maps by kind, and one run's write and execute is wx", () => {
-  const root = project();
+  const root = scratchProject();
   const { ramExecute: x, ramWrite: w, ramRead: r, romRead } = COVERAGE;
   const first = map([0x1000, 0x1000, x], [0x1003, 0x1003, x], [0x2000, 0x2003, r], [0xe000, 0xe001, romRead], [0x3000, 0x3000, w]);
   // The second run writes and executes $3001: self-modified. $3000 is written in run one and executed in run two: no wx.
@@ -158,7 +137,7 @@ test("the coverage is the union of the maps by kind, and one run's write and exe
 });
 
 test("the latest map of a path is not imported again; a map that adds no access is still evidence", () => {
-  const root = project();
+  const root = scratchProject();
   const bytes = map([0x1000, 0x1002, COVERAGE.ramExecute]);
   withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes }] }), root);
   const again = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes }] }), root);
@@ -167,17 +146,12 @@ test("the latest map of a path is not imported again; a map that adds no access 
   const subset = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "b.bin", bytes: map([0x1001, 0x1001, COVERAGE.ramExecute]) }] }), root);
   assert.notEqual(subset.revision, null);
   assert.deepEqual([subset.current.added, subset.current.removed], [0, 0]);
-  const db = openForRead(root)!;
-  try {
-    assert.deepEqual(coverageRuns(db).map((run) => [run.name, run.space]), [["a.bin", "c64"], ["b.bin", "c64"]]);
-  } finally {
-    db.close();
-  }
-  assert.throws(() => withWrite((db) => addCoverage(db, llm, { maps: [{ name: "short.bin", bytes: new Uint8Array(10) }] }), root), (error: unknown) => error instanceof Refusal && error.code === "invalid-input");
+  assert.deepEqual(withRead(root, (db) => coverageRuns(db).map((run) => [run.name, run.space])), [["a.bin", "c64"], ["b.bin", "c64"]]);
+  assert.throws(() => withWrite((db) => addCoverage(db, llm, { maps: [{ name: "short.bin", bytes: new Uint8Array(10) }] }), root), failsWith("invalid-input"));
 });
 
 test("a new map of a path replaces the earlier map of that path, and closes only the ranges that changed", () => {
-  const root = project();
+  const root = scratchProject();
   const { ramExecute: x, ramRead: r } = COVERAGE;
   const first = map([0x1000, 0x1002, x], [0x3000, 0x3000, r]);
   withWrite((db) => addCoverage(db, llm, { maps: [{ name: "tests/a/coverage.bin", bytes: first }, { name: "tests/b/coverage.bin", bytes: map([0x2000, 0x2000, x]) }] }), root);
@@ -187,13 +161,8 @@ test("a new map of a path replaces the earlier map of that path, and closes only
   const coverage = fromText(root).coverage!;
   assert.deepEqual([0x1000, 0x1001, 0x2000].map((address) => coverage.map[address]! & x), [x, 0, x], "the map of b stays");
   assert.equal(coverage.map[0x3000], r);
-  const db = openForRead(root)!;
-  try {
-    const changes = revisionChanges(db, again.revision!);
-    assert.deepEqual(changes.closed.map((entry) => entry.row), [{ space: "c64", map: "tests/a/coverage.bin", kind: "x", ranges: 1, origin: "llm", revision: changes.closed[0]!.row.revision }], "the read ranges of $3000 stay open");
-  } finally {
-    db.close();
-  }
+  const changes = withRead(root, (db) => revisionChanges(db, again.revision!));
+  assert.deepEqual(changes.closed.map((entry) => entry.row), [{ space: "c64", map: "tests/a/coverage.bin", kind: "x", ranges: 1, origin: "llm", revision: changes.closed[0]!.row.revision }], "the read ranges of $3000 stay open");
   // The earlier map of the path is no longer the latest: it is imported again and replaces the new one.
   const back = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "tests/a/coverage.bin", bytes: first }] }), root);
   assert.deepEqual([back.current.imported, back.current.added, back.current.removed], [["tests/a/coverage.bin"], 1, 0]);
@@ -201,7 +170,7 @@ test("a new map of a path replaces the earlier map of that path, and closes only
 });
 
 test("a map whose ranges are gone from the text is imported again, also when its revision is still the latest of its path", () => {
-  const root = project();
+  const root = scratchProject();
   const bytes = map([0x1000, 0x1002, COVERAGE.ramExecute]);
   withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes }] }), root);
   rmSync(join(textPath(root), "coverage.jsonl"));
@@ -214,7 +183,7 @@ test("a map whose ranges are gone from the text is imported again, also when its
 });
 
 test("revert takes the image and the coverage back too", () => {
-  const root = project();
+  const root = scratchProject();
   const segments = [{ start: 0x1000, end: 0x103f }];
   const first = withWrite((db) => setImage(db, llm, image(segments)), root);
   withWrite((db) => setImage(db, llm, image(segments, 1, { entry: 0x1000 })), root);
@@ -227,7 +196,7 @@ test("revert takes the image and the coverage back too", () => {
 });
 
 test("a revert of one space takes back only the program, the coverage and the maps of that space", () => {
-  const root = project();
+  const root = scratchProject();
   withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x103f }])), root);
   const first = withWrite((db) => setImage(db, llm, { ...image([{ start: 0x8000, end: 0x803f }]), space: "bank1" }), root);
   const bytes = map([0x1000, 0x1002, COVERAGE.ramExecute]);
@@ -237,32 +206,21 @@ test("a revert of one space takes back only the program, the coverage and the ma
   withWrite((db) => revert(db, llm, { revision: first.revision!, space: "bank1" }), root);
   // From the text only: the revision keeps the space of the revert.
   rmSync(indexPath(root), { force: true });
-  const db = openForRead(root)!;
-  try {
-    assert.deepEqual(coverageRuns(db).map((run) => [run.name, run.space]), [["a.bin", "c64"]]);
-    assert.notEqual(programCoverage(db), undefined, "the C64 keeps its coverage");
-    assert.equal(programCoverage(db, "bank1"), undefined);
-    assert.deepEqual(programImage(db, "bank1")!.segments, [{ start: 0x8000, end: 0x803f }]);
-    assert.deepEqual(programImage(db)!.segments, [{ start: 0x1000, end: 0x103f }]);
-  } finally {
-    db.close();
-  }
+  using db = openForRead(root)!;
+  assert.deepEqual(coverageRuns(db).map((run) => [run.name, run.space]), [["a.bin", "c64"]]);
+  assert.notEqual(programCoverage(db), undefined, "the C64 keeps its coverage");
+  assert.equal(programCoverage(db, "bank1"), undefined);
+  assert.deepEqual(programImage(db, "bank1")!.segments, [{ start: 0x8000, end: 0x803f }]);
+  assert.deepEqual(programImage(db)!.segments, [{ start: 0x1000, end: 0x103f }]);
 });
 
 test("the coverage maps that the knowledge has follow a revert, so a reverted map can be imported again", () => {
-  const root = project();
+  const root = scratchProject();
   const first = withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x103f }])), root);
   const bytes = map([0x1000, 0x1002, COVERAGE.ramExecute]);
   const imported = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes }] }), root);
   withWrite((db) => addCoverage(db, llm, { maps: [{ name: "b.bin", bytes }] }), root);
-  const names = () => {
-    const db = openForRead(root)!;
-    try {
-      return coverageRuns(db).map((run) => run.name);
-    } finally {
-      db.close();
-    }
-  };
+  const names = () => withRead(root, (db) => coverageRuns(db).map((run) => run.name));
   assert.deepEqual(names(), ["a.bin", "b.bin"]);
   // b.bin added no range: the revert to a.bin changes only the maps, and that is still a revision.
   const back = withWrite((db) => revert(db, llm, { revision: imported.revision! }), root);
@@ -276,17 +234,13 @@ test("the coverage maps that the knowledge has follow a revert, so a reverted ma
   // A revert to an earlier revert gives the maps of that revert.
   withWrite((db) => revert(db, llm, { revision: back.revision! }), root);
   assert.deepEqual(names(), ["a.bin"]);
-  const db = openForRead(root)!;
-  try {
-    assert.deepEqual(coverageRuns(db, imported.revision!).map((run) => run.name), ["a.bin"], "the maps at a revision");
-    assert.deepEqual(coverageRuns(db, "0"), []);
-  } finally {
-    db.close();
-  }
+  using db = openForRead(root)!;
+  assert.deepEqual(coverageRuns(db, imported.revision!).map((run) => run.name), ["a.bin"], "the maps at a revision");
+  assert.deepEqual(coverageRuns(db, "0"), []);
 });
 
 test("a coverage map is known only in the space that it went into, and the runs of a name are oldest first", () => {
-  const root = project();
+  const root = scratchProject();
   const first = map([0x1000, 0x1002, COVERAGE.ramExecute]);
   const second = map([0x2000, 0x2002, COVERAGE.ramExecute]);
   withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes: first }] }), root);
@@ -294,44 +248,36 @@ test("a coverage map is known only in the space that it went into, and the runs 
   assert.deepEqual(drive.current.imported, ["a.bin"]);
   assert.equal(drive.current.added, 1);
   withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes: second }] }), root);
-  const db = openForRead(root)!;
-  try {
-    const runs = coverageRuns(db);
-    assert.deepEqual(runs.map((run) => run.space), ["c64", "drive8", "c64"]);
-    assert.deepEqual([...runs].sort((a, b) => a.revision.localeCompare(b.revision)), runs);
-    assert.equal(runs.filter((run) => run.space === "c64").at(-1)!.sha256, runs[2]!.sha256);
-  } finally {
-    db.close();
-  }
+  using db = openForRead(root)!;
+  const runs = coverageRuns(db);
+  assert.deepEqual(runs.map((run) => run.space), ["c64", "drive8", "c64"]);
+  assert.deepEqual([...runs].sort((a, b) => a.revision.localeCompare(b.revision)), runs);
+  assert.equal(runs.filter((run) => run.space === "c64").at(-1)!.sha256, runs[2]!.sha256);
 });
 
 test("a revision of an image or of coverage lists the memory, entry and coverage rows that it added and closed", () => {
-  const root = project();
+  const root = scratchProject();
   const first = withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x107f }], 0, { entry: 0x1000, state: { registers: {} }, stages: [{}, {}] })), root);
   const second = withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x107f }], 1, { entry: 0x1001 })), root);
   const covered = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "a.bin", bytes: map([0x1000, 0x1002, COVERAGE.ramExecute]) }] }), root);
-  const db = openForRead(root)!;
-  try {
-    const shown = (id: string) => {
-      const changes = revisionChanges(db, id);
-      return { added: changes.added.map((entry) => [entry.entity, entry.row]), closed: changes.closed.map((entry) => [entry.entity, entry.row]) };
-    };
-    const one = shown(first.revision!);
-    assert.deepEqual(one.added, [
-      ["memory", { space: "c64", address: 0x1000, bytes: 64, origin: "llm", revision: first.revision }],
-      ["memory", { space: "c64", address: 0x1040, bytes: 64, origin: "llm", revision: first.revision }],
-      ["entry", { space: "c64", address: 0x1000, state: true, stages: 2, origin: "llm", revision: first.revision }],
-    ]);
-    const two = shown(second.revision!);
-    assert.deepEqual([two.added.length, two.closed.length], [3, 3], "the new bytes and entry, and the old ones closed");
-    assert.deepEqual(shown(covered.revision!).added, [["coverage", { space: "c64", map: "a.bin", kind: "x", ranges: 1, origin: "llm", revision: covered.revision }]]);
-  } finally {
-    db.close();
-  }
+  using db = openForRead(root)!;
+  const shown = (id: string) => {
+    const changes = revisionChanges(db, id);
+    return { added: changes.added.map((entry) => [entry.entity, entry.row]), closed: changes.closed.map((entry) => [entry.entity, entry.row]) };
+  };
+  const one = shown(first.revision!);
+  assert.deepEqual(one.added, [
+    ["memory", { space: "c64", address: 0x1000, bytes: 64, origin: "llm", revision: first.revision }],
+    ["memory", { space: "c64", address: 0x1040, bytes: 64, origin: "llm", revision: first.revision }],
+    ["entry", { space: "c64", address: 0x1000, state: true, stages: 2, origin: "llm", revision: first.revision }],
+  ]);
+  const two = shown(second.revision!);
+  assert.deepEqual([two.added.length, two.closed.length], [3, 3], "the new bytes and entry, and the old ones closed");
+  assert.deepEqual(shown(covered.revision!).added, [["coverage", { space: "c64", map: "a.bin", kind: "x", ranges: 1, origin: "llm", revision: covered.revision }]]);
 });
 
 test("the access at an address gives the access of each coverage map and the joined access, where an execute wins", () => {
-  const root = project();
+  const root = scratchProject();
   const map = (...marks: Array<[number, number]>) => {
     const bytes = new Uint8Array(0x10000);
     for (const [address, flags] of marks) bytes[address] = flags;
@@ -343,36 +289,28 @@ test("the access at an address gives the access of each coverage map and the joi
     { name: "runs/c/coverage.bin", bytes: map() },
   ];
   withWrite((db) => addCoverage(db, llm, { maps }), root);
-  const db = openForRead(root)!;
-  try {
-    const access = coverageAccess(db)!;
-    assert.deepEqual(access(0x1000), {
-      maps: [
-        { map: "runs/a/coverage.bin", access: "r" },
-        { map: "runs/b/coverage.bin", access: "x" },
-        { map: "runs/c/coverage.bin", access: "-" },
-      ],
-      access: "x",
-    });
-    assert.deepEqual([access(0x2000).access, access(0xd020).access, access(0x3000).access], ["rw", "w", "-"]);
-    assert.equal(coverageAccess(db, "drive8"), undefined, "a space without coverage maps has no access");
-  } finally {
-    db.close();
-  }
+  using db = openForRead(root)!;
+  const access = coverageAccess(db)!;
+  assert.deepEqual(access(0x1000), {
+    maps: [
+      { map: "runs/a/coverage.bin", access: "r" },
+      { map: "runs/b/coverage.bin", access: "x" },
+      { map: "runs/c/coverage.bin", access: "-" },
+    ],
+    access: "x",
+  });
+  assert.deepEqual([access(0x2000).access, access(0xd020).access, access(0x3000).access], ["rw", "w", "-"]);
+  assert.equal(coverageAccess(db, "drive8"), undefined, "a space without coverage maps has no access");
 });
 
 test("the bytes of a release in a range are patch code as !byte lines; the base release and a range outside the bytes of the release are refused", () => {
-  const root = project();
+  const root = scratchProject();
   withWrite((db) => setImage(db, llm, image([{ start: 0x1000, end: 0x100f }])), root);
   withWrite((db) => setRelease(db, llm, { label: "BASE", base: true }), root);
   withWrite((db) => setRelease(db, llm, { label: "V2", rows: memoryRows([{ start: 0x1000, end: 0x100b }], (address) => (address * 3) & 0xff) }), root);
-  const db = openForRead(root)!;
-  try {
-    assert.equal(releaseCode(db, "V2", 0x1000, 0x1009), "!byte $00,$03,$06,$09,$0c,$0f,$12,$15\n!byte $18,$1b");
-    assert.throws(() => releaseCode(db, "BASE", 0x1000, 0x1001), /BASE is the base release: its bytes are the program/);
-    assert.throws(() => releaseCode(db, "V2", 0x100a, 0x100c), /The release V2 has no byte at \$100c, in the range \$100a-\$100c/);
-    assert.throws(() => releaseCode(db, "V3", 0x1000, 0x1001), /There is no release V3/);
-  } finally {
-    db.close();
-  }
+  using db = openForRead(root)!;
+  assert.equal(releaseCode(db, "V2", 0x1000, 0x1009), "!byte $00,$03,$06,$09,$0c,$0f,$12,$15\n!byte $18,$1b");
+  assert.throws(() => releaseCode(db, "BASE", 0x1000, 0x1001), /BASE is the base release: its bytes are the program/);
+  assert.throws(() => releaseCode(db, "V2", 0x100a, 0x100c), /The release V2 has no byte at \$100c, in the range \$100a-\$100c/);
+  assert.throws(() => releaseCode(db, "V3", 0x1000, 0x1001), /There is no release V3/);
 });

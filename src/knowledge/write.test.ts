@@ -1,13 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
 import { formatC64Address } from "../c64.ts";
-import { Refusal } from "../errors.ts";
-import { openForWrite, transaction } from "./database.ts";
+import { failsWith } from "../errors.testkit.ts";
+import { transaction } from "./database.ts";
 import { memoryRows, releaseImage, setImage } from "./program.ts";
 import { at, commentsAt, currentRevision, currentStartScreen, listMacroUses, listModules, listPatches, listSwitches, switchNamed, listSuppressions, listSymbols, macroNamed, moduleAt, operandAt, referencesFrom, referencesTo, regionsOverlapping, symbolAt } from "./read.ts";
 import { historyAt, historyOfMacro, historyOfSwitch, revision as revisionChanges } from "./history.ts";
@@ -43,29 +40,10 @@ import {
   type OperandImage,
   type WriteContext,
 } from "./write.ts";
+import { count, fresh } from "./project.testkit.ts";
 import { nth } from "./revisions.testkit.ts";
 
-const roots: string[] = [];
-const databases: DatabaseSync[] = [];
-after(() => {
-  for (const db of databases) db.close();
-  for (const root of roots) rmSync(root, { recursive: true, force: true });
-});
-
-function fresh(): DatabaseSync {
-  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-write-"));
-  roots.push(root);
-  const db = openForWrite(root);
-  databases.push(db);
-  return db;
-}
-
 const llm: WriteContext = { origin: "llm" };
-const failsWith = (code: string) => (error: unknown) => error instanceof Refusal && error.code === code;
-
-function count(db: DatabaseSync, sql: string): number {
-  return (db.prepare(sql).get() as { n: number }).n;
-}
 
 test("a rename creates one revision, and the old name stays in history", () => {
   const db = fresh();
@@ -102,11 +80,7 @@ test("an unchanged write creates no revision", () => {
 test("a name used at another address is a conflict and changes nothing", () => {
   const db = fresh();
   renameSymbol(db, llm, { address: 0x1000, name: "loop" });
-  assert.throws(() => renameSymbol(db, llm, { address: 0x2000, name: "loop" }), (error: unknown) => {
-    assert.ok(failsWith("conflict")(error));
-    assert.match((error as Error).message, /\$1000/);
-    return true;
-  });
+  assert.throws(() => renameSymbol(db, llm, { address: 0x2000, name: "loop" }), failsWith("conflict", /\$1000/));
   assert.equal(currentRevision(db), nth(db, 1));
   assert.equal(count(db, "SELECT count(*) AS n FROM revisions"), 1);
 });
@@ -354,7 +328,7 @@ test("a module starts a file of generated source: one per address and per file, 
   for (const file of ["../x.asm", "a/b/x.asm", "Music/x.asm", "/x.asm", "x.a", ".asm", "x y.asm", "leftovers/x.asm", "Segments/x.asm", "music/main.asm", "music/Config.asm"]) assert.throws(() => setModule(db, llm, { start: 0x3000, file }), failsWith("invalid-input"), file);
   // c64-source writes these files itself; macOS and Windows ignore the letter case.
   for (const file of ["main.asm", "loader.asm", "switches.asm", "config.asm", "constants.asm", "macros.asm", "start_screen.asm", "Main.asm", "CONSTANTS.asm", "Switches.asm"]) {
-    assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /writes main\.asm, loader\.asm, switches\.asm, config\.asm, constants\.asm, macros\.asm, start_screen\.asm in any folder, and the folders leftovers\/, segments\/ itself/.test(error.message), file);
+    assert.throws(() => setModule(db, llm, { start: 0x3000, file }), failsWith("invalid-input", /writes main\.asm, loader\.asm, switches\.asm, config\.asm, constants\.asm, macros\.asm, start_screen\.asm in any folder, and the folders leftovers\/, segments\/ itself/), file);
   }
   setModule(db, llm, { start: 0x0801, file: "start.asm" });
   assert.deepEqual(moduleAt(db, 0x0801), { space: "c64", start: 0x0801, file: "start.asm", title: "BASIC start and setup", origin: "llm", revision: nth(db, 3) }, "a write without a title keeps it");
@@ -492,7 +466,7 @@ test("an operand expression is refused at an address that is not the start of an
   // $807a is the operand byte of LDA #$c0 at $8079: its value is $c0 too.
   assert.throws(
     () => setOperand(db, context, { address: 0x807a, select: "expr", expression: "$c0" }),
-    (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /^\$807a is not the start of an instruction. It is an operand byte of the instruction at \$8079, decoded from the start of the code region at \$8079\. Give \$8079\.$/.test(error.message),
+    failsWith("invalid-input", /^\$807a is not the start of an instruction. It is an operand byte of the instruction at \$8079, decoded from the start of the code region at \$8079\. Give \$8079\.$/),
   );
   assert.throws(() => setOperand(db, context, { address: 0x9100, select: "expr", expression: "0" }), /^Refusal: \$9100 is in no code region, so the knowledge does not know an instruction that starts there\. Classify the code/);
   assert.throws(() => applyBatch(db, context, [{ op: "operand", address: 0x807f, select: "expr", expression: "$80" }]), /\$807f is not the start of an instruction. It is an operand byte of the instruction at \$807e/);
@@ -590,7 +564,7 @@ test("a patch puts code in a range of the image under a switch", () => {
   // Code whose length the lines give is refused when it is longer than the range; other code is checked by the build of the switch.
   assert.throws(
     () => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code: "lda #$01\nlda #$02\nlda #$03\nlda #$04" }),
-    (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && error.message === "The patch code is at least 8 bytes, and the range $8a85-$8a87 has 3. Make the code shorter, or make the range larger.",
+    failsWith("invalid-input", /^The patch code is at least 8 bytes, and the range \$8a85-\$8a87 has 3\. Make the code shorter, or make the range larger\.$/),
   );
   assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code: "!byte $ea, $ea\n!word $1234" }), /at least 4 bytes/);
   for (const code of ["!fill 3, $ea", "nop\nasl a\nrts ; done", "jsr $1234", "+inc16 ptr\nlda #1\nlda #2", "loop lda #1\nlda #2"]) setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code });
@@ -821,7 +795,7 @@ function programWithCode(): DatabaseSync {
 test("a module and a comment start at an instruction: an operand byte of a code region is refused, as for an operand", () => {
   const db = programWithCode();
   const before = currentRevision(db);
-  const inside = (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /^\$1bc3 is not the start of an instruction\. It is an operand byte of the instruction at \$1bc2, decoded from the start of the code region at \$1bc2\. A (module|comment) is at the start of an instruction, as the listing and the source show it\. Give \$1bc2\.$/.test(error.message);
+  const inside = failsWith("invalid-input", /^\$1bc3 is not the start of an instruction\. It is an operand byte of the instruction at \$1bc2, decoded from the start of the code region at \$1bc2\. A (module|comment) is at the start of an instruction, as the listing and the source show it\. Give \$1bc2\.$/);
   assert.throws(() => setModule(db, llm, { start: 0x1bc3, file: "mid_module.asm" }), inside);
   assert.throws(() => setComment(db, llm, { address: 0x1bc3, placement: "side", text: "inside" }), inside);
   assert.throws(() => setComment(db, llm, { address: 0x1bc6 - 1, placement: "line", text: "inside" }), /\$1bc5 is not the start of an instruction\. It is an operand byte of the instruction at \$1bc4/);
@@ -853,7 +827,7 @@ test("the knowledge keeps the bytes of each release other than the base release;
   assert.equal(releaseImage(db, "V2")!.byteAt(0x1001), 0x00, "a revert restores the bytes");
   removeRelease(db, llm, { label: "V2" });
   assert.equal(releaseImage(db, "V2"), undefined);
-  assert.equal((db.prepare("SELECT count(*) AS n FROM current_release_memory").get() as { n: number }).n, 0, "an unrelease closes the bytes");
+  assert.equal(count(db, "SELECT count(*) AS n FROM current_release_memory"), 0, "an unrelease closes the bytes");
   assert.throws(() => setRelease(db, llm, { label: "V3", rows: new Map([[0x1000, "a9z0"]]) }), failsWith("invalid-input"));
 });
 
@@ -869,7 +843,7 @@ test("patches of two switches can have the same range as alternatives; any other
   setPatch(db, context, { start: 0x8079, end: 0x807b, switch: "FIX_V2", code: "", comment: "Check 2." });
   assert.throws(
     () => setPatch(db, context, { start: 0x8079, end: 0x807a, switch: "FIX_V3", code: "" }),
-    (error: unknown) => error instanceof Refusal && error.code === "conflict" && /^The patch \$8079-\$807a of FIX_V3 overlaps the patch of FIX_V2 at \$8079-\$807b\. Patches of different switches can have the same range/.test(error.message),
+    failsWith("conflict", /^The patch \$8079-\$807a of FIX_V3 overlaps the patch of FIX_V2 at \$8079-\$807b\. Patches of different switches can have the same range/),
   );
   setPatch(db, context, { start: 0x8079, end: 0x807b, switch: "FIX_V3", code: "nop" });
   assert.deepEqual(listPatches(db).map((row) => [row.start, row.end, row.switch]), [[0x8079, 0x807b, "FIX_V2"], [0x8079, 0x807b, "FIX_V3"]]);
