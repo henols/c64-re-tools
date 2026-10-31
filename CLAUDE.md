@@ -1,14 +1,8 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Project
 
 Branding assets are in [`assets/branding/`](assets/branding/README.md). The README and human-facing docs use the compact transparent logo; keep skill instructions and test prompts free of decorative branding.
-
-**c64-re-tools** — an agent-friendly Commodore 64 engineering toolkit for
-reverse engineering unknown applications and for developing, debugging,
-building and testing new C64 applications.
 
 **Core value:** a Claude session can reliably drive a real C64 emulator —
 read and write memory, set checkpoints, inspect chip state — and keep working
@@ -19,32 +13,17 @@ when the emulator misbehaves.
 Released as 2.0.0. `.github/README.md` is the user documentation (GitHub shows it on the repository page). It stays out of the npm package: the agent side gets only skills and tools, never the README. Do not add design
 documents, plans or decision numbers to the repository.
 
-Architecture in one line: one MCP process owns one VICE instance and is
-VICE-only; a Host Runtime on the graphical host owns VICE and the tools that
-come with it (c1541, petcat); skill scripts call the Host Runtime for those,
-run ACME, DXA and Exomizer themselves and the decompiler in process (a committed WebAssembly
-build of a Rust port of Ghidra's SLEIGH decoder and decompiler, from `native/sleigh/`, as base64 in a `.ts` file), and keep project knowledge local as
-text in `.c64-re-tools/knowledge/`, with a SQLite index in `local/`.
-
 ## Commands
 
 Node ≥ 24 and pnpm (installed by hand; `packageManager` pins the version) are required.
 
 ```
-pnpm install --frozen-lockfile
-pnpm typecheck   # tsc over src/, skills/, distribution/ and test/; nothing is emitted
-pnpm test        # node --test over src/ and test/ (or the files given), with a shared compile cache
 pnpm host        # the Host Runtime from this checkout, in the foreground
                  # --log-console / --log-dir <dir>: log each request and tool run (off by default)
 ```
 
 - Release by tag only: `git tag v2.0.0-rc.2 && git push origin v2.0.0-rc.2` (prerelease, npm `next`) or `v2.0.0` (release, `latest`). The tag gives the version; the repo keeps `0.0.0-development`. Never bump the version in a commit.
 - CI on push runs on ubuntu-latest only. A tag tests nothing again: it needs a passed CI run of a push to main for the tagged commit. Platforms (macOS, Windows), Dev container Feature and Live run only when started by hand (`gh workflow run <name>`); never run OS-specific tests automatically.
-- The dev container Feature has its own version in `devcontainer-feature.json`; change it only with its files. The release tars it to the same bytes each time, so a project's `devcontainer-lock.json` digest stays valid.
-
-- Unit tests sit beside source (`src/**/*.test.ts`); `test/` is for integration/e2e.
-  Node runs `.ts` by type stripping, so relative imports end in `.ts` and only
-  erasable syntax is allowed (no enums, namespaces or parameter properties).
 
 - `node --test` exits 0 for a missing or typo'd file; `ls` it first.
 - Don't pipe `pnpm test` into `tail`/`head`: that reports the pipe's exit code.

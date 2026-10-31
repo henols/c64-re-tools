@@ -1,0 +1,1 @@
+- The dev container Feature has its own version in `devcontainer-feature.json`; change it only with its files. The release tars it to the same bytes each time, so a project's `devcontainer-lock.json` digest stays valid.
