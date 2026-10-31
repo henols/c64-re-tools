@@ -42,6 +42,9 @@ export const OPCODES: readonly Opcode[] = (() => {
 
 export const MODE_LENGTH: Record<Mode, 1 | 2 | 3> = { imp: 1, imm: 2, zp: 2, zpx: 2, zpy: 2, izx: 2, izy: 2, rel: 2, abs: 3, abx: 3, aby: 3, ind: 3 };
 
+/** The 12 opcodes that jam an NMOS 6502/6510. */
+export const JAM_OPCODES: ReadonlySet<number> = new Set(OPCODES.flatMap((opcode, code) => (opcode.mnemonic === "jam" ? [code] : [])));
+
 /** Every mnemonic in the table: a symbol with one of these names would read as an instruction. */
 export const MNEMONICS: ReadonlySet<string> = new Set(OPCODES.map((opcode) => opcode.mnemonic));
 

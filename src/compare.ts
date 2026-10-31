@@ -1,7 +1,7 @@
 // The byte check of a program: a PRG against a reference program, for example
 // the program in the knowledge, segment by segment.
 
-import { formatC64Address, formatC64Byte, prgRange } from "./c64.ts";
+import { formatC64Address, formatC64Byte, formatC64RangeFields, prgRange, rangesWhere } from "./c64.ts";
 
 export interface SegmentCheck {
   start: string;
@@ -26,7 +26,7 @@ export function compareBuild(prg: Uint8Array, program: Reference): { identical: 
   const checks = program.segments.map((segment): SegmentCheck => {
     const from = Math.max(segment.start, built.start);
     const to = Math.min(segment.end, built.end);
-    const shown = { start: formatC64Address(segment.start), end: formatC64Address(segment.end) };
+    const shown = formatC64RangeFields(segment);
     if (from > to) return { ...shown, result: "not covered", uncovered: segment.end - segment.start + 1 };
     let differences = 0;
     let first: SegmentCheck["firstDifference"];
@@ -56,12 +56,5 @@ export function mergedPrograms(programs: ReadonlyArray<{ start: number; body: Ui
     memory.set(body, start);
     loaded.fill(1, start, start + body.length);
   }
-  const segments: Array<{ start: number; end: number }> = [];
-  for (let address = 0; address < 0x10000; address++) {
-    if (loaded[address] === 0) continue;
-    const last = segments.at(-1);
-    if (last !== undefined && last.end === address - 1) last.end = address;
-    else segments.push({ start: address, end: address });
-  }
-  return { segments, byteAt: (address) => memory[address]! };
+  return { segments: rangesWhere((address) => loaded[address] !== 0), byteAt: (address) => memory[address]! };
 }

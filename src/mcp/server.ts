@@ -1,8 +1,6 @@
 // MCP server creation, tool registration and the one place where failures
 // become MCP results. Tool groups live in tools/; nothing here knows VICE.
 
-import { createRequire } from "node:module";
-
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, type Tool as McpTool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
@@ -11,7 +9,8 @@ import { formatC64Address } from "../c64.ts";
 import { Byte, TOOL_INPUTS } from "./inputs.ts";
 import { LostBeforeAnswer, type ViceSessionClient } from "../host-client/vice-session.ts";
 import { checkOut } from "../host-client/transfer.ts";
-import { isRefusal } from "../errors.ts";
+import { describeErrorStack, isRefusal } from "../errors.ts";
+import { PACKAGE } from "../package.ts";
 import { shownMessage, WireFailure, type WireError } from "../protocol/messages.ts";
 import { COMPARISONS, CONDITION_REGISTERS, MEMORY_VIEWS, SPACES, type Condition } from "../protocol/vice.ts";
 import { elapsedMs, trace, type TraceFields } from "../trace.ts";
@@ -159,7 +158,7 @@ function jsonSchema(schema: z.ZodObject, io: "input" | "output"): McpTool["input
   return rest as McpTool["inputSchema"];
 }
 
-export function toolListing(tool: ToolDefinition): McpTool {
+function toolListing(tool: ToolDefinition): McpTool {
   return {
     name: tool.name,
     title: tool.title,
@@ -204,21 +203,11 @@ export async function callTool(
   log: (line: string) => void = () => {},
 ): Promise<CallToolResult> {
   const started = performance.now();
-  const result = await runCall(tools, name, args, session, log);
-  trace().event("tool.call", { name, args, ms: elapsedMs(started), ...outcome(result) });
-  return result;
-}
-
-/** What the trace records of a result: the structured result, or the code and message of the error. */
-function outcome(result: CallToolResult): TraceFields {
-  if (result.isError !== true) return { ok: true, result: result.structuredContent };
-  const first = result.content[0];
-  const text = first?.type === "text" ? first.text : "";
-  try {
-    return { ok: false, ...(JSON.parse(text) as { error: WireError }).error };
-  } catch {
-    return { ok: false, message: text };
-  }
+  const done = await runCall(tools, name, args, session, log);
+  // The trace records the structured result, or the code and message of the error.
+  const outcome: TraceFields = "failed" in done ? { ok: false, code: done.failed.code, message: shownMessage(done.failed) } : { ok: true, result: done.result.structuredContent };
+  trace().event("tool.call", { name, args, ms: elapsedMs(started), ...outcome });
+  return "failed" in done ? errorResult(done.failed) : done.result;
 }
 
 async function runCall(
@@ -227,11 +216,11 @@ async function runCall(
   args: unknown,
   session: SessionSource,
   log: (line: string) => void,
-): Promise<CallToolResult> {
+): Promise<{ result: CallToolResult } | { failed: WireError }> {
   const tool = tools.get(name);
-  if (tool === undefined) return errorResult({ code: "invalid-input", message: `There is no tool named ${name}.` });
+  if (tool === undefined) return { failed: { code: "invalid-input", message: `There is no tool named ${name}.` } };
   const parsed = tool.inputSchema.safeParse(args ?? {});
-  if (!parsed.success) return errorResult({ code: "invalid-input", message: describeIssues(parsed.error, tool.inputSchema) });
+  if (!parsed.success) return { failed: { code: "invalid-input", message: describeIssues(parsed.error, tool.inputSchema) } };
   try {
     // An out path is checked before the tool runs: a refused path must not lose the work or leave its side effects.
     const fields = parsed.data as { out?: unknown; project?: unknown };
@@ -250,25 +239,16 @@ async function runCall(
     const checked = tool.outputSchema.safeParse(output instanceof ToolOutput ? output.structured : output);
     if (!checked.success) {
       log(`${name} gave a result outside its output schema: ${describeIssues(checked.error)}`);
-      return errorResult(INTERNAL_FAILURE);
+      return { failed: INTERNAL_FAILURE };
     }
     const result = checked.data as JsonObject;
     const extra = output instanceof ToolOutput ? output.content : [];
-    return { content: [{ type: "text", text: JSON.stringify(result) }, ...extra], structuredContent: result };
+    return { result: { content: [{ type: "text", text: JSON.stringify(result) }, ...extra], structuredContent: result } };
   } catch (error) {
-    if (isRefusal(error)) return errorResult({ code: error.code, message: error.message });
-    log(`${name} failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
-    return errorResult(INTERNAL_FAILURE);
+    if (isRefusal(error)) return { failed: { code: error.code, message: error.message } };
+    log(`${name} failed: ${describeErrorStack(error)}`);
+    return { failed: INTERNAL_FAILURE };
   }
-}
-
-/** The version of this package. A package.json without a version is a broken installation. */
-function packageVersion(): string {
-  const { version } = createRequire(import.meta.url)("../../package.json") as { version?: unknown };
-  if (typeof version !== "string" || version === "") {
-    throw new Error("The package.json of c64-re-tools has no version. Install c64-re-tools again.");
-  }
-  return version;
 }
 
 const INSTRUCTIONS =
@@ -287,10 +267,11 @@ const INSTRUCTIONS =
 export function createMcpServer(options: { tools: readonly ToolDefinition[]; session: SessionSource; log?: (line: string) => void }): Server {
   const tools = new Map(options.tools.map((tool) => [tool.name, tool]));
   const server = new Server(
-    { name: "c64-re-tools", version: packageVersion() },
+    { name: "c64-re-tools", version: PACKAGE.version },
     { capabilities: { tools: {} }, instructions: INSTRUCTIONS },
   );
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: options.tools.map(toolListing) }));
+  const listing = options.tools.map(toolListing);
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: listing }));
   server.setRequestHandler(CallToolRequestSchema, async (request) =>
     callTool(tools, request.params.name, request.params.arguments, options.session, options.log),
   );

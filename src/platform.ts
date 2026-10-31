@@ -3,7 +3,7 @@
 // Names follow "Mapping the Commodore 64". Only platform facts live here:
 // an address without one belongs to the application.
 
-import { type AddressRange, COVERAGE, d018Offsets, formatC64Address, romOnlyRanges, vicBankBase } from "./c64.ts";
+import { type AddressRange, COVERAGE, d018Offsets, formatC64Address, inRanges, rangesWhere, romOnlyRanges, vicBankBase } from "./c64.ts";
 import { Refusal } from "./errors.ts";
 
 export interface Entry {
@@ -450,19 +450,13 @@ const KERNAL_ROM: AddressRange = { start: 0xe000, end: 0xffff };
  * that code stays code.
  */
 export function romRanges(coverage: Uint8Array | undefined, state: Record<string, unknown> | undefined, image: (address: number) => number | undefined, known: readonly number[]): AddressRange[] {
-  let ranges: AddressRange[] = [];
+  let ranges: AddressRange[];
   if (coverage !== undefined) ranges = romOnlyRanges(coverage, image);
   else {
     const port = (state?.cpuPort as Record<string, unknown> | undefined)?.$01;
     const use = typeof port === "number" ? romUseOfPort(port) : { basic: false, kernal: false };
-    for (const rom of [...(use.basic ? [BASIC_ROM] : []), ...(use.kernal ? [KERNAL_ROM] : [])]) {
-      for (let address = rom.start; address <= rom.end; address++) {
-        if (image(address) === undefined) continue;
-        const last = ranges.at(-1);
-        if (last !== undefined && last.end === address - 1) last.end = address;
-        else ranges.push({ start: address, end: address });
-      }
-    }
+    const roms = [...(use.basic ? [BASIC_ROM] : []), ...(use.kernal ? [KERNAL_ROM] : [])];
+    ranges = rangesWhere((address) => inRanges(roms, address) && image(address) !== undefined);
   }
   return ranges.filter((range) => !known.some((address) => address >= range.start && address <= range.end));
 }

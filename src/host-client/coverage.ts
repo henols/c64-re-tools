@@ -5,9 +5,6 @@ import { COVERAGE, type CodeRange } from "../c64.ts";
 import { MAX_MEMMAP_RANGES, type MemmapRange } from "../protocol/vice.ts";
 import type { ViceSessionClient } from "./vice-session.ts";
 
-/** A full coverage file: offset n is address n. */
-export const FULL_COVERAGE = 0x10000;
-
 /** The coverage bytes of start..end, read from the session in parts. */
 export async function readCoverage(session: Pick<ViceSessionClient, "memmap">, start = 0x0000, end = 0xffff): Promise<Uint8Array> {
   const map = new Uint8Array(end - start + 1);

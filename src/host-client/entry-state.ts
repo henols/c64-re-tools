@@ -5,6 +5,7 @@
 
 import { c64AddressOf } from "../c64.ts";
 import { Refusal } from "../errors.ts";
+import { isInteger, isObject } from "../protocol/messages.ts";
 import { MAX_MEMORY_WRITE } from "./tools.ts";
 import { readProjectJson } from "./transfer.ts";
 import type { ViceSessionClient } from "./vice-session.ts";
@@ -30,8 +31,7 @@ export interface EntryState {
   raw: Record<string, unknown>;
 }
 
-const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
-const isByte = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 0xff;
+const isByte = (value: unknown): value is number => isInteger(value, 0, 0xff);
 
 /** The entry state of a value. `where` names it in a refusal, for example a file or "the entry state of the knowledge". */
 export function parseEntryState(value: unknown, where: string): EntryState {

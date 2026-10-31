@@ -4,10 +4,13 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import type { AddressRange } from "../c64.ts";
+import type { AddressRange, ReferenceKind } from "../c64.ts";
 import { Refusal } from "../errors.ts";
-import { DEFAULT_SPACE, type CommentPlacement, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type StartScreenMode, type SuppressionEntity, type SwitchKind, type SymbolKind } from "./schema.ts";
-import { compareText, NO_REVISION, sqlName, TABLES } from "./text.ts";
+import { prepare } from "./database.ts";
+import type { OperandSelect } from "./expression.ts";
+import type { HistoryEntry } from "./history.ts";
+import { DEFAULT_SPACE, spaceOrder, type CommentPlacement, type Origin, type RegionType, type Space, type StartScreenMode, type SuppressionEntity, type SwitchKind, type SymbolKind } from "./schema.ts";
+import { compareText, NO_REVISION, sqlName, TABLES, tableSpec } from "./text.ts";
 
 export interface SymbolRow {
   space: Space;
@@ -197,25 +200,11 @@ const items = (text: string) => (text.trim() === "" ? [] : text.split(",").map((
 
 type Raw = Record<string, unknown>;
 
-export const SYMBOL_COLUMNS = "space, address, name, kind, origin, valid_from_revision";
-export const REGION_COLUMNS = "space, start_address, end_address, type, element, origin, valid_from_revision";
-export const COMMENT_COLUMNS = "space, address, placement, text, origin, valid_from_revision";
-export const REFERENCE_COLUMNS = "space, from_address, to_address, kind, origin, valid_from_revision";
-export const SUPPRESSION_COLUMNS = "space, entity, start_address, end_address, to_address, kind, origin, valid_from_revision";
-export const MODULE_COLUMNS = "space, start_address, file, title, origin, valid_from_revision";
-export const OPERAND_COLUMNS = "space, address, selector, symbol, offset, expression, origin, valid_from_revision";
-export const PATCH_COLUMNS = "space, start_address, end_address, switch_name, code, comment, origin, valid_from_revision";
-export const SWITCH_COLUMNS = "space, name, kind, default_value, releases, comment, origin, valid_from_revision";
-export const RELEASE_COLUMNS = "space, label, base, file, sha256, comment, origin, valid_from_revision";
-export const MACRO_COLUMNS = "space, name, params, body, comment, origin, valid_from_revision";
-export const MACRO_USE_COLUMNS = "space, start_address, end_address, macro, args, origin, valid_from_revision";
-export const START_SCREEN_COLUMNS = "space, mode, screen, bitmap, charset, colours, colour, border, background, stage, call_address, colour_ram, comment, origin, valid_from_revision";
-
-export function toSymbol(row: Raw): SymbolRow {
+function toSymbol(row: Raw): SymbolRow {
   return { space: row.space as Space, address: row.address as number, name: row.name as string, kind: row.kind as SymbolKind, origin: row.origin as Origin, revision: row.valid_from_revision as string };
 }
 
-export function toRegion(row: Raw): RegionRow {
+function toRegion(row: Raw): RegionRow {
   const region: RegionRow = {
     space: row.space as Space,
     start: row.start_address as number,
@@ -228,7 +217,7 @@ export function toRegion(row: Raw): RegionRow {
   return region;
 }
 
-export function toComment(row: Raw): CommentRow {
+function toComment(row: Raw): CommentRow {
   return {
     space: row.space as Space,
     address: row.address as number,
@@ -239,11 +228,11 @@ export function toComment(row: Raw): CommentRow {
   };
 }
 
-export function toReference(row: Raw): ReferenceRow {
+function toReference(row: Raw): ReferenceRow {
   return { space: row.space as Space, from: row.from_address as number, to: row.to_address as number, kind: row.kind as ReferenceKind, origin: row.origin as Origin, revision: row.valid_from_revision as string };
 }
 
-export function toSuppression(row: Raw): SuppressionRow {
+function toSuppression(row: Raw): SuppressionRow {
   const suppression: SuppressionRow = {
     space: row.space as Space,
     entity: row.entity as SuppressionEntity,
@@ -257,13 +246,13 @@ export function toSuppression(row: Raw): SuppressionRow {
   return suppression;
 }
 
-export function toModule(row: Raw): ModuleRow {
+function toModule(row: Raw): ModuleRow {
   const module: ModuleRow = { space: row.space as Space, start: row.start_address as number, file: row.file as string, origin: row.origin as ModuleRow["origin"], revision: row.valid_from_revision as string };
   if (row.title !== null && row.title !== undefined) module.title = row.title as string;
   return module;
 }
 
-export function toOperand(row: Raw): OperandRow {
+function toOperand(row: Raw): OperandRow {
   const operand: OperandRow = {
     space: row.space as Space,
     address: row.address as number,
@@ -277,7 +266,7 @@ export function toOperand(row: Raw): OperandRow {
   return operand;
 }
 
-export function toPatch(row: Raw): PatchRow {
+function toPatch(row: Raw): PatchRow {
   const patch: PatchRow = {
     space: row.space as Space,
     start: row.start_address as number,
@@ -291,7 +280,7 @@ export function toPatch(row: Raw): PatchRow {
   return patch;
 }
 
-export function toSwitch(row: Raw): SwitchRow {
+function toSwitch(row: Raw): SwitchRow {
   const value: SwitchRow = {
     space: row.space as Space,
     name: row.name as string,
@@ -305,7 +294,7 @@ export function toSwitch(row: Raw): SwitchRow {
   return value;
 }
 
-export function toRelease(row: Raw): ReleaseRow {
+function toRelease(row: Raw): ReleaseRow {
   const release: ReleaseRow = {
     space: row.space as Space,
     label: row.label as string,
@@ -319,7 +308,7 @@ export function toRelease(row: Raw): ReleaseRow {
   return release;
 }
 
-export function toStartScreen(row: Raw): StartScreenRow {
+function toStartScreen(row: Raw): StartScreenRow {
   const value: StartScreenRow = {
     space: row.space as Space,
     mode: row.mode as StartScreenMode,
@@ -337,13 +326,13 @@ export function toStartScreen(row: Raw): StartScreenRow {
   return value;
 }
 
-export function toMacro(row: Raw): MacroRow {
+function toMacro(row: Raw): MacroRow {
   const macro: MacroRow = { space: row.space as Space, name: row.name as string, params: items(row.params as string), body: row.body as string, origin: row.origin as MacroRow["origin"], revision: row.valid_from_revision as string };
   if (row.comment !== null && row.comment !== undefined) macro.comment = row.comment as string;
   return macro;
 }
 
-export function toMacroUse(row: Raw): MacroUseRow {
+function toMacroUse(row: Raw): MacroUseRow {
   return {
     space: row.space as Space,
     start: row.start_address as number,
@@ -355,22 +344,55 @@ export function toMacroUse(row: Raw): MacroUseRow {
   };
 }
 
+/** A fact table as the reads give it: the kind of its rows in the history, its columns as a query selects them, and the row of the selected columns. */
+export interface Fact<R = HistoryEntry["row"]> {
+  table: string;
+  entity: HistoryEntry["entity"];
+  columns: string;
+  map: (raw: Raw) => R;
+}
+
+const fact = <R>(table: string, entity: HistoryEntry["entity"], map: (raw: Raw) => R): Fact<R> => ({
+  table,
+  entity,
+  columns: [...tableSpec(table).fields.map((field) => field.column), "valid_from_revision"].join(", "),
+  map,
+});
+
+/** The fact tables, in the order that the history of a revision lists them. */
+export const FACTS = {
+  symbols: fact("symbols", "symbol", toSymbol),
+  analyzer_names: fact("analyzer_names", "analyzer-name", toSymbol),
+  regions: fact("regions", "region", toRegion),
+  comments: fact("comments", "comment", toComment),
+  references: fact("references", "reference", toReference),
+  suppressions: fact("suppressions", "suppression", toSuppression),
+  modules: fact("modules", "module", toModule),
+  operands: fact("operands", "operand", toOperand),
+  patches: fact("patches", "patch", toPatch),
+  switches: fact("switches", "switch", toSwitch),
+  releases: fact("releases", "release", toRelease),
+  start_screens: fact("start_screens", "start-screen", toStartScreen),
+  macros: fact("macros", "macro", toMacro),
+  macro_uses: fact("macro_uses", "macro-use", toMacroUse),
+};
+
 /** The id of the newest revision, or "0" when the knowledge has none. */
 export function currentRevision(db: DatabaseSync | undefined): string {
   if (db === undefined) return "0";
-  return (db.prepare("SELECT max(id) AS id FROM revisions").get() as { id: string | null }).id ?? "0";
+  return (prepare(db, "SELECT max(id) AS id FROM revisions").get() as { id: string | null }).id ?? "0";
 }
 
 /**
  * The newest revision that changed a row in one of `spaces`, or the revision
  * of no knowledge when none did. A change in another space does not change it.
  */
-export function spacesRevision(db: DatabaseSync | undefined, spaces: readonly Space[]): string {
+function spacesRevision(db: DatabaseSync | undefined, spaces: readonly Space[]): string {
   if (db === undefined || spaces.length === 0) return NO_REVISION;
   const marks = spaces.map(() => "?").join(", ");
   let newest = NO_REVISION;
   for (const spec of TABLES) {
-    const row = db.prepare(`SELECT max(valid_from_revision) AS added, max(valid_to_revision) AS closed FROM ${sqlName(spec.table)} WHERE space IN (${marks})`).get(...spaces) as { added: string | null; closed: string | null };
+    const row = prepare(db, `SELECT max(valid_from_revision) AS added, max(valid_to_revision) AS closed FROM ${sqlName(spec.table)} WHERE space IN (${marks})`).get(...spaces) as { added: string | null; closed: string | null };
     for (const id of [row.added, row.closed]) if (id !== null && compareText(id, newest) > 0) newest = id;
   }
   return newest;
@@ -402,8 +424,7 @@ export interface CoverageRun {
  */
 export function coverageRuns(db: DatabaseSync | undefined, at?: string): CoverageRun[] {
   if (db === undefined || at === NO_REVISION) return [];
-  const rows = db
-    .prepare(
+  const rows = prepare(db,
       `SELECT r.id AS id, r.operation AS operation, r.restored_revision AS restored, r.restored_space AS restoredSpace, e.ref AS name, e.sha256 AS sha256, coalesce(e.space, '${DEFAULT_SPACE}') AS space
        FROM revisions r LEFT JOIN evidence e ON e.revision = r.id AND e.kind = 'coverage'
        WHERE (r.operation = 'coverage' AND e.id IS NOT NULL) OR (r.operation = 'revert' AND r.restored_revision IS NOT NULL)
@@ -441,7 +462,7 @@ const NAMED_REVISIONS = 5;
 export function resolveRevision(db: DatabaseSync | undefined, text: string): string {
   if (text === NO_REVISION) return NO_REVISION;
   if (!/^[0-9a-zT.-]+$/.test(text)) throw new Refusal("invalid-input", `${JSON.stringify(text)} is not a revision id. A revision id looks like 20261015T214501.123-k3f9qz; its start is enough when only one revision has it.`);
-  const found = (db?.prepare("SELECT id FROM revisions WHERE substr(id, 1, ?) = ? ORDER BY id LIMIT ?").all(text.length, text, NAMED_REVISIONS + 1) ?? []) as Array<{ id: string }>;
+  const found = (prepare(db, "SELECT id FROM revisions WHERE substr(id, 1, ?) = ? ORDER BY id LIMIT ?")?.all(text.length, text, NAMED_REVISIONS + 1) ?? []) as Array<{ id: string }>;
   if (found.length === 0) throw new Refusal("not-found", `There is no revision ${text}.`);
   if (found.length > 1) {
     const named = found.slice(0, NAMED_REVISIONS).map((row) => row.id).join(", ");
@@ -451,25 +472,25 @@ export function resolveRevision(db: DatabaseSync | undefined, text: string): str
 }
 
 export function symbolAt(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): SymbolRow | undefined {
-  const row = db?.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_symbols WHERE space = ? AND address = ?`).get(space, address) as Raw | undefined;
+  const row = prepare(db, `SELECT ${FACTS.symbols.columns} FROM current_symbols WHERE space = ? AND address = ?`)?.get(space, address) as Raw | undefined;
   return row === undefined ? undefined : toSymbol(row);
 }
 
 export function symbolNamed(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): SymbolRow | undefined {
-  const row = db?.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_symbols WHERE space = ? AND name = ?`).get(space, name) as Raw | undefined;
+  const row = prepare(db, `SELECT ${FACTS.symbols.columns} FROM current_symbols WHERE space = ? AND name = ?`)?.get(space, name) as Raw | undefined;
   return row === undefined ? undefined : toSymbol(row);
 }
 
 /** The analyzer names at an address: one for each analyzer, in the order heuristic, decompiler, DXA. */
 export function analyzerNamesAt(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): SymbolRow[] {
   if (db === undefined) return [];
-  return (db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_analyzer_names WHERE space = ? AND address = ?`).all(space, address) as Raw[]).map(toSymbol).sort(byAnalyzer);
+  return (prepare(db, `SELECT ${FACTS.analyzer_names.columns} FROM current_analyzer_names WHERE space = ? AND address = ?`).all(space, address) as Raw[]).map(toSymbol).sort(byAnalyzer);
 }
 
 /** The analyzer names with this name: more than one when two analyzers gave it to different addresses. */
 export function analyzerNamed(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): SymbolRow[] {
   if (db === undefined) return [];
-  return (db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_analyzer_names WHERE space = ? AND name = ?`).all(space, name) as Raw[]).map(toSymbol).sort(byAnalyzer);
+  return (prepare(db, `SELECT ${FACTS.analyzer_names.columns} FROM current_analyzer_names WHERE space = ? AND name = ?`).all(space, name) as Raw[]).map(toSymbol).sort(byAnalyzer);
 }
 
 /** The analyzers in the order that their names are used when no other name exists. */
@@ -479,7 +500,7 @@ const byAnalyzer = (a: SymbolRow, b: SymbolRow) => a.address - b.address || ANAL
 /** Current analyzer names in a range, in address order and then heuristic, decompiler, DXA. */
 export function listAnalyzerNames(db: DatabaseSync | undefined, range: AddressRange = ALL, kind?: SymbolKind, origins?: OriginFilter, space: Space = DEFAULT_SPACE): SymbolRow[] {
   if (db === undefined) return [];
-  return (db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_analyzer_names WHERE space = ? AND address BETWEEN ? AND ?`).all(space, range.start, range.end) as Raw[])
+  return (prepare(db, `SELECT ${FACTS.analyzer_names.columns} FROM current_analyzer_names WHERE space = ? AND address BETWEEN ? AND ?`).all(space, range.start, range.end) as Raw[])
     .map(toSymbol)
     .filter((row) => (kind === undefined || row.kind === kind) && kept(origins)(row))
     .sort(byAnalyzer);
@@ -488,32 +509,28 @@ export function listAnalyzerNames(db: DatabaseSync | undefined, range: AddressRa
 /** Current regions that share at least one address with [start, end], in address order. */
 export function regionsOverlapping(db: DatabaseSync | undefined, start: number, end: number, space: Space = DEFAULT_SPACE): RegionRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(`SELECT ${REGION_COLUMNS} FROM current_regions WHERE space = ? AND start_address <= ? AND end_address >= ? ORDER BY start_address`)
+  return prepare(db, `SELECT ${FACTS.regions.columns} FROM current_regions WHERE space = ? AND start_address <= ? AND end_address >= ? ORDER BY start_address`)
     .all(space, end, start)
     .map((row) => toRegion(row as Raw));
 }
 
 export function commentsAt(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): CommentRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(`SELECT ${COMMENT_COLUMNS} FROM current_comments WHERE space = ? AND address = ? ORDER BY placement`)
+  return prepare(db, `SELECT ${FACTS.comments.columns} FROM current_comments WHERE space = ? AND address = ? ORDER BY placement`)
     .all(space, address)
     .map((row) => toComment(row as Raw));
 }
 
 export function referencesFrom(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): ReferenceRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(`SELECT ${REFERENCE_COLUMNS} FROM current_references WHERE space = ? AND from_address = ? ORDER BY to_address, kind`)
+  return prepare(db, `SELECT ${FACTS.references.columns} FROM current_references WHERE space = ? AND from_address = ? ORDER BY to_address, kind`)
     .all(space, address)
     .map((row) => toReference(row as Raw));
 }
 
 export function referencesTo(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): ReferenceRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(`SELECT ${REFERENCE_COLUMNS} FROM current_references WHERE space = ? AND to_address = ?`)
+  return prepare(db, `SELECT ${FACTS.references.columns} FROM current_references WHERE space = ? AND to_address = ?`)
     .all(space, address)
     .map((row) => toReference(row as Raw))
     // Sorted here: with ORDER BY from_address, SQLite reads the whole space by the from_address index instead of the few rows of the to_address index.
@@ -523,8 +540,7 @@ export function referencesTo(db: DatabaseSync | undefined, address: number, spac
 /** Current suppressions of one entity that share at least one address with [start, end], in address order. */
 export function suppressionsOverlapping(db: DatabaseSync | undefined, entity: SuppressionEntity, start: number, end: number, space: Space = DEFAULT_SPACE): SuppressionRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(`SELECT ${SUPPRESSION_COLUMNS} FROM current_suppressions WHERE space = ? AND entity = ? AND start_address <= ? AND end_address >= ? ORDER BY start_address, to_address, kind`)
+  return prepare(db, `SELECT ${FACTS.suppressions.columns} FROM current_suppressions WHERE space = ? AND entity = ? AND start_address <= ? AND end_address >= ? ORDER BY start_address, to_address, kind`)
     .all(space, entity, end, start)
     .map((row) => toSuppression(row as Raw));
 }
@@ -538,36 +554,34 @@ export function referenceSuppressed(db: DatabaseSync | undefined, reference: { f
 }
 
 /** Current suppressions at an address: its symbol, the region range that holds it, references from or to it. */
-export function suppressionsAt(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): SuppressionRow[] {
+function suppressionsAt(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): SuppressionRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(
-      `SELECT ${SUPPRESSION_COLUMNS} FROM current_suppressions WHERE space = ? AND ((start_address <= ? AND end_address >= ?) OR to_address = ?) ORDER BY entity, start_address, to_address, kind`,
+  return prepare(db,
+      `SELECT ${FACTS.suppressions.columns} FROM current_suppressions WHERE space = ? AND ((start_address <= ? AND end_address >= ?) OR to_address = ?) ORDER BY entity, start_address, to_address, kind`,
     )
     .all(space, address, address, address)
     .map((row) => toSuppression(row as Raw));
 }
 
 export function moduleAt(db: DatabaseSync | undefined, start: number, space: Space = DEFAULT_SPACE): ModuleRow | undefined {
-  const row = db?.prepare(`SELECT ${MODULE_COLUMNS} FROM current_modules WHERE space = ? AND start_address = ?`).get(space, start) as Raw | undefined;
+  const row = prepare(db, `SELECT ${FACTS.modules.columns} FROM current_modules WHERE space = ? AND start_address = ?`)?.get(space, start) as Raw | undefined;
   return row === undefined ? undefined : toModule(row);
 }
 
 export function moduleWithFile(db: DatabaseSync | undefined, file: string, space: Space = DEFAULT_SPACE): ModuleRow | undefined {
-  const row = db?.prepare(`SELECT ${MODULE_COLUMNS} FROM current_modules WHERE space = ? AND file = ? COLLATE NOCASE`).get(space, file) as Raw | undefined;
+  const row = prepare(db, `SELECT ${FACTS.modules.columns} FROM current_modules WHERE space = ? AND file = ? COLLATE NOCASE`)?.get(space, file) as Raw | undefined;
   return row === undefined ? undefined : toModule(row);
 }
 
 export function operandAt(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): OperandRow | undefined {
-  const row = db?.prepare(`SELECT ${OPERAND_COLUMNS} FROM current_operands WHERE space = ? AND address = ?`).get(space, address) as Raw | undefined;
+  const row = prepare(db, `SELECT ${FACTS.operands.columns} FROM current_operands WHERE space = ? AND address = ?`)?.get(space, address) as Raw | undefined;
   return row === undefined ? undefined : toOperand(row);
 }
 
 /** Current patches that share at least one address with [start, end], in address order. */
 export function patchesOverlapping(db: DatabaseSync | undefined, start: number, end: number, space: Space = DEFAULT_SPACE): PatchRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(`SELECT ${PATCH_COLUMNS} FROM current_patches WHERE space = ? AND start_address <= ? AND end_address >= ? ORDER BY start_address`)
+  return prepare(db, `SELECT ${FACTS.patches.columns} FROM current_patches WHERE space = ? AND start_address <= ? AND end_address >= ? ORDER BY start_address`)
     .all(space, end, start)
     .map((row) => toPatch(row as Raw));
 }
@@ -575,37 +589,34 @@ export function patchesOverlapping(db: DatabaseSync | undefined, start: number, 
 /** Current macro uses that share at least one address with [start, end], in address order. */
 export function macroUsesOverlapping(db: DatabaseSync | undefined, start: number, end: number, space: Space = DEFAULT_SPACE): MacroUseRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(`SELECT ${MACRO_USE_COLUMNS} FROM current_macro_uses WHERE space = ? AND start_address <= ? AND end_address >= ? ORDER BY start_address`)
+  return prepare(db, `SELECT ${FACTS.macro_uses.columns} FROM current_macro_uses WHERE space = ? AND start_address <= ? AND end_address >= ? ORDER BY start_address`)
     .all(space, end, start)
     .map((row) => toMacroUse(row as Raw));
 }
 
 export function switchNamed(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): SwitchRow | undefined {
-  const row = db?.prepare(`SELECT ${SWITCH_COLUMNS} FROM current_switches WHERE space = ? AND name = ?`).get(space, name) as Raw | undefined;
+  const row = prepare(db, `SELECT ${FACTS.switches.columns} FROM current_switches WHERE space = ? AND name = ?`)?.get(space, name) as Raw | undefined;
   return row === undefined ? undefined : toSwitch(row);
 }
 
 /** Current switches of a space, by name. */
 export function listSwitches(db: DatabaseSync | undefined, origins?: OriginFilter, space: Space = DEFAULT_SPACE): SwitchRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(`SELECT ${SWITCH_COLUMNS} FROM current_switches WHERE space = ? ORDER BY name`)
+  return prepare(db, `SELECT ${FACTS.switches.columns} FROM current_switches WHERE space = ? ORDER BY name`)
     .all(space)
     .map((row) => toSwitch(row as Raw))
     .filter(kept(origins));
 }
 
 export function releaseLabeled(db: DatabaseSync | undefined, label: string, space: Space = DEFAULT_SPACE): ReleaseRow | undefined {
-  const row = db?.prepare(`SELECT ${RELEASE_COLUMNS} FROM current_releases WHERE space = ? AND label = ?`).get(space, label) as Raw | undefined;
+  const row = prepare(db, `SELECT ${FACTS.releases.columns} FROM current_releases WHERE space = ? AND label = ?`)?.get(space, label) as Raw | undefined;
   return row === undefined ? undefined : toRelease(row);
 }
 
 /** Current releases of a space: the base release first, then by label. */
 export function listReleases(db: DatabaseSync | undefined, origins?: OriginFilter, space: Space = DEFAULT_SPACE): ReleaseRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(`SELECT ${RELEASE_COLUMNS} FROM current_releases WHERE space = ? ORDER BY base DESC, label`)
+  return prepare(db, `SELECT ${FACTS.releases.columns} FROM current_releases WHERE space = ? ORDER BY base DESC, label`)
     .all(space)
     .map((row) => toRelease(row as Raw))
     .filter(kept(origins));
@@ -618,7 +629,7 @@ export function baseLabel(db: DatabaseSync | undefined, space: Space = DEFAULT_S
 
 /** The current start screen of a space, if the knowledge has one. */
 export function currentStartScreen(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): StartScreenRow | undefined {
-  const row = db?.prepare(`SELECT ${START_SCREEN_COLUMNS} FROM current_start_screens WHERE space = ?`).get(space) as Raw | undefined;
+  const row = prepare(db, `SELECT ${FACTS.start_screens.columns} FROM current_start_screens WHERE space = ?`)?.get(space) as Raw | undefined;
   return row === undefined ? undefined : toStartScreen(row);
 }
 
@@ -631,7 +642,7 @@ export function baseValue(row: Pick<SwitchRow, "releases">, base: string | undef
 }
 
 export function macroNamed(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): MacroRow | undefined {
-  const row = db?.prepare(`SELECT ${MACRO_COLUMNS} FROM current_macros WHERE space = ? AND name = ?`).get(space, name) as Raw | undefined;
+  const row = prepare(db, `SELECT ${FACTS.macros.columns} FROM current_macros WHERE space = ? AND name = ?`)?.get(space, name) as Raw | undefined;
   return row === undefined ? undefined : toMacro(row);
 }
 
@@ -692,8 +703,8 @@ export function listSymbols(db: DatabaseSync | undefined, range: AddressRange = 
   if (db === undefined) return [];
   const rows =
     kind === undefined
-      ? db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_symbols WHERE space = ? AND address BETWEEN ? AND ? ORDER BY address`).all(space, range.start, range.end)
-      : db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_symbols WHERE space = ? AND address BETWEEN ? AND ? AND kind = ? ORDER BY address`).all(space, range.start, range.end, kind);
+      ? prepare(db, `SELECT ${FACTS.symbols.columns} FROM current_symbols WHERE space = ? AND address BETWEEN ? AND ? ORDER BY address`).all(space, range.start, range.end)
+      : prepare(db, `SELECT ${FACTS.symbols.columns} FROM current_symbols WHERE space = ? AND address BETWEEN ? AND ? AND kind = ? ORDER BY address`).all(space, range.start, range.end, kind);
   return rows.map((row) => toSymbol(row as Raw)).filter(kept(origins));
 }
 
@@ -703,8 +714,7 @@ export function listRegions(db: DatabaseSync | undefined, range: AddressRange = 
 
 export function listComments(db: DatabaseSync | undefined, range: AddressRange = ALL, origins?: OriginFilter, space: Space = DEFAULT_SPACE): CommentRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(`SELECT ${COMMENT_COLUMNS} FROM current_comments WHERE space = ? AND address BETWEEN ? AND ? ORDER BY address, placement`)
+  return prepare(db, `SELECT ${FACTS.comments.columns} FROM current_comments WHERE space = ? AND address BETWEEN ? AND ? ORDER BY address, placement`)
     .all(space, range.start, range.end)
     .map((row) => toComment(row as Raw))
     .filter(kept(origins));
@@ -713,9 +723,8 @@ export function listComments(db: DatabaseSync | undefined, range: AddressRange =
 /** Current references whose source or target lies in the range. */
 export function listReferences(db: DatabaseSync | undefined, range: AddressRange = ALL, kind?: ReferenceKind, origins?: OriginFilter, space: Space = DEFAULT_SPACE): ReferenceRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(
-      `SELECT ${REFERENCE_COLUMNS} FROM current_references WHERE space = ? AND (from_address BETWEEN ? AND ? OR to_address BETWEEN ? AND ?) ORDER BY from_address, to_address, kind`,
+  return prepare(db,
+      `SELECT ${FACTS.references.columns} FROM current_references WHERE space = ? AND (from_address BETWEEN ? AND ? OR to_address BETWEEN ? AND ?) ORDER BY from_address, to_address, kind`,
     )
     .all(space, range.start, range.end, range.start, range.end)
     .map((row) => toReference(row as Raw))
@@ -760,9 +769,8 @@ export function regionCounts(rows: readonly RegionRow[], range: AddressRange = A
 /** Current suppressions whose place lies in the range: a reference by its source or target. */
 export function listSuppressions(db: DatabaseSync | undefined, range: AddressRange = ALL, space: Space = DEFAULT_SPACE): SuppressionRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(
-      `SELECT ${SUPPRESSION_COLUMNS} FROM current_suppressions WHERE space = ? AND ((start_address <= ? AND end_address >= ?) OR to_address BETWEEN ? AND ?) ORDER BY start_address, entity, to_address, kind`,
+  return prepare(db,
+      `SELECT ${FACTS.suppressions.columns} FROM current_suppressions WHERE space = ? AND ((start_address <= ? AND end_address >= ?) OR to_address BETWEEN ? AND ?) ORDER BY start_address, entity, to_address, kind`,
     )
     .all(space, range.end, range.start, range.start, range.end)
     .map((row) => toSuppression(row as Raw));
@@ -771,8 +779,7 @@ export function listSuppressions(db: DatabaseSync | undefined, range: AddressRan
 /** Current modules that start in the range, in address order. */
 export function listModules(db: DatabaseSync | undefined, range: AddressRange = ALL, origins?: OriginFilter, space: Space = DEFAULT_SPACE): ModuleRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(`SELECT ${MODULE_COLUMNS} FROM current_modules WHERE space = ? AND start_address BETWEEN ? AND ? ORDER BY start_address`)
+  return prepare(db, `SELECT ${FACTS.modules.columns} FROM current_modules WHERE space = ? AND start_address BETWEEN ? AND ? ORDER BY start_address`)
     .all(space, range.start, range.end)
     .map((row) => toModule(row as Raw))
     .filter(kept(origins));
@@ -781,8 +788,7 @@ export function listModules(db: DatabaseSync | undefined, range: AddressRange = 
 /** Current operand expressions of instructions in the range, in address order. */
 export function listOperands(db: DatabaseSync | undefined, range: AddressRange = ALL, origins?: OriginFilter, space: Space = DEFAULT_SPACE): OperandRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(`SELECT ${OPERAND_COLUMNS} FROM current_operands WHERE space = ? AND address BETWEEN ? AND ? ORDER BY address`)
+  return prepare(db, `SELECT ${FACTS.operands.columns} FROM current_operands WHERE space = ? AND address BETWEEN ? AND ? ORDER BY address`)
     .all(space, range.start, range.end)
     .map((row) => toOperand(row as Raw))
     .filter(kept(origins));
@@ -796,8 +802,7 @@ export function listPatches(db: DatabaseSync | undefined, range: AddressRange = 
 /** Current macros, by name. */
 export function listMacros(db: DatabaseSync | undefined, origins?: OriginFilter, space: Space = DEFAULT_SPACE): MacroRow[] {
   if (db === undefined) return [];
-  return db
-    .prepare(`SELECT ${MACRO_COLUMNS} FROM current_macros WHERE space = ? ORDER BY name`)
+  return prepare(db, `SELECT ${FACTS.macros.columns} FROM current_macros WHERE space = ? ORDER BY name`)
     .all(space)
     .map((row) => toMacro(row as Raw))
     .filter(kept(origins));
@@ -811,13 +816,8 @@ export function listMacroUses(db: DatabaseSync | undefined, range: AddressRange 
 /** The spaces that hold current knowledge, the C64 first. */
 export function listSpaces(db: DatabaseSync | undefined): Space[] {
   if (db === undefined) return [];
-  const rows = db
-    .prepare(
-      `SELECT space FROM current_symbols UNION SELECT space FROM current_analyzer_names UNION SELECT space FROM current_regions UNION SELECT space FROM current_comments UNION SELECT space FROM current_references UNION SELECT space FROM current_suppressions UNION SELECT space FROM current_modules UNION SELECT space FROM current_operands UNION SELECT space FROM current_patches UNION SELECT space FROM current_switches UNION SELECT space FROM current_releases UNION SELECT space FROM current_macros UNION SELECT space FROM current_macro_uses UNION SELECT space FROM current_start_screens UNION SELECT space FROM current_memory UNION SELECT space FROM current_entries UNION SELECT space FROM current_coverage`,
-    )
-    .all() as Array<{ space: Space }>;
-  const order = (space: Space) => (space === "c64" ? -3 : space === "drive8" ? -2 : space === "loading" ? -1 : Number(space.slice(4)));
-  return rows.map((row) => row.space).sort((a, b) => order(a) - order(b));
+  const rows = prepare(db, TABLES.map((spec) => `SELECT space FROM current_${spec.table}`).join(" UNION ")).all() as Array<{ space: Space }>;
+  return rows.map((row) => row.space).sort((a, b) => spaceOrder(a) - spaceOrder(b));
 }
 
 /** Case-insensitive text search in current symbol names and comment texts of one space. */
@@ -826,16 +826,13 @@ export function search(db: DatabaseSync | undefined, text: string, limit = 50, o
   const pattern = `%${text.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
   const only = origins === undefined ? "" : ` AND origin IN (${origins.map(() => "?").join(", ")})`;
   const values = origins ?? [];
-  const symbols = db
-    .prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_symbols WHERE space = ? AND name LIKE ? ESCAPE '\\'${only} ORDER BY address LIMIT ?`)
+  const symbols = prepare(db, `SELECT ${FACTS.symbols.columns} FROM current_symbols WHERE space = ? AND name LIKE ? ESCAPE '\\'${only} ORDER BY address LIMIT ?`)
     .all(space, pattern, ...values, limit)
     .map((row) => toSymbol(row as Raw));
-  const analyzerNames = db
-    .prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_analyzer_names WHERE space = ? AND name LIKE ? ESCAPE '\\'${only} ORDER BY address LIMIT ?`)
+  const analyzerNames = prepare(db, `SELECT ${FACTS.analyzer_names.columns} FROM current_analyzer_names WHERE space = ? AND name LIKE ? ESCAPE '\\'${only} ORDER BY address LIMIT ?`)
     .all(space, pattern, ...values, limit)
     .map((row) => toSymbol(row as Raw));
-  const comments = db
-    .prepare(`SELECT ${COMMENT_COLUMNS} FROM current_comments WHERE space = ? AND text LIKE ? ESCAPE '\\'${only} ORDER BY address, placement LIMIT ?`)
+  const comments = prepare(db, `SELECT ${FACTS.comments.columns} FROM current_comments WHERE space = ? AND text LIKE ? ESCAPE '\\'${only} ORDER BY address, placement LIMIT ?`)
     .all(space, pattern, ...values, limit)
     .map((row) => toComment(row as Raw));
   return { symbols, analyzerNames, comments };

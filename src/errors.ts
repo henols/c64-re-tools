@@ -16,7 +16,6 @@ export const ERROR_CODES = [
   "conflict",
   "stale-revision",
   "invalid-database",
-  "unsupported-schema",
   "not-implemented",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -50,6 +49,16 @@ export function splitMessage(message: string, hint?: string): { error: string; h
   const error = cut === null ? flat : flat.slice(0, cut.index + 1);
   const rest = cut === null ? "" : flat.slice(cut.index + cut[0].length).trim();
   return rest === "" ? { error } : { error, hint: rest };
+}
+
+/** The message of a caught value, which may not be an Error. */
+export function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** The stack of a caught Error (its message when it has none), for a log; a value that is not an Error as text. */
+export function describeErrorStack(error: unknown): string {
+  return error instanceof Error ? (error.stack ?? error.message) : String(error);
 }
 
 /** True for an Error with a code from ERROR_CODES: a refusal, whatever its class. */

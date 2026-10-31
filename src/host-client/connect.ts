@@ -2,6 +2,7 @@
 
 import { connect as connectTcp, type Socket } from "node:net";
 
+import { describeError } from "../errors.ts";
 import { encodeFrame, MessageReader } from "../protocol/framing.ts";
 import { elapsedMs, trace } from "../trace.ts";
 import { DEFAULT_HOST_PORT, HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, checkRelease, parseHostMessage, ProtocolError, WireFailure, withStopAndAsk, type Hello, type HostMessage, type Ping, type Request, type Role, type VideoStandard } from "../protocol/messages.ts";
@@ -117,7 +118,7 @@ export class HostConnection {
         this.#failure =
           error instanceof ProtocolError
             ? error
-            : new Error(`could not handle a message from the host runtime: ${error instanceof Error ? error.message : String(error)}`);
+            : new Error(`could not handle a message from the host runtime: ${describeError(error)}`);
         socket.destroy();
       }
     });

@@ -3,7 +3,7 @@
 // A panic in the module traps: the instance is then dropped and the next
 // load makes a new one.
 
-import { Refusal } from "../../errors.ts";
+import { describeError, Refusal } from "../../errors.ts";
 import { C64RT_WASM } from "./c64rt-wasm.ts";
 
 /** The decoder and decompiler, as a result names its tool. */
@@ -62,7 +62,7 @@ function call<T>(run: (wasm: Exports) => number): T {
     length = run(wasm);
   } catch (error) {
     instance = undefined;
-    throw new Refusal("operation-failed", `the decompiler stopped: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Refusal("operation-failed", `the decompiler stopped: ${describeError(error)}`);
   }
   const reply = JSON.parse(utf8.decode(new Uint8Array(wasm.memory.buffer, wasm.out_ptr(), length))) as T & { error?: string };
   if (reply.error !== undefined) throw new Refusal("operation-failed", reply.error);

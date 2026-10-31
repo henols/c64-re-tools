@@ -64,9 +64,6 @@ export type C1541Result =
 /** petcat.decode takes no fields: the program bytes are the request's one attachment. */
 export type PetcatParams = Record<string, never>;
 
-/** A machine-code handoff: SYS with a constant address, or SYS/USR whose target is computed at run time. */
-export type { BasicHandoff };
-
 export type PetcatResult =
   | { decoded: false; reason: string }
   | {

@@ -309,7 +309,7 @@ Errors of this group:
 - `conflict` with "from a git merge": git joined the knowledge of two computers, and two rows are current where the knowledge permits one row. Run `merge`. Then write again.
 - `stale-revision`: the knowledge changed after the revision of `--expect-revision`. Read the knowledge again. Then decide again.
 - `not-found`: there is nothing to remove, no such revision, or no such file.
-- `invalid-database` or `unsupported-schema`: give `error` and `hint` to the user. Do not edit the knowledge files.
+- `invalid-database`: give `error` and `hint` to the user. Do not edit the knowledge files.
 
 ### `rename <address> <name>`
 

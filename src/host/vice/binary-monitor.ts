@@ -4,10 +4,11 @@
 
 import type { Socket } from "node:net";
 
+import { StreamBuffer } from "../../protocol/framing.ts";
 import { connectWithTimeout } from "./connect.ts";
 
 export const STX = 0x02;
-export const API_VERSION = 0x02;
+const API_VERSION = 0x02;
 /** Request id VICE uses for responses it sends unprompted (events). */
 export const EVENT_REQUEST_ID = 0xffff_ffff;
 
@@ -18,7 +19,6 @@ const RESPONSE_HEADER_BYTES = 12;
 export const Command = {
   memoryGet: 0x01,
   memorySet: 0x02,
-  checkpointGet: 0x11,
   checkpointSet: 0x12,
   checkpointDelete: 0x13,
   checkpointList: 0x14,
@@ -29,7 +29,6 @@ export const Command = {
   dump: 0x41,
   undump: 0x42,
   resourceGet: 0x51,
-  resourceSet: 0x52,
   advanceInstructions: 0x71,
   keyboardFeed: 0x72,
   executeUntilReturn: 0x73,
@@ -40,16 +39,13 @@ export const Command = {
   viceInfo: 0x85,
   paletteGet: 0x91,
   joyportSet: 0xa2,
-  userportSet: 0xb2,
   exit: 0xaa,
-  quit: 0xbb,
   reset: 0xcc,
   autostart: 0xdd,
 } as const;
 
 /** Response types that are not simply the command byte. */
 const TERMINAL_RESPONSE: Partial<Record<number, number>> = {
-  [Command.checkpointGet]: 0x11,
   [Command.checkpointSet]: 0x11,
   [Command.registersSet]: 0x31,
 };
@@ -116,26 +112,31 @@ export function encodeCommand(requestId: number, command: number, body: Uint8Arr
 
 /** Splits the response stream into responses. Throws MonitorConnectionError on a bad header. */
 export class ResponseDecoder {
-  #pending: Buffer = Buffer.alloc(0);
+  readonly #stream = new StreamBuffer();
+  /** The bytes that the response in front needs: its header, then its header and body. */
+  #needed = RESPONSE_HEADER_BYTES;
 
   push(chunk: Buffer): MonitorResponse[] {
-    this.#pending = this.#pending.length === 0 ? chunk : Buffer.concat([this.#pending, chunk]);
+    this.#stream.push(chunk);
     const responses: MonitorResponse[] = [];
-    while (this.#pending.length >= RESPONSE_HEADER_BYTES) {
-      if (this.#pending[0] !== STX) throw new MonitorConnectionError("response does not start with STX");
-      if (this.#pending[1] !== API_VERSION) {
-        throw new MonitorConnectionError(`response has API version ${this.#pending[1]}, expected ${API_VERSION}`);
+    while (this.#stream.length >= this.#needed) {
+      const pending = this.#stream.bytes();
+      if (pending[0] !== STX) throw new MonitorConnectionError("response does not start with STX");
+      if (pending[1] !== API_VERSION) {
+        throw new MonitorConnectionError(`response has API version ${pending[1]}, expected ${API_VERSION}`);
       }
-      const length = this.#pending.readUInt32LE(2);
-      if (this.#pending.length < RESPONSE_HEADER_BYTES + length) break;
+      const length = pending.readUInt32LE(2);
+      this.#needed = RESPONSE_HEADER_BYTES + length;
+      if (pending.length < this.#needed) break;
       responses.push({
-        type: this.#pending[6]!,
-        error: this.#pending[7]!,
-        requestId: this.#pending.readUInt32LE(8),
+        type: pending[6]!,
+        error: pending[7]!,
+        requestId: pending.readUInt32LE(8),
         // Copy so a retained body never pins the whole receive buffer.
-        body: Buffer.from(this.#pending.subarray(RESPONSE_HEADER_BYTES, RESPONSE_HEADER_BYTES + length)),
+        body: Buffer.from(pending.subarray(RESPONSE_HEADER_BYTES, RESPONSE_HEADER_BYTES + length)),
       });
-      this.#pending = this.#pending.subarray(RESPONSE_HEADER_BYTES + length);
+      this.#stream.drop(RESPONSE_HEADER_BYTES + length);
+      this.#needed = RESPONSE_HEADER_BYTES;
     }
     return responses;
   }
@@ -237,12 +238,12 @@ interface Pending {
   sequence: number;
 }
 
-export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 /**
  * While an earlier command is overdue, later ones are still sent (VICE runs
  * them in order once it goes on, so cleanup lands) but waited for only this long.
  */
-export const OVERDUE_REQUEST_TIMEOUT_MS = 1_000;
+const OVERDUE_REQUEST_TIMEOUT_MS = 1_000;
 
 /** One binary-monitor connection with request correlation and an event stream. */
 export class BinaryMonitor {

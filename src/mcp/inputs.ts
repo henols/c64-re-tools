@@ -7,15 +7,15 @@ import { z } from "zod";
 
 import { c64AddressOf } from "../c64.ts";
 import { keyTaps, MAX_PRESS_FRAMES, PRESS_FRAMES } from "../c64-keys.ts";
-import { DEFAULT_TIMEOUT_FRAMES, keyboardBytes, MAX_RASTER_LINE } from "../host-client/steps.ts";
+import { DEFAULT_TIMEOUT_FRAMES, HEX_BYTES, HEX_BYTES_RULE, keyboardBytes, MAX_RASTER_LINE } from "../host-client/steps.ts";
 import { COMPARISONS, CONDITION_REGISTERS, JOYSTICK_DIRECTIONS, MAX_KEYBOARD_BYTES, MAX_MEMORY_WRITE, MAX_TIMEOUT_FRAMES, MEMORY_VIEWS, SPACES } from "../protocol/vice.ts";
 
 export const Byte = z.number().int().min(0).max(255);
 
 /** Input bytes: hex in either case, two digits per byte, at least one byte. Parses to lowercase. */
-export const HexDataInput = z
+const HexDataInput = z
   .string()
-  .regex(/^(?:[0-9a-fA-F]{2})+$/, "must be hex bytes, two digits per byte, no separators, for example a9008d20d0")
+  .regex(HEX_BYTES, HEX_BYTES_RULE)
   .transform((value) => value.toLowerCase());
 
 export const SpaceInput = z.enum(SPACES).default("c64").describe("c64 is the computer. drive8 is the 1541 disk drive CPU");

@@ -28,12 +28,6 @@ export class FrameTooLarge extends ProtocolError {
   }
 }
 
-function frame(body: Uint8Array): Buffer {
-  const header = Buffer.allocUnsafe(HEADER_BYTES);
-  header.writeUInt32BE(body.length, 0);
-  return Buffer.concat([header, body]);
-}
-
 /** Encodes one message and its attachments as one buffer, so writes never interleave. */
 export function encodeFrame(message: ClientMessage | HostMessage, attachments: readonly Uint8Array[] = []): Buffer {
   const total = attachments.reduce((sum, attachment) => sum + attachment.length, 0);
@@ -41,28 +35,67 @@ export function encodeFrame(message: ClientMessage | HostMessage, attachments: r
   const announced = attachments.length === 0 ? message : { ...message, attachments: attachments.map((attachment) => attachment.length) };
   const body = Buffer.from(JSON.stringify(announced), "utf8");
   if (body.length > MAX_FRAME_BYTES) throw new FrameTooLarge("frame", body.length, MAX_FRAME_BYTES);
-  const frames = [frame(body)];
+  const frames = 1 + attachments.reduce((sum, attachment) => sum + Math.ceil(attachment.length / MAX_FRAME_BYTES), 0);
+  const encoded = Buffer.allocUnsafe(frames * HEADER_BYTES + body.length + total);
+  let offset = 0;
+  const frame = (part: Uint8Array) => {
+    offset = encoded.writeUInt32BE(part.length, offset);
+    encoded.set(part, offset);
+    offset += part.length;
+  };
+  frame(body);
   for (const attachment of attachments) {
-    for (let offset = 0; offset < attachment.length; offset += MAX_FRAME_BYTES) {
-      frames.push(frame(attachment.subarray(offset, offset + MAX_FRAME_BYTES)));
-    }
+    for (let start = 0; start < attachment.length; start += MAX_FRAME_BYTES) frame(attachment.subarray(start, start + MAX_FRAME_BYTES));
   }
-  return Buffer.concat(frames);
+  return encoded;
+}
+
+/**
+ * The bytes of a stream so far. A decoder joins the chunks only once the bytes
+ * of its next step are all here: joining at each chunk copies a large frame
+ * again and again.
+ */
+export class StreamBuffer {
+  #chunks: Buffer[] = [];
+  length = 0;
+
+  push(chunk: Buffer): void {
+    this.#chunks.push(chunk);
+    this.length += chunk.length;
+  }
+
+  /** All buffered bytes as one buffer. */
+  bytes(): Buffer {
+    if (this.#chunks.length !== 1) this.#chunks = [Buffer.concat(this.#chunks, this.length)];
+    return this.#chunks[0]!;
+  }
+
+  /** Drops the first `count` bytes. */
+  drop(count: number): void {
+    const rest = this.bytes().subarray(count);
+    this.#chunks = rest.length === 0 ? [] : [rest];
+    this.length = rest.length;
+  }
 }
 
 /** Splits a stream into frame bodies. After a ProtocolError the decoder is unusable. */
 class RawFrameDecoder {
-  #pending: Buffer = Buffer.alloc(0);
+  readonly #stream = new StreamBuffer();
+  /** The bytes that the frame in front needs: its header, then its header and body. */
+  #needed = HEADER_BYTES;
 
   push(chunk: Buffer): Buffer[] {
-    this.#pending = this.#pending.length === 0 ? chunk : Buffer.concat([this.#pending, chunk]);
+    this.#stream.push(chunk);
     const bodies: Buffer[] = [];
-    while (this.#pending.length >= HEADER_BYTES) {
-      const length = this.#pending.readUInt32BE(0);
+    while (this.#stream.length >= this.#needed) {
+      const pending = this.#stream.bytes();
+      const length = pending.readUInt32BE(0);
       if (length > MAX_FRAME_BYTES) throw new ProtocolError(`frame of ${length} bytes exceeds ${MAX_FRAME_BYTES}`);
-      if (this.#pending.length < HEADER_BYTES + length) break;
-      bodies.push(Buffer.from(this.#pending.subarray(HEADER_BYTES, HEADER_BYTES + length)));
-      this.#pending = this.#pending.subarray(HEADER_BYTES + length);
+      this.#needed = HEADER_BYTES + length;
+      if (pending.length < this.#needed) break;
+      bodies.push(Buffer.from(pending.subarray(HEADER_BYTES, HEADER_BYTES + length)));
+      this.#stream.drop(HEADER_BYTES + length);
+      this.#needed = HEADER_BYTES;
     }
     return bodies;
   }

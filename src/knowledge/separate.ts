@@ -8,8 +8,8 @@
 // or when no coverage shows what ran. Evidence only: nothing here decides which
 // bytes the publisher shipped.
 
-import { type AddressRange, COVERAGE, executedRamCode, instructionLength } from "../c64.ts";
-import { OPCODES } from "../opcodes.ts";
+import { type AddressRange, COVERAGE, executedRamCode, inRanges, instructionLength, NO_FALL, rangesOverlap } from "../c64.ts";
+import { JAM_OPCODES, OPCODES } from "../opcodes.ts";
 import { isSemantic } from "./schema.ts";
 
 export type Access = "executed" | "read" | "written" | "read-written" | "untouched";
@@ -99,21 +99,20 @@ const HARDWARE_VECTORS = [
  * two bytes are in the image. An interrupt handler runs by its vector, and
  * no call or jump reference reaches it.
  */
-export function reachabilityRoots(segments: readonly AddressRange[], memory: Uint8Array, entry?: number): Root[] {
-  const inImage = (address: number) => segments.some((segment) => address >= segment.start && address <= segment.end);
-  const vectors = HARDWARE_VECTORS.filter((vector) => inImage(vector.at) && inImage(vector.at + 1)).map((vector): Root => ({ address: memory[vector.at]! | (memory[vector.at + 1]! << 8), from: vector.from }));
+function reachabilityRoots(segments: readonly AddressRange[], memory: Uint8Array, entry?: number): Root[] {
+  const vectors = HARDWARE_VECTORS.filter((vector) => inRanges(segments, vector.at) && inRanges(segments, vector.at + 1)).map((vector): Root => ({ address: memory[vector.at]! | (memory[vector.at + 1]! << 8), from: vector.from }));
   return [...(entry === undefined ? [] : [{ address: entry, from: "entry" as const }]), ...vectors];
 }
 
 /** BRK, JMP, RTI, RTS, JMP (indirect) and the JAM opcodes: the CPU does not run on to the next instruction after them. */
-export const NO_FALL_THROUGH = new Set([0x00, 0x4c, 0x40, 0x60, 0x6c, 0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xb2, 0xd2, 0xf2]);
+export const NO_FALL_THROUGH: ReadonlySet<number> = new Set([...NO_FALL, ...JAM_OPCODES]);
 
 /**
  * The address after a code region where the CPU runs on, or undefined when
  * its last instruction does not run on (RTS, RTI, JMP, BRK, JAM). The
  * instructions follow one another from the start of the region.
  */
-export function fallThrough(region: AddressRange, memory: Uint8Array): number | undefined {
+function fallThrough(region: AddressRange, memory: Uint8Array): number | undefined {
   let at = region.start;
   let last = at;
   while (at <= region.end) {
@@ -124,7 +123,7 @@ export function fallThrough(region: AddressRange, memory: Uint8Array): number | 
 }
 
 /** The instruction starts of code regions: each region runs from its start, one instruction after the other. */
-export function regionStarts(regions: readonly AddressRange[], memory: Uint8Array): number[] {
+function regionStarts(regions: readonly AddressRange[], memory: Uint8Array): number[] {
   const starts: number[] = [];
   for (const region of regions) for (let at = region.start; at <= region.end; at += instructionLength(memory[at]!)) starts.push(at);
   return starts.sort((a, b) => a - b);
@@ -257,7 +256,7 @@ function merge(addresses: number[], gap = 0, joins: (from: number, to: number) =
 }
 
 export function separate(input: SeparationInput): Separation {
-  const inImage = (address: number) => input.segments.some((segment) => address >= segment.start && address <= segment.end);
+  const inImage = (address: number) => inRanges(input.segments, address);
   const executed = new Uint8Array(0x10000);
   if (input.coverage !== undefined) for (const range of executedRamCode(input.coverage, 0, input.memory)) executed.fill(1, range.start, range.end + 1);
   const accessAt = (address: number): Access | undefined => {
@@ -268,11 +267,12 @@ export function separate(input: SeparationInput): Separation {
     const written = (flags & COVERAGE.ramWrite) !== 0;
     return read && written ? "read-written" : read ? "read" : written ? "written" : "untouched";
   };
-  const stageAt = (address: number): number | undefined => {
-    const stages = input.stages ?? [];
-    for (let index = stages.length - 1; index >= 0; index--) if (stages[index]!.wrote.some((range) => address >= range.start && address <= range.end)) return index;
-    return undefined;
-  };
+  // The newest stage that wrote each address.
+  const stageOf = new Int32Array(0x10000).fill(-1);
+  (input.stages ?? []).forEach((stage, index) => {
+    for (const range of stage.wrote) stageOf.fill(index, range.start, range.end + 1);
+  });
+  const stageAt = (address: number): number | undefined => (stageOf[address] === -1 ? undefined : stageOf[address]);
 
   const ranges: EvidenceRange[] = [];
   for (const segment of input.segments) {
@@ -288,7 +288,7 @@ export function separate(input: SeparationInput): Separation {
     }
   }
 
-  const regions = input.codeRegions.filter((region) => input.segments.some((segment) => region.start <= segment.end && segment.start <= region.end));
+  const regions = input.codeRegions.filter((region) => input.segments.some((segment) => rangesOverlap(region, segment)));
   // The region of each address: the first region that holds it, as a search in region order finds it.
   const owner = new Int32Array(0x10000).fill(-1);
   regions.forEach((region, index) => {

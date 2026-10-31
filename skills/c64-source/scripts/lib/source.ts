@@ -15,7 +15,7 @@
 // loads it.
 
 import { CONFIG_FILE } from "#src/build-name.ts";
-import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, formatC64Range, hexWord, inRanges, POINTER_TABLE_TYPES, pointerEntryText, pointerTableEntries, type PointerTableType, splitEntryByte } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, formatC64Range, hexByte, hexWord, inRanges, POINTER_TABLE_TYPES, pointerEntryText, pointerTableEntries, type PointerTableType, splitEntryByte } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { identifiers, operandText, replaceIdentifiers, type OperandExpression } from "#src/knowledge/expression.ts";
 import { type CommentPlacement, INSTRUCTION_REGION_TYPES, isAnalyzer, isGeneratedFile, LEFTOVER_FOLDER, LEFTOVERS_SWITCH, SEGMENT_FOLDER, RELEASE_DEFINE, START_SCREEN_SWITCH, type Origin, type RegionType, type SwitchKind } from "#src/knowledge/schema.ts";
@@ -731,7 +731,7 @@ function formOf(layout: Pick<Layout, "inImage" | "byteAt">, item: InstructionIte
   let suffix = "";
   if ((mode === "abs" || mode === "abx" || mode === "aby") && value < 0x100 && hasZeroPageForm(mnemonic, mode)) suffix = "+2";
   if ((mode === "zp" || mode === "zpx" || mode === "zpy") && layout.inImage(value)) suffix = "+1";
-  return { key: `${item.opcode.toString(16).padStart(2, "0")}${suffix}`, opcode: item.opcode, suffix };
+  return { key: `${hexByte(item.opcode)}${suffix}`, opcode: item.opcode, suffix };
 }
 
 /** The plain number of an operand: what the probe assembles, and what a comment shows. */

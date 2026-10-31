@@ -11,6 +11,8 @@ import { existsSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
+import { isObject } from "../protocol/messages.ts";
+
 const PLUGIN_ID = "c64-re-tools";
 
 export type Scope = "project" | "global";
@@ -29,7 +31,7 @@ interface Manifest {
 }
 
 /** The directory that the manifest and relative item paths belong to. */
-export function scopeRoot(scope: Scope, cwd = process.cwd()): string {
+function scopeRoot(scope: Scope, cwd = process.cwd()): string {
   return scope === "global" ? homedir() : cwd;
 }
 
@@ -63,7 +65,7 @@ const WINDSURF_KEY = "mcpServers";
 function readJson(path: string): Record<string, unknown> | undefined {
   try {
     const value = JSON.parse(readFileSync(path, "utf8")) as unknown;
-    return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+    return isObject(value) ? value : undefined;
   } catch {
     return undefined;
   }

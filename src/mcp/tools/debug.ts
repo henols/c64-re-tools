@@ -3,10 +3,11 @@
 
 import { z } from "zod";
 
-import { COVERAGE, executedRamCode, EXECUTE, formatC64Address, READ, WRITE, type CodeRange } from "../../c64.ts";
+import { COVERAGE, executedRamCode, EXECUTE, formatC64Address, formatC64RangeFields, hexByte, READ, WRITE, type CodeRange } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
-import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, TRACE_ENDS, MAX_MEMMAP_RANGES, MAX_MEMORY_READ, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type Watchpoint } from "../../protocol/vice.ts";
+import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, TRACE_ENDS, MAX_MEMMAP_RANGES, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type Watchpoint } from "../../protocol/vice.ts";
 import { readCoverage } from "../../host-client/coverage.ts";
+import { readMemoryInParts } from "../../host-client/vice-session.ts";
 import { linesText, OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, Byte, SpaceInput, TOOL_INPUTS } from "../inputs.ts";
 import { AddressOutput, ConditionOutput, defineTool, HexData, requireFields, requireOut, showCondition, toCondition } from "../server.ts";
@@ -33,10 +34,10 @@ function showBreakpoint(point: Breakpoint) {
 
 function showWatchpoint(point: Watchpoint) {
   const { condition, address, size, ...rest } = point;
-  return { ...rest, start: formatC64Address(address), end: formatC64Address(address + size - 1), ...(condition === undefined ? {} : { condition: showCondition(condition) }) };
+  return { ...rest, ...formatC64RangeFields({ start: address, end: address + size - 1 }), ...(condition === undefined ? {} : { condition: showCondition(condition) }) };
 }
 
-export const c64Breakpoint = defineTool({
+const c64Breakpoint = defineTool({
   name: "c64_breakpoint",
   title: "C64 breakpoints",
   description:
@@ -80,7 +81,7 @@ export const c64Breakpoint = defineTool({
   },
 });
 
-export const c64Watchpoint = defineTool({
+const c64Watchpoint = defineTool({
   name: "c64_watchpoint",
   title: "C64 watchpoints",
   description:
@@ -132,7 +133,7 @@ export const c64Watchpoint = defineTool({
   },
 });
 
-export const c64CpuHistory = defineTool({
+const c64CpuHistory = defineTool({
   name: "c64_cpu_history",
   title: "CPU history",
   description:
@@ -164,13 +165,12 @@ export const c64CpuHistory = defineTool({
   readOnly: false,
   async run(input, session) {
     const { out, project, ...request } = input;
-    if (out === undefined && project !== undefined) throw new WireFailure("invalid-input", "project is used only with out.");
+    requireOut(input);
     const { entries } = await session.cpuHistory(request);
     if (out === undefined) return { entries: entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
-    const byte = (value: number) => value.toString(16).padStart(2, "0");
     const lines = entries.map((entry) => {
       const raster = entry.rasterLine === undefined ? "" : `  line ${entry.rasterLine} cycle ${entry.rasterCycle ?? 0}`;
-      return `${formatC64Address(entry.address)}  ${spaced(entry.bytes).padEnd(9)} ${entry.text.padEnd(16)} a=${byte(entry.a)} x=${byte(entry.x)} y=${byte(entry.y)} sp=${byte(entry.sp)}${raster}`;
+      return `${formatC64Address(entry.address)}  ${spaced(entry.bytes).padEnd(9)} ${entry.text.padEnd(16)} a=${hexByte(entry.a)} x=${hexByte(entry.x)} y=${hexByte(entry.y)} sp=${hexByte(entry.sp)}${raster}`;
     });
     return { count: entries.length, ...writeOut(out, linesText(lines), project) };
   },
@@ -179,7 +179,7 @@ export const c64CpuHistory = defineTool({
 /** The hits that a trace result gives inline; out gives all of them in the file, and none inline. */
 const TRACE_LISTED = 200;
 
-export const c64Trace = defineTool({
+const c64Trace = defineTool({
   name: "c64_trace",
   title: "Trace accesses and instructions",
   description:
@@ -233,7 +233,7 @@ export const c64Trace = defineTool({
   readOnly: false,
   async run(input, session) {
     const { out, project, points, ...request } = input;
-    if (out === undefined && project !== undefined) throw new WireFailure("invalid-input", "project is used only with out.");
+    requireOut(input);
     const ranges = points.map((point) => ({ kind: point.kind, start: point.start, end: point.end ?? point.start }));
     if (ranges.some((point) => point.end < point.start)) throw new WireFailure("invalid-input", "A point end must not be before its start.");
     const traced = await session.trace({ points: ranges, ...request });
@@ -244,7 +244,7 @@ export const c64Trace = defineTool({
   },
 });
 
-export const c64Backtrace = defineTool({
+const c64Backtrace = defineTool({
   name: "c64_backtrace",
   title: "Call backtrace",
   description:
@@ -265,7 +265,7 @@ export const c64Backtrace = defineTool({
   },
 });
 
-export const c64Timing = defineTool({
+const c64Timing = defineTool({
   name: "c64_timing",
   title: "Cycle stopwatch",
   description:
@@ -280,7 +280,7 @@ export const c64Timing = defineTool({
   },
 });
 
-export const c64Profile = defineTool({
+const c64Profile = defineTool({
   name: "c64_profile",
   title: "Cycle profile",
   description:
@@ -329,9 +329,9 @@ function sources(flags: number): Array<"ram" | "rom" | "io"> {
 
 const count = (map: Uint8Array, bit: number) => map.reduce((sum, flags) => sum + ((flags & bit) === 0 ? 0 : 1), 0);
 const RangeOutput = z.object({ start: AddressOutput, end: AddressOutput });
-const showRanges = (ranges: CodeRange[]) => ranges.slice(0, MAX_SUMMARY_RANGES).map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) }));
+const showRanges = (ranges: CodeRange[]) => ranges.slice(0, MAX_SUMMARY_RANGES).map(formatC64RangeFields);
 
-export const c64Memmap = defineTool({
+const c64Memmap = defineTool({
   name: "c64_memmap",
   title: "Memory access map",
   description:
@@ -387,9 +387,7 @@ export const c64Memmap = defineTool({
       requireFields("summary", fields, ["start", "end"]);
       const map = await readCoverage(session, start, end);
       // The opcodes give the instruction lengths: RAM as it is now.
-      const parts: Buffer[] = [];
-      for (let at = 0; at < 0x10000; at += MAX_MEMORY_READ) parts.push(Buffer.from((await session.memoryRead({ address: at, size: MAX_MEMORY_READ, space: "c64", view: "ram" })).data, "hex"));
-      const memory = Buffer.concat(parts);
+      const memory = await readMemoryInParts(session, 0x0000, 0x10000, "ram");
       const code = executedRamCode(map, start, memory);
       const written = executedRamCode(map.map((flags) => ((flags & COVERAGE.ramWrite) === 0 ? 0 : flags)), start, memory);
       return {

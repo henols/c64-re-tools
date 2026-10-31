@@ -21,10 +21,10 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-import { c64AddressOf, formatC64Address, SPACE_PATTERN, SYMBOL_NAME, type AddressRange } from "./c64.ts";
-import { isRefusal, Refusal, splitMessage, type ErrorCode } from "./errors.ts";
+import { c64AddressOf, formatC64Address, isAddressText, SPACE_PATTERN, SYMBOL_NAME, type AddressRange } from "./c64.ts";
+import { describeError, isRefusal, Refusal, splitMessage, type ErrorCode } from "./errors.ts";
 import { checkOutputPath, projectRoot, resolveProjectPath, resolveReadPath, useProject, type OutputKind } from "./project.ts";
-import { STOP_AND_ASK } from "./protocol/messages.ts";
+import { isObject, STOP_AND_ASK } from "./protocol/messages.ts";
 import { elapsedMs, startTrace, trace, type TraceFields } from "./trace.ts";
 
 /** A wrong command line: an invalid-input refusal that also shows the usage of the command. */
@@ -175,17 +175,12 @@ export interface ScriptSpec {
 const NUMBER_PATTERNS = [/^\$([0-9a-fA-F]{1,8})$/, /^%([01]{1,32})$/, /^(\d{1,10})$/];
 
 /** A value as $ and hex digits, % and binary digits, or decimal digits; undefined for other text. */
-export function numberOf(text: string): number | undefined {
+function numberOf(text: string): number | undefined {
   const [hex, binary, decimal] = NUMBER_PATTERNS.map((pattern) => pattern.exec(text)?.[1]);
   if (hex !== undefined) return Number.parseInt(hex, 16);
   if (binary !== undefined) return Number.parseInt(binary, 2);
   if (decimal !== undefined) return Number(decimal);
   return undefined;
-}
-
-/** True when the text has the form of an address: $ and 1 to 4 hex digits, or a name. */
-export function isAddressText(text: string): boolean {
-  return c64AddressOf(text) !== undefined || SYMBOL_NAME.test(text);
 }
 
 /** Splits <start>-<end>. A name has no hyphen, so the first hyphen is the split. */
@@ -366,7 +361,7 @@ function synopsis(script: string, command: CommandSpec): string {
 }
 
 /** The help body of one command: its synopsis, subjects and options. */
-export function commandHelp(script: ScriptSpec, command: CommandSpec): Record<string, unknown> {
+function commandHelp(script: ScriptSpec, command: CommandSpec): Record<string, unknown> {
   return {
     command: command.name,
     synopsis: synopsis(script.name, command),
@@ -385,7 +380,7 @@ export function commandHelp(script: ScriptSpec, command: CommandSpec): Record<st
 }
 
 /** The help body of a script: its commands. */
-export function scriptHelp(script: ScriptSpec): Record<string, unknown> {
+function scriptHelp(script: ScriptSpec): Record<string, unknown> {
   return {
     script: `${script.name}.ts`,
     summary: script.summary,
@@ -757,7 +752,7 @@ async function envelope(script: Envelope): Promise<void> {
     } else {
       code = "operation-failed";
       const where = commandName === undefined ? `${script.name}.ts` : `${script.name}.ts ${commandName}`;
-      const text = (error instanceof Error ? error.message : String(error)).replace(/\.$/, "");
+      const text = describeError(error).replace(/\.$/, "");
       shown = { error: `${where} failed inside c64-re-tools: ${text}.`, hint: "This is a fault of the toolkit, not of the call. Give this message to the user. Set C64RT_TRACE to get its details in the trace." };
     }
     const message = shown.hint === undefined ? shown.error : `${shown.error} ${shown.hint}`;
@@ -790,7 +785,7 @@ async function envelope(script: Envelope): Promise<void> {
       const picked = pickFields(shownBody, fields);
       shownBody = picked.body;
       if (picked.missing.length > 0) {
-        const top = typeof body === "object" && body !== null && !Array.isArray(body) ? Object.keys(body) : [];
+        const top = isObject(body) ? Object.keys(body) : [];
         const lacks = `The body has no ${wordList(picked.missing)}. ${top.length === 0 ? "It has no fields." : `Its fields are ${wordList(top)}.`}`;
         shownHint = shownHint === undefined ? lacks : `${sentence(shownHint)} ${lacks}`;
       }
