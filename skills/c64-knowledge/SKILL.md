@@ -121,7 +121,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--seed <n>` | `sample` | A whole number from 0 to 999999 that selects the sample. Without it, the script selects one. |
 | `--placement <line\|side>` | `verdict` | The placement of the comment. Give it when the sample has a line and a side comment at the address. |
 | `--class <class>` | `verdict` | With `wrong`: the class of the error: `callers`, `bits`, `registers`, `bounds`, `units`, `paths`, `tables`, `hardware`, `place` or `scope`. |
-| `--why <text>` | `verdict` | With `wrong`: the evidence, with the addresses and the instructions. With `unsure`: the run that can show the claim. |
+| `--why <text>` | `verdict` | With `wrong`: the evidence, with the addresses and the instructions. With `unsure`: the run that can show the claim. With `correct`: the evidence. It is optional. |
 | `--text <text>` | `verdict` | With `wrong`: the correct comment. |
 | `--name <name>` | `verdict` | With `wrong`: the correct name at the address. |
 | `--max-listed <n>` | `search`, `symbols`, `regions`, `comments`, `references`, `suppressions`, `modules`, `operands`, `patches`, `switches`, `releases`, `macros`, `uses`, `spaces`, `history`, `revisions`, `revision`, `listing`, `join`, `checks` | The most items in each list of the body. The default is 50. The counts are always complete. |

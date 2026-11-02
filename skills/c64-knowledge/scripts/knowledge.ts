@@ -1282,11 +1282,11 @@ const VERDICT: CommandSpec = {
   options: {
     placement: { kind: "choice", value: "<line|side>", choices: COMMENT_PLACEMENTS, help: "the placement of the comment, when the sample has a line and a side comment at the address" },
     class: { kind: "choice", value: "<class>", choices: CHECK_CLASSES, help: `with wrong: the class of the error, one of ${CHECK_CLASSES.join(", ")}` },
-    why: { kind: "text", value: "<text>", help: "with wrong: the evidence, with the addresses and the instructions. With unsure: the run that can show the claim" },
+    why: { kind: "text", value: "<text>", help: "with wrong: the evidence, with the addresses and the instructions. With unsure: the run that can show the claim. With correct: the evidence, optional" },
     text: { kind: "text", value: "<text>", help: "with wrong: the correct comment" },
     name: { kind: "text", value: "<name>", help: "with wrong: the correct name at the address" },
   },
-  notes: "A wrong verdict needs --class, --why, and --text or --name. An unsure verdict needs --why. A new verdict of a comment replaces its earlier verdict.",
+  notes: "A wrong verdict needs --class, --why, and --text or --name. An unsure verdict needs --why. A correct verdict can have --why. A new verdict of a comment replaces its earlier verdict.",
   run: (call) => {
     const seed = seedOf(call);
     const sample = sampleOf(seed);

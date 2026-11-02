@@ -626,6 +626,7 @@ test("withVerdict refuses a comment outside the sample and a verdict without the
   const one = withVerdict(sample, undefined, { address: "$2100", verdict: "unsure", why: "a run of room 2" });
   const two = withVerdict(sample, one, { address: "$2000", placement: "side", verdict: "wrong", class: "bits", why: "AND #$7f", text: "Clears bit 7." });
   const again = withVerdict(sample, two, { address: "$2100", verdict: "correct" });
+  assert.equal(withVerdict(sample, undefined, { address: "$2100", verdict: "correct", why: "a run of room 2" }).items[0]!.why, "a run of room 2", "a correct verdict can have --why");
   assert.deepEqual(again.items.map((item) => [item.address, item.placement, item.verdict]), [["$2000", "side", "wrong"], ["$2100", "line", "correct"]], "a new verdict replaces the earlier one, in the order of the sample");
   const result = checkResult(sample, again);
   assert.deepEqual([result.sampled, result.checked, result.correct, result.wrong, result.unsure], [3, 2, 1, 1, 0]);
