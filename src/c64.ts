@@ -631,3 +631,37 @@ export function coverageSeedKinds(map: Uint8Array, image: (address: number) => n
   }
   return { routines: entries.filter((entry) => !inside.has(entry)), codeStarts: entries.filter((entry) => inside.has(entry)) };
 }
+
+/**
+ * The executed instruction starts that DXA reaches from `seeds` by
+ * fall-through. DXA expects each JSR to return, so it follows the next
+ * instruction after a JSR too: a coverage flow start there is no seed that DXA
+ * needs. A seed is in the set only when another seed reaches it. The
+ * fall-through stops at an instruction that no run executed, at a data range,
+ * after a JSR or a branch into a data range (DXA does not follow the next
+ * instruction there), and after an instruction whose operand holds another
+ * executed start (DXA decodes only one of the two).
+ */
+export function dxaFallThrough(seeds: readonly number[], map: Uint8Array, image: (address: number) => number | undefined, dataRanges: readonly AddressRange[]): Set<number> {
+  const reached = new Set<number>();
+  for (const seed of [...new Set(seeds)].sort((a, b) => a - b)) {
+    for (let at = seed; ; ) {
+      const opcode = image(at);
+      if (opcode === undefined || (map[at]! & COVERAGE.ramExecute) === 0 || inRanges(dataRanges, at)) break;
+      if (at !== seed) {
+        // The flow from an earlier seed went on from here.
+        if (reached.has(at)) break;
+        reached.add(at);
+      }
+      if (NO_FALL.has(opcode)) break;
+      const length = instructionLength(opcode);
+      const low = image(at + 1);
+      const high = image(at + 2);
+      if (opcode === 0x20 && low !== undefined && high !== undefined && inRanges(dataRanges, low | (high << 8))) break;
+      if (BRANCHES.has(opcode) && low !== undefined && inRanges(dataRanges, (at + 2 + (low < 0x80 ? low : low - 0x100)) & 0xffff)) break;
+      if (Array.from({ length: length - 1 }, (_, offset) => at + 1 + offset).some((address) => (map[address]! & COVERAGE.ramExecute) !== 0)) break;
+      at += length;
+    }
+  }
+  return reached;
+}
