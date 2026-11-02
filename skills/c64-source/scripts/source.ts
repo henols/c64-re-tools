@@ -26,13 +26,14 @@ import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-sess
 import { conflicts } from "#src/knowledge/conflicts.ts";
 import { withRead, withWrite } from "#src/knowledge/database.ts";
 import { identifiers } from "#src/knowledge/expression.ts";
-import { clipped, codeKnowledge, decodeProgram, effectiveRegions, leftoverInput, reachInput } from "#src/knowledge/code-reach.ts";
+import { clipped, codeKnowledge, effectiveRegions } from "#src/knowledge/code-reach.ts";
 import { memoryRows, releaseImage, type ProgramImage } from "#src/knowledge/program.ts";
 import { ANALYZER_NAME_ORDER, baseValue, currentRevision, sourceRevision, startScreenRanges, type StartScreenRow, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listReleases, listSpaces, listSwitches, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
 import { DEFAULT_SPACE, LEFTOVER_FOLDER, LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
 import { write } from "#src/knowledge/write.ts";
 import { assemble, symbolsFileText } from "#src/native/acme.ts";
 import { PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
+import { decodeProgram, leftoverInput, reachInput } from "#src/program-code.ts";
 import { localToolContext } from "#src/native/local.ts";
 import type { AssembledSymbol, Diagnostic } from "#src/native/types.ts";
 import { decode as decodeRegister, describeAddress, platformNames, platformNamesFor, romUseOfProgram } from "#src/platform.ts";

@@ -20,7 +20,7 @@ import { MAX_EXECUTION_COUNT } from "#src/host-client/tools.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { withRead, withWrite } from "#src/knowledge/database.ts";
-import { codeKnowledge, codeReach, decodeProgram, leftoverInput } from "#src/knowledge/code-reach.ts";
+import { codeKnowledge, codeReach } from "#src/knowledge/code-reach.ts";
 import { operandImages, releaseImage, requireProgram } from "#src/knowledge/program.ts";
 import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
 import {
@@ -45,6 +45,7 @@ import {
 } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, RELEASE_LABEL, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
 import { platformAddresses } from "#src/platform.ts";
+import { decodeProgram, leftoverInput } from "#src/program-code.ts";
 import { projectRoot } from "#src/project.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec } from "#src/script.ts";
