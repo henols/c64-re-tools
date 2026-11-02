@@ -25,7 +25,7 @@ export interface WireError {
   message: string;
 }
 
-export const ROLES = ["vice-session", "tool"] as const;
+const ROLES = ["vice-session", "tool"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const VIDEO_STANDARDS = ["pal", "ntsc"] as const;
@@ -96,7 +96,6 @@ export class ProtocolError extends Error {
   override name = "ProtocolError";
 }
 
-/** Thrown by parameter/result validators; carries the wire code to answer with. */
 /**
  * The instruction at the end of a refusal that only the user can fix: a
  * missing or broken tool, or a Host Runtime that does not run.
@@ -116,15 +115,6 @@ export function shownMessage(error: { code: string; message: string }): string {
 /** A refusal that crosses the Host Runtime wire. */
 export class WireFailure extends Refusal implements WireError {
   override name = "WireFailure";
-
-  toWire(): WireError {
-    return { code: this.code, message: this.message };
-  }
-}
-
-/** The message of a caught value, which may not be an Error. */
-export function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 export type Fields = Record<string, unknown>;

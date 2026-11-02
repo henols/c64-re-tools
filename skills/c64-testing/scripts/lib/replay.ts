@@ -4,7 +4,6 @@
 // each checkpoint with the reference's. --checkpoint and --state choose the
 // comparison, else the record file gave it.
 
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 
 import { symbolsPath } from "#src/build-name.ts";
@@ -14,13 +13,14 @@ import { readProjectFile, writeReported, type Written } from "#src/host-client/t
 import { formatC64Address } from "#src/c64.ts";
 import { encodePng } from "#src/graphics.ts";
 import { LOADER_JUMP } from "#src/knowledge/start-screen.ts";
+import { sha256 } from "#src/knowledge/text.ts";
 import { C64RunSession } from "#src/native/c64run.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { UsageError } from "#src/script.ts";
 import { firstDifference, loaderEntry, mover, parseStateItem, pinLines, readRecording, replaySide, siteMap, type Comparison, type ReplayResult, type ReplaySubject } from "./recording.ts";
-import { namesOf } from "./scenario.ts";
+import { cachedNames } from "./scenario.ts";
 
 const MAX_STATE_ITEMS = 16;
 
@@ -46,6 +46,36 @@ export function rebuildNames(rebuild: string, symbols: string | undefined, refer
   return existsSync(resolveProjectPath(own)) ? own : reference;
 }
 
+/** The replay of several recordings: FAIL when one failed, else INCONCLUSIVE when one could not compare, else PASS. */
+export interface ReplayAll {
+  result: ReplayResult["result"];
+  passed: number;
+  failed: number;
+  inconclusive: number;
+  recordings: ReplayResult[];
+}
+
+/**
+ * Replays each recording in turn with the same options: replays at the same time share the processor and can go past the
+ * time limit of the core. --out gets a folder for each recording, by the name of its folder. A recording that the script
+ * refuses is INCONCLUSIVE with the refusal as its reason; a missing tool stops all.
+ */
+export async function replayAll(folders: readonly string[], values: Omit<ReplayOptions, "folder" | "screen">, one: (values: ReplayOptions) => Promise<ReplayResult> = replay): Promise<ReplayAll> {
+  const recordings: ReplayResult[] = [];
+  for (const folder of folders) {
+    const name = folder.replace(/\/+$/, "").split("/").at(-1)!;
+    try {
+      recordings.push(await one({ ...values, folder, ...(values.out === undefined ? {} : { out: `${values.out}/${name}` }) }));
+    } catch (error) {
+      if (!isRefusal(error) || error.code === "installation-incomplete") throw error;
+      recordings.push({ result: "INCONCLUSIVE", recording: folder, side: values.rebuild === undefined ? "reference" : "rebuild", checkpoints: 0, compared: 0, reason: error.message });
+    }
+  }
+  const count = (outcome: ReplayResult["result"]) => recordings.filter((item) => item.result === outcome).length;
+  const [passed, failed, inconclusive] = [count("PASS"), count("FAIL"), count("INCONCLUSIVE")];
+  return { result: failed > 0 ? "FAIL" : inconclusive > 0 ? "INCONCLUSIVE" : "PASS", passed, failed, inconclusive, recordings };
+}
+
 /** Replays the recording on the reference, and with `rebuild` on the rebuild: PASS, FAIL or INCONCLUSIVE. */
 export async function replay(values: ReplayOptions): Promise<ReplayResult> {
   if (values.symbols !== undefined && values.rebuild === undefined) throw new UsageError("--symbols gives the names of the rebuild, and --rebuild is missing. Give --rebuild too, or leave out --symbols.");
@@ -54,6 +84,7 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
   if (values.pin.length > 0 && values.checkpoint === undefined) throw new UsageError("--pin needs --checkpoint and --state. Give them too, or leave out --pin.");
   const folder = values.folder.replace(/\/+$/, "").replace(/\/recording\.json$/, "");
   const recording = readRecording(folder);
+  const namesOf = cachedNames();
   const given: Comparison | undefined =
     values.checkpoint === undefined ? undefined : { checkpoint: values.checkpoint, state: values.state.map((item) => parseStateItem(item, "--state")), ...(values.pin.length === 0 ? {} : { pin: values.pin.map((item) => parseStateItem(item, "--pin")) }) };
   const compare = given ?? recording.compare;
@@ -78,8 +109,7 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
       throw error;
     }
   }
-  const sha256 = createHash("sha256").update(readProjectFile(recording.program).bytes).digest("hex");
-  if (sha256 !== recording.sha256) return result("INCONCLUSIVE", "reference", { reason: `${recording.program} is not the program of the recording (its SHA-256 changed); record the session again` });
+  if (sha256(readProjectFile(recording.program).bytes) !== recording.sha256) return result("INCONCLUSIVE", "reference", { reason: `${recording.program} is not the program of the recording (its SHA-256 changed); record the session again` });
 
   const context = localToolContext();
   const core = await C64RunSession.open(context);
@@ -88,7 +118,7 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     // A recording made without names takes the names that the knowledge has now.
     const referenceSymbols = recording.symbols === "none" ? "knowledge" : recording.symbols;
     const reference: ReplaySubject = { side: "reference", program: recording.program, symbols: referenceSymbols };
-    const side = (subject: ReplaySubject, options: Parameters<typeof replaySide>[5]) => replaySide(core, recording, folder, subject, workspace, options);
+    const side = (subject: ReplaySubject, options: Parameters<typeof replaySide>[6]) => replaySide(core, recording, folder, subject, workspace, namesOf, options);
     const rebuildSymbols = values.rebuild === undefined ? referenceSymbols : rebuildNames(values.rebuild, values.symbols, referenceSymbols);
     const named = { symbols: rebuildSymbols };
     // A rebuild with a generated loader starts the program where its loader jumps to. The reference comes to that entry by the same name.
@@ -98,7 +128,7 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     // the rebuild, and the result is INCONCLUSIVE.
     let loader: { entry: number; reference: number } | undefined;
     if (values.rebuild !== undefined && !recording.load && namesOf(rebuildSymbols).has(LOADER_JUMP)) {
-      const entry = await loaderEntry(core, recording, { side: "rebuild", program: values.rebuild, symbols: rebuildSymbols });
+      const entry = await loaderEntry(core, recording, { side: "rebuild", program: values.rebuild, symbols: rebuildSymbols }, namesOf);
       if (typeof entry === "string") return result("FAIL", "rebuild", { ...named, reason: entry });
       loader = { entry, reference: mover(namesOf(rebuildSymbols, "code"), namesOf(referenceSymbols, "code"))(entry) };
     }

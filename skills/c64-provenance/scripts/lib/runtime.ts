@@ -4,15 +4,14 @@
 // Watchpoints and range breakpoints stop the run at an access; the coverage
 // map then tells which range and which access it was.
 
-import { type AddressRange, COVERAGE, formatC64Address, instructionLength } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, EXECUTE, instructionLength, READ, WRITE } from "#src/c64.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
 import { startAtEntry, type EntryState } from "#src/host-client/entry-state.ts";
 import { runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { knowledgeAt } from "#src/knowledge/names.ts";
-import { MAX_MEMORY_READ } from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
-import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 
 export type FirstAccess = "read" | "write" | "execute" | "none";
 
@@ -28,10 +27,6 @@ export type Start =
   | { kind: "image"; segments: AddressRange[]; byteAt: (address: number) => number; state: EntryState };
 
 const MAX_WATCH = 256;
-
-const READ = COVERAGE.ramRead | COVERAGE.romRead | COVERAGE.ioRead;
-const WRITE = COVERAGE.ramWrite | COVERAGE.ioWrite;
-const EXECUTE = COVERAGE.ramExecute | COVERAGE.romExecute | COVERAGE.ioExecute;
 
 /** The first access that coverage flags show; a read-modify-write reads first. */
 export function accessOf(flags: number): FirstAccess {
@@ -147,11 +142,7 @@ export async function watchRelease(
 
   const accesses: RangeAccess[] = [];
   for (const [index, range] of ranges.entries()) {
-    const parts: Buffer[] = [];
-    for (let at = range.start; at <= range.end; at += MAX_MEMORY_READ) {
-      parts.push(Buffer.from((await client.memoryRead({ address: at, size: Math.min(MAX_MEMORY_READ, range.end - at + 1), space: "c64", view: "ram" })).data, "hex"));
-    }
-    const now = Buffer.concat(parts);
+    const now = await readMemoryInParts(client, range.start, range.end - range.start + 1, "ram");
     accesses.push({ first: first[index]!, changed: now.some((byte, offset) => byte !== release(range.start + offset)) });
   }
   for (const ids of points.values()) {
@@ -162,5 +153,3 @@ export async function watchRelease(
   }
   return { started: true, accesses };
 }
-
-export const showRange = (range: AddressRange) => `${formatC64Address(range.start)}-${formatC64Address(range.end)}`;

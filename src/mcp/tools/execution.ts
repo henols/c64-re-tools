@@ -9,7 +9,7 @@ import { Byte, SpaceInput, TOOL_INPUTS } from "../inputs.ts";
 import { AddressOutput, defineTool, toCondition, ToolOutput, type ViceSessionApi } from "../server.ts";
 import { c64Observe } from "./video.ts";
 
-export const c64Execution = defineTool({
+const c64Execution = defineTool({
   name: "c64_execution",
   title: "Control C64 execution",
   description:

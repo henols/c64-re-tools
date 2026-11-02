@@ -6,7 +6,8 @@ import { posix } from "node:path";
 import { isRefusal, Refusal } from "../errors.ts";
 import { formatC64Address, prgRange } from "../c64.ts";
 import { readEntryState, type EntryState } from "./entry-state.ts";
-import { readProjectFile } from "./transfer.ts";
+import { isObject } from "../protocol/messages.ts";
+import { readProjectFile, readProjectJson } from "./transfer.ts";
 
 export interface Image {
   segments: Array<{ start: number; end: number }>;
@@ -34,7 +35,7 @@ const MEDIA_KINDS: Record<string, string> = {
 };
 
 /** The remedy for a disk, tape or cartridge file where a PRG must be: get the PRG out of it. */
-export const MEDIA_REMEDY = "Get the PRG out of it, and give the path of that PRG";
+const MEDIA_REMEDY = "Get the PRG out of it, and give the path of that PRG";
 
 /**
  * Refuses a file that is no PRG by its extension (`type`, lowercase, without
@@ -78,17 +79,11 @@ export function readImage(path: string): Image {
     const range = readPrg(path, MEDIA_REMEDY, "an image.json of an unpacked program or a PRG");
     return { segments: [{ start: range.start, end: range.end }], byteAt: (address) => range.body[address - range.start]! };
   }
-  const { bytes } = readProjectFile(path);
+  const notImage = (what: string) => `${path} is not an image.json of an unpacked program: ${what}`;
   const fail = (what: string): never => {
-    throw new Refusal("invalid-input", `${path} is not an image.json of an unpacked program: ${what}`);
+    throw new Refusal("invalid-input", notImage(what));
   };
-  const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(bytes.toString("utf8"));
-  } catch (error) {
-    return fail((error as Error).message);
-  }
+  const parsed = readProjectJson(path, notImage);
   const manifest = isObject(parsed) ? parsed : fail("it is not a JSON object");
   const address = (value: unknown, what: string) => (typeof value === "string" && /^\$[0-9a-f]{4}$/i.test(value) ? Number.parseInt(value.slice(1), 16) : fail(`${what} is not a $ address`));
   if (typeof manifest.image !== "string") fail("it has no image");

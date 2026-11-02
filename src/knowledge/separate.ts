@@ -1,15 +1,16 @@
 // Evidence from one release: for each range of the image, the unpack
 // stage that wrote it and the access class from coverage; for each code
-// region of knowledge, whether call and jump references or the run on from
-// its last instruction reach it from a root (the entry, and the NMI, RESET
-// and IRQ vectors at $fffa-$ffff when the image holds them); and what the program reads
+// region of knowledge, whether call and jump references, the handlers that
+// the code stores in an interrupt vector, or the run on from its last
+// instruction reach it from a root (the entry, and the NMI, RESET and IRQ
+// vectors at $fffa-$ffff when the image holds them); and what the program reads
 // or executes outside the image. A region that nothing reaches is unknown, not
 // dead, while the program has a flow whose targets the knowledge does not give,
 // or when no coverage shows what ran. Evidence only: nothing here decides which
 // bytes the publisher shipped.
 
-import { type AddressRange, COVERAGE, executedRamCode, instructionLength } from "../c64.ts";
-import { OPCODES } from "../opcodes.ts";
+import { type AddressRange, COVERAGE, executedRamCode, inRanges, instructionLength, NO_FALL, rangesOverlap } from "../c64.ts";
+import { JAM_OPCODES, OPCODES } from "../opcodes.ts";
 import { isSemantic } from "./schema.ts";
 
 export type Access = "executed" | "read" | "written" | "read-written" | "untouched";
@@ -59,6 +60,7 @@ export interface UnresolvedFlow {
 
 /** The computed flows of the code: the targets that the bytes of the program give, and the flows that stay open. */
 export interface ComputedFlows {
+  /** Also from each store of a handler into an interrupt vector to the handler. */
   targets: Array<{ from: number; to: number }>;
   unresolved: UnresolvedFlow[];
 }
@@ -99,21 +101,20 @@ const HARDWARE_VECTORS = [
  * two bytes are in the image. An interrupt handler runs by its vector, and
  * no call or jump reference reaches it.
  */
-export function reachabilityRoots(segments: readonly AddressRange[], memory: Uint8Array, entry?: number): Root[] {
-  const inImage = (address: number) => segments.some((segment) => address >= segment.start && address <= segment.end);
-  const vectors = HARDWARE_VECTORS.filter((vector) => inImage(vector.at) && inImage(vector.at + 1)).map((vector): Root => ({ address: memory[vector.at]! | (memory[vector.at + 1]! << 8), from: vector.from }));
+function reachabilityRoots(segments: readonly AddressRange[], memory: Uint8Array, entry?: number): Root[] {
+  const vectors = HARDWARE_VECTORS.filter((vector) => inRanges(segments, vector.at) && inRanges(segments, vector.at + 1)).map((vector): Root => ({ address: memory[vector.at]! | (memory[vector.at + 1]! << 8), from: vector.from }));
   return [...(entry === undefined ? [] : [{ address: entry, from: "entry" as const }]), ...vectors];
 }
 
 /** BRK, JMP, RTI, RTS, JMP (indirect) and the JAM opcodes: the CPU does not run on to the next instruction after them. */
-export const NO_FALL_THROUGH = new Set([0x00, 0x4c, 0x40, 0x60, 0x6c, 0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xb2, 0xd2, 0xf2]);
+export const NO_FALL_THROUGH: ReadonlySet<number> = new Set([...NO_FALL, ...JAM_OPCODES]);
 
 /**
  * The address after a code region where the CPU runs on, or undefined when
  * its last instruction does not run on (RTS, RTI, JMP, BRK, JAM). The
  * instructions follow one another from the start of the region.
  */
-export function fallThrough(region: AddressRange, memory: Uint8Array): number | undefined {
+function fallThrough(region: AddressRange, memory: Uint8Array): number | undefined {
   let at = region.start;
   let last = at;
   while (at <= region.end) {
@@ -124,7 +125,7 @@ export function fallThrough(region: AddressRange, memory: Uint8Array): number | 
 }
 
 /** The instruction starts of code regions: each region runs from its start, one instruction after the other. */
-export function regionStarts(regions: readonly AddressRange[], memory: Uint8Array): number[] {
+function regionStarts(regions: readonly AddressRange[], memory: Uint8Array): number[] {
   const starts: number[] = [];
   for (const region of regions) for (let at = region.start; at <= region.end; at += instructionLength(memory[at]!)) starts.push(at);
   return starts.sort((a, b) => a - b);
@@ -142,6 +143,13 @@ export const WRITES_Y = new Set(["ldy", "iny", "dey"]);
 const CHANGES_MEMORY = new Set(["inc", "dec", "asl", "lsr", "rol", "ror", "sax", "slo", "rla", "sre", "rra", "dcp", "isc"]);
 
 /**
+ * The low bytes of the interrupt vectors: the KERNAL goes through the IRQ, BRK
+ * and NMI vectors at $0314-$0319, and the CPU through $fffa-$ffff when the
+ * KERNAL is banked out. No instruction of the program goes to their handlers.
+ */
+const INTERRUPT_VECTORS = [0x0314, 0x0316, 0x0318, 0xfffa, 0xfffc, 0xfffe];
+
+/**
  * The computed flows of the instructions at `starts`: a JMP (N), a JMP or JSR
  * whose address bytes a run wrote, and an RTS or RTI after pushes in its run
  * of instructions. A jump or call reference of the user or the LLM from the
@@ -151,7 +159,11 @@ const CHANGES_MEMORY = new Set(["inc", "dec", "asl", "lsr", "rol", "ror", "sax",
  * there, and the flow goes to each word of these values. A byte that another
  * write of the code changes, or that a run wrote while no store of the code
  * does, or that is outside the image without such a store, leaves the flow
- * unresolved.
+ * unresolved. An immediate that the code stores in an interrupt vector
+ * installs a handler: a flow goes from each such store to each word of the
+ * immediates of the two bytes, or of the image byte where the code stores
+ * none. Another write of the vector, for example a restore of the KERNAL
+ * handler, does not remove the handler.
  */
 export function computedFlows(input: { starts: readonly number[]; memory: Uint8Array; inImage: (address: number) => boolean; coverage?: Uint8Array | undefined; references: ReadonlyArray<{ from: number; kind: string; origin?: string | undefined }> }): ComputedFlows {
   const { memory } = input;
@@ -168,6 +180,9 @@ export function computedFlows(input: { starts: readonly number[]; memory: Uint8A
     if (known === null) return;
     stored.set(address, value === undefined ? null : (known ?? new Set<number>()).add(value));
   };
+  // The immediates that the code stores in each byte of an interrupt vector, with the address of the store.
+  const installs = new Map<number, Array<{ at: number; value: number }>>();
+  const vectorBytes = new Set(INTERRUPT_VECTORS.flatMap((vector) => [vector, vector + 1]));
   // The return addresses that the code pushed before an RTS or RTI, as far as immediates give them.
   const returns: Array<{ at: number; low: number | undefined; high: number | undefined; offset: 0 | 1 }> = [];
   let registers: { a?: number | undefined; x?: number | undefined; y?: number | undefined } = {};
@@ -187,6 +202,8 @@ export function computedFlows(input: { starts: readonly number[]; memory: Uint8A
       const register = mnemonic === "sta" ? "a" : mnemonic === "stx" ? "x" : mnemonic === "sty" ? "y" : undefined;
       if (register !== undefined) store(operand, registers[register]);
       else if (CHANGES_MEMORY.has(mnemonic)) store(operand, undefined);
+      const value = register === undefined ? undefined : registers[register];
+      if (value !== undefined && vectorBytes.has(operand)) installs.set(operand, [...(installs.get(operand) ?? []), { at, value }]);
     }
     if (mnemonic === "pha") pushes.push(registers.a);
     if (mnemonic === "php") pushes.push(undefined);
@@ -239,6 +256,16 @@ export function computedFlows(input: { starts: readonly number[]; memory: Uint8A
     if (pushed.low !== undefined && pushed.high !== undefined) targets.push({ from: pushed.at, to: ((pushed.low | (pushed.high << 8)) + pushed.offset) & 0xffff });
     else if (!fromTable.has(pushed.at)) unresolved.push({ at: pushed.at, kind: "pushed-return" });
   }
+  for (const vector of INTERRUPT_VECTORS) {
+    const stores = [...(installs.get(vector) ?? []), ...(installs.get(vector + 1) ?? [])];
+    if (stores.length === 0) continue;
+    const valuesOf = (address: number) => {
+      const own = installs.get(address);
+      return own !== undefined ? [...new Set(own.map((item) => item.value))] : input.inImage(address) ? [memory[address]!] : [];
+    };
+    const handlers = valuesOf(vector).flatMap((low) => valuesOf(vector + 1).map((high) => low | (high << 8)));
+    for (const from of new Set(stores.map((item) => item.at))) for (const to of handlers) targets.push({ from, to });
+  }
   return { targets, unresolved: unresolved.sort((a, b) => a.at - b.at) };
 }
 
@@ -257,7 +284,7 @@ function merge(addresses: number[], gap = 0, joins: (from: number, to: number) =
 }
 
 export function separate(input: SeparationInput): Separation {
-  const inImage = (address: number) => input.segments.some((segment) => address >= segment.start && address <= segment.end);
+  const inImage = (address: number) => inRanges(input.segments, address);
   const executed = new Uint8Array(0x10000);
   if (input.coverage !== undefined) for (const range of executedRamCode(input.coverage, 0, input.memory)) executed.fill(1, range.start, range.end + 1);
   const accessAt = (address: number): Access | undefined => {
@@ -268,11 +295,12 @@ export function separate(input: SeparationInput): Separation {
     const written = (flags & COVERAGE.ramWrite) !== 0;
     return read && written ? "read-written" : read ? "read" : written ? "written" : "untouched";
   };
-  const stageAt = (address: number): number | undefined => {
-    const stages = input.stages ?? [];
-    for (let index = stages.length - 1; index >= 0; index--) if (stages[index]!.wrote.some((range) => address >= range.start && address <= range.end)) return index;
-    return undefined;
-  };
+  // The newest stage that wrote each address.
+  const stageOf = new Int32Array(0x10000).fill(-1);
+  (input.stages ?? []).forEach((stage, index) => {
+    for (const range of stage.wrote) stageOf.fill(index, range.start, range.end + 1);
+  });
+  const stageAt = (address: number): number | undefined => (stageOf[address] === -1 ? undefined : stageOf[address]);
 
   const ranges: EvidenceRange[] = [];
   for (const segment of input.segments) {
@@ -288,7 +316,7 @@ export function separate(input: SeparationInput): Separation {
     }
   }
 
-  const regions = input.codeRegions.filter((region) => input.segments.some((segment) => region.start <= segment.end && segment.start <= region.end));
+  const regions = input.codeRegions.filter((region) => input.segments.some((segment) => rangesOverlap(region, segment)));
   // The region of each address: the first region that holds it, as a search in region order finds it.
   const owner = new Int32Array(0x10000).fill(-1);
   regions.forEach((region, index) => {

@@ -1,8 +1,8 @@
 // Local evidence of packing for the c64-unpacker script: where BASIC hands
 // over and how compressed the bytes look. It never names a packer.
 
-import { basicLineText, findHandoffs, formatC64Address, instructionLength, parseTokenized, prgRange } from "#src/c64.ts";
-import { Refusal } from "#src/errors.ts";
+import { basicLineText, COVERAGE, findHandoffs, formatC64Address, instructionLength, parseTokenized, prgRange } from "#src/c64.ts";
+import { IO_RAM } from "#src/host-client/coverage.ts";
 
 /** A 256-byte block above this many bits per byte looks compressed. */
 const HIGH_ENTROPY = 6.9;
@@ -155,51 +155,36 @@ export function inspect(program: Uint8Array): PackingEvidence {
   };
 }
 
-/** One range of the emulator's memory map: what the program did with these addresses. */
-export interface AccessRange {
-  start: number;
-  end: number;
-  read: boolean;
-  write: boolean;
-  execute: boolean;
+/** The memory map gives each access in the I/O area as an I/O access, also one with the RAM banked in. */
+const inIoArea = (address: number) => address >= IO_RAM.start && address <= IO_RAM.end;
+
+/**
+ * True when the CPU executed RAM at the address that the program wrote. The
+ * map keeps RAM and ROM apart, so code that runs in a ROM over written RAM
+ * is no written code. In the I/O area, where the map does not show the
+ * banking, an executed and written address is RAM code: the CPU does not
+ * run code in the chip registers.
+ */
+function ranWritten(flags: number, address: number): boolean {
+  if (inIoArea(address)) return (flags & (COVERAGE.ramExecute | COVERAGE.ioExecute)) !== 0 && (flags & (COVERAGE.ramWrite | COVERAGE.ioWrite)) !== 0;
+  return (flags & COVERAGE.ramExecute) !== 0 && (flags & COVERAGE.ramWrite) !== 0;
 }
 
 /**
- * Reads the memory map of $0000-$ffff in address order. One `read` gives a
- * limited number of ranges, and `next` when more follow: the next read starts there.
+ * The RAM that the program wrote and then executed, in pieces of code, from
+ * a coverage map of $0000-$ffff. `bytes` counts the executed opcode bytes
+ * with the operand bytes between them; `running` is the piece that holds `pc`.
  */
-export async function readMemoryMap(read: (start: number) => Promise<{ ranges: AccessRange[]; next?: number }>): Promise<AccessRange[]> {
-  const ranges: AccessRange[] = [];
-  for (let start: number | undefined = 0; start !== undefined; ) {
-    const found: { ranges: AccessRange[]; next?: number } = await read(start);
-    ranges.push(...found.ranges);
-    if (found.next !== undefined && found.next <= start) throw new Refusal("operation-failed", `the memory map did not move on from ${start}`);
-    start = found.next;
-  }
-  return ranges;
-}
-
-/** ROM areas: an address here can be written (RAM below) and executed (ROM) without one being the other. */
-export const underRom = (address: number) => (address >= 0xa000 && address <= 0xbfff) || address >= 0xe000;
-
-/**
- * The memory that the program wrote and then executed, in pieces of code.
- * `bytes` and `running` count only RAM outside the ROM areas: a write under
- * a ROM and code that runs in that ROM are not one piece of code.
- */
-export function writtenThenExecuted(
-  ranges: AccessRange[],
-  pc: number,
-): { written: Array<{ start: number; end: number }>; counted: Array<{ start: number; end: number }>; bytes: number; running?: { start: number; end: number } } {
+export function writtenThenExecuted(map: Uint8Array, pc: number): { written: Array<{ start: number; end: number }>; bytes: number; running?: { start: number; end: number } } {
   // VICE marks only opcode bytes as executed; a gap of at most two operand bytes stays inside one piece of code.
   const written: Array<{ start: number; end: number }> = [];
-  for (const range of ranges.filter((candidate) => candidate.write && candidate.execute)) {
+  for (let address = 0; address < map.length; address++) {
+    if (!ranWritten(map[address]!, address)) continue;
     const last = written.at(-1);
-    if (last !== undefined && range.start - last.end <= 3 && underRom(range.start) === underRom(last.start)) last.end = range.end;
-    else written.push({ start: range.start, end: range.end });
+    if (last !== undefined && address - last.end <= 3) last.end = address;
+    else written.push({ start: address, end: address });
   }
-  const counted = written.filter((range) => !underRom(range.start));
-  const bytes = counted.reduce((sum, range) => sum + range.end - range.start + 1, 0);
-  const running = counted.find((range) => pc >= range.start && pc <= range.end);
-  return { written, counted, bytes, ...(running === undefined ? {} : { running }) };
+  const bytes = written.reduce((sum, range) => sum + range.end - range.start + 1, 0);
+  const running = written.find((range) => pc >= range.start && pc <= range.end);
+  return { written, bytes, ...(running === undefined ? {} : { running }) };
 }

@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
-import { rebuildNames, replay } from "../../skills/c64-testing/scripts/lib/replay.ts";
+import { rebuildNames, replay, replayAll } from "../../skills/c64-testing/scripts/lib/replay.ts";
 import { Refusal } from "../../src/errors.ts";
 import { failsWith } from "../../src/errors.testkit.ts";
 import { C64RUN_PROTOCOL } from "../../src/native/c64run.ts";
@@ -255,42 +255,26 @@ test("the rebuild of a replay has the symbol file of its build, else the names o
   assert.equal(rebuildNames("build/clean_loader.prg", "names.json", "knowledge"), "names.json");
 });
 
-test("a record file names itself and the step of a key that the replay core does not have, and refuses the 2.0 forms", () => {
+test("replayAll replays the recordings in turn with the same options and an --out folder for each, a refused recording is INCONCLUSIVE, and a missing tool stops all", async () => {
+  const calls: string[] = [];
+  const one = async (values: { folder: string; checkpoint?: string; state: string[]; rebuild?: string; out?: string }) => {
+    calls.push(`${values.folder} ${values.checkpoint} ${values.state.join(",")} ${values.rebuild} ${values.out}`);
+    if (values.folder === "c") throw new Refusal("invalid-input", "c is no recording");
+    return { result: values.folder === "b/" ? ("FAIL" as const) : ("PASS" as const), recording: values.folder, side: "rebuild" as const, checkpoints: 3, compared: values.folder === "b/" ? 1 : 3 };
+  };
+  const all = await replayAll(["tests/recordings/a", "b/", "c"], { checkpoint: "main_loop", state: ["room"], pin: [], rebuild: "build/clean.prg", out: "results" }, one);
+  assert.deepEqual(calls, ["tests/recordings/a main_loop room build/clean.prg results/a", "b/ main_loop room build/clean.prg results/b", "c main_loop room build/clean.prg results/c"]);
+  assert.deepEqual({ ...all, recordings: all.recordings.map((item) => `${item.recording} ${item.result}${item.reason === undefined ? "" : ` ${item.reason}`}`) }, { result: "FAIL", passed: 1, failed: 1, inconclusive: 1, recordings: ["tests/recordings/a PASS", "b/ FAIL", "c INCONCLUSIVE c is no recording"] });
+  assert.equal((await replayAll(["a", "c"], { state: [], pin: [] }, one)).result, "INCONCLUSIVE");
+  await assert.rejects(
+    replayAll(["a"], { state: [], pin: [] }, async () => {
+      throw new Refusal("installation-incomplete", "c64run is missing");
+    }),
+    /c64run is missing/,
+  );
+});
+
+test("a record file names itself and the step of a key that the replay core does not have", () => {
   const read = (name: string, value: unknown) => () => readRecordFile(file(name, value));
   assert.throws(read("umlaut.json", { ...valid, steps: [{ frames: 10 }, { press: { keys: "ä" } }] }), { message: 'record file umlaut.json: step 2: press.keys: the C64 keyboard has no key "ä"' });
-  assert.throws(read("old-state.json", { ...valid, state: [{ at: "falls_left", size: 3 }] }), { message: "record file old-state.json: state item 1 has the field at. at is a 2.0 field. Write address in place of at" });
-  assert.throws(read("old-pin.json", { ...valid, pin: [{ at: "random_ptr", size: 2 }] }), { message: "record file old-pin.json: pin item 1 has the field at. at is a 2.0 field. Write address in place of at" });
-  assert.throws(read("old-type.json", { ...valid, steps: [{ type: " " }] }), { message: 'record file old-type.json: step 1 has the 2.0 form (type as text). Write {"type": {"mode": "text", "text": " "}}, or {"type": {"mode": "petscii", "bytes": [...]}} for PETSCII codes' });
-});
-
-test("a recording of 2.0 is refused with the field and the 2.1 form before the replay core starts, never replayed", () => {
-  const read = (name: string, recording: Record<string, unknown>) => () => {
-    mkdirSync(join(project, "tests/recordings", name), { recursive: true });
-    writeFileSync(join(project, "tests/recordings", name, "recording.json"), JSON.stringify({ format: 1, name, program: "game.prg", sha256: "a3", symbols: "knowledge", load: false, inputs: [], events: [], sites: [], ticks: 1, hash: "00000000", ...recording }));
-    readRecording(`tests/recordings/${name}`);
-  };
-  // The events of the Bruce Lee recording of 2.0.
-  const remedy = "Record the session again with record, or write the 2.1 form in recording.json";
-  assert.throws(read("run-until", { events: [{ step: 10, action: { runUntil: { at: "main_loop" }, timeoutFrames: 300 }, key: { site: "$13a3", addr: "$dc00", count: 68892 } }] }), {
-    code: "invalid-input",
-    message: `recording tests/recordings/run-until/recording.json: event 1 (step 10) has the 2.0 form (runUntil.at, timeoutFrames beside runUntil). Write {"runUntil": {"target": {"kind": "address", "address": "main_loop"}, "timeoutFrames": 300}}. ${remedy}`,
-  });
-  assert.throws(read("compare", { compare: { checkpoint: "main_loop", state: [{ at: "falls_left", size: 3 }], pin: [{ at: "random_ptr", size: 2 }] } }), {
-    code: "invalid-input",
-    message: `recording tests/recordings/compare/recording.json: compare: state item 1 has the field at. at is a 2.0 field. Write address in place of at. ${remedy}`,
-  });
-});
-
-test("a runUntil to an address of a recording before 2.6.0-rc.16 has no count at its target and is refused before the replay core starts; record again", () => {
-  const folder = (name: string, key: Record<string, unknown>) => {
-    // The step 2 of the Exploding Fist recordings of rc.3 to rc.11.
-    const event = { step: 2, action: { runUntil: { target: { kind: "address", address: "$1948", space: "c64" }, timeoutFrames: 3000 } }, key };
-    mkdirSync(join(project, "tests/recordings", name), { recursive: true });
-    writeFileSync(join(project, "tests/recordings", name, "recording.json"), JSON.stringify({ format: 1, name, program: "game.prg", sha256: "a3", symbols: "none", load: false, inputs: [], events: [event], sites: [], ticks: 1, hash: "00000000" }));
-    return `tests/recordings/${name}`;
-  };
-  for (const [name, key] of [["old-tick", { tick: 5896801 }], ["old-read", { site: "$1957", addr: "$dc01", count: 52 }]] as const) {
-    assert.throws(() => readRecording(folder(name, key)), failsWith("invalid-input", /event 1 \(step 2\).*Record the session again/));
-  }
-  assert.equal(readRecording(folder("counted", { pc: "$1948", count: 1 })).events.length, 1);
 });

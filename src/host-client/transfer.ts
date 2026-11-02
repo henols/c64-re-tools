@@ -64,6 +64,16 @@ export function readProjectFile(path: string, options: { root?: string; what?: s
   return { bytes: readFileSync(real), type: extname(path).slice(1).toLowerCase() };
 }
 
+/** The JSON value of a project file. Text that is not JSON is invalid-input with `notJson` of the parse error. */
+export function readProjectJson(path: string, notJson: (message: string) => string = (message) => `${path} is not JSON: ${message}`): unknown {
+  const text = readProjectFile(path).bytes.toString("utf8");
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new WireFailure("invalid-input", notJson((error as Error).message));
+  }
+}
+
 /**
  * The refusal for a write that the file system refused because of the path
  * (a folder, a file in place of a folder, no permission): invalid-input with

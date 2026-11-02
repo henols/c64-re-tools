@@ -6,7 +6,7 @@
 // its bytes from the separation. Evidence only: nothing here decides what a
 // leftover is or who made it.
 
-import { type AddressRange, basicLineText } from "#src/c64.ts";
+import { type AddressRange, basicLineText, subtract } from "#src/c64.ts";
 import { MNEMONICS } from "#src/opcodes.ts";
 import type { Access, Separation } from "#src/knowledge/separate.ts";
 
@@ -399,18 +399,6 @@ export function findCopies(memory: Uint8Array, segments: AddressRange[]): CopyFi
   return found;
 }
 
-/** Splits `range` at the parts that `taken` covers, and keeps the pieces of at least `min` bytes. */
-function without(range: AddressRange, taken: AddressRange[], min: number): AddressRange[] {
-  const pieces: AddressRange[] = [];
-  let start = range.start;
-  for (const part of taken.filter((item) => item.start <= range.end && item.end >= range.start).sort((a, b) => a.start - b.start)) {
-    if (part.start > start) pieces.push({ start, end: part.start - 1 });
-    start = Math.max(start, part.end + 1);
-  }
-  if (start <= range.end) pieces.push({ start, end: range.end });
-  return pieces.filter((piece) => piece.end - piece.start + 1 >= min);
-}
-
 export function findLeftovers(input: LeftoversInput): Leftovers {
   const { memory, segments, separation } = input;
   const ranges = separation.ranges;
@@ -435,7 +423,7 @@ export function findLeftovers(input: LeftoversInput): Leftovers {
   }
   // Untouched code is code that the runs did not get to, or dead code, which has its own list.
   const explained = [...text, ...basic, ...fill, ...separation.codeRegions];
-  const residue = untouched.flatMap((range) => without(range, explained, MIN_RESIDUE));
+  const residue = untouched.flatMap((range) => subtract(range, explained).filter((piece) => piece.end - piece.start + 1 >= MIN_RESIDUE));
   // The references miss IRQ vectors and jumps through tables: code that ran is not dead.
   const unreached = separation.codeRegions
     .filter((region) => region.reachable === false && region.executed !== true)

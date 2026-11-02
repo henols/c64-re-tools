@@ -9,11 +9,12 @@ import { CIA_SELECTIONS, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, MAX_OBSERVE_BYTES
 import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, Byte, MemoryViewInput, SpaceInput } from "../inputs.ts";
 import { AddressOutput, defineTool, HexData, requireFields, requireOut, ToolOutput, TransientName } from "../server.ts";
+import { c64Registers } from "./memory.ts";
 
 const Color = z.number().int().min(0).max(15);
 const NO_CHANGE = "This does not change the run state of the machine.";
 
-export const c64Vicii = defineTool({
+const c64Vicii = defineTool({
   name: "c64_vicii",
   title: "VIC-II state",
   description:
@@ -49,7 +50,7 @@ const SpriteOutput = z.object({
   dataAddress: AddressOutput,
 });
 
-export const c64Sprite = defineTool({
+const c64Sprite = defineTool({
   name: "c64_sprite",
   title: "Sprite state",
   description:
@@ -83,7 +84,7 @@ const CiaOutput = z.object({
   tod: z.object({ hours: z.number().int(), minutes: z.number().int(), seconds: z.number().int(), tenths: z.number().int() }),
 });
 
-export const c64Cia = defineTool({
+const c64Cia = defineTool({
   name: "c64_cia",
   title: "CIA state",
   description:
@@ -97,7 +98,7 @@ export const c64Cia = defineTool({
   },
 });
 
-export const c64Sid = defineTool({
+const c64Sid = defineTool({
   name: "c64_sid",
   title: "SID state",
   description:
@@ -128,7 +129,7 @@ const Rectangle = z
   .object({ x: z.number().int().min(0), y: z.number().int().min(0), width: z.number().int().min(1), height: z.number().int().min(1) })
   .strict();
 
-export const c64Screen = defineTool({
+const c64Screen = defineTool({
   name: "c64_screen",
   title: "Capture and compare the C64 screen",
   description:
@@ -198,8 +199,6 @@ export const c64Screen = defineTool({
   },
 });
 
-const FlagsOutput = z.object({ n: z.boolean(), v: z.boolean(), b: z.boolean(), d: z.boolean(), i: z.boolean(), z: z.boolean(), c: z.boolean() });
-
 export const c64Observe = defineTool({
   name: "c64_observe",
   title: "Observe several things at one moment",
@@ -229,7 +228,7 @@ export const c64Observe = defineTool({
     })
     .strict(),
   outputSchema: z.object({
-    registers: z.object({ pc: AddressOutput, a: Byte, x: Byte, y: Byte, sp: Byte, flags: FlagsOutput }).optional(),
+    registers: c64Registers.outputSchema.optional(),
     memory: z.array(z.object({ address: AddressOutput, data: HexData })).optional(),
     vicii: c64Vicii.outputSchema.optional(),
     sprites: z.array(SpriteOutput).optional(),
@@ -240,28 +239,15 @@ export const c64Observe = defineTool({
   }),
   readOnly: true,
   async run(input, session) {
-    const params: ObserveParams = {};
-    if (input.registers !== undefined) params.registers = input.registers;
-    if (input.memory !== undefined) params.memory = input.memory;
-    if (input.vicii === true) params.vicii = true;
-    if (input.sprites !== undefined) params.sprites = input.sprites;
-    if (input.cia !== undefined) params.cia = input.cia;
-    if (input.sid === true) params.sid = true;
-    if (input.screen === true) params.screen = true;
-    if (input.timing === true) params.timing = true;
+    // The parts asked for: a flag that is false asks for nothing.
+    const params = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined && value !== false)) as ObserveParams;
     if (Object.keys(params).length === 0) throw new WireFailure("invalid-input", "Ask for at least one observation.");
     const observed = await session.observe(params);
     const result: Record<string, unknown> = {};
     if (observed.registers !== undefined) result.registers = { ...observed.registers, pc: formatC64Address(observed.registers.pc) };
     if (observed.memory !== undefined) result.memory = observed.memory.map((range) => ({ ...range, address: formatC64Address(range.address) }));
-    if (observed.vicii !== undefined) {
-      result.vicii = {
-        ...observed.vicii,
-        screenAddress: formatC64Address(observed.vicii.screenAddress),
-        graphicsAddress: formatC64Address(observed.vicii.graphicsAddress),
-      };
-    }
-    if (observed.sprites !== undefined) result.sprites = observed.sprites.map((sprite) => ({ ...sprite, dataAddress: formatC64Address(sprite.dataAddress) }));
+    if (observed.vicii !== undefined) result.vicii = formatVicii(observed.vicii);
+    if (observed.sprites !== undefined) result.sprites = observed.sprites.map(formatSprite);
     if (observed.cia !== undefined) result.cia = observed.cia;
     if (observed.sid !== undefined) result.sid = observed.sid;
     if (observed.timing !== undefined) result.timing = observed.timing;

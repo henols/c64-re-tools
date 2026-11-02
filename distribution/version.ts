@@ -11,6 +11,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { describeError } from "../src/errors.ts";
 import { channelOf } from "../src/package.ts";
 
 /** The files that repeat the package version, relative to the repository root. */
@@ -74,7 +75,7 @@ function main([command, value]: string[]): number {
       return wrong.length === 0 ? 0 : 1;
     }
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(describeError(error));
     return 1;
   }
   console.error("usage: node distribution/version.ts tag <v-tag> | set <version> | check");

@@ -5,7 +5,7 @@
 // The target of an indirect jump comes from the stores of the straight-line
 // code before it, or else from the pointer in the image.
 
-import { SYMBOL_NAME } from "../../c64.ts";
+import { hexByte, hexWord, SYMBOL_NAME } from "../../c64.ts";
 import type { DecompilerInstruction, DecompilerResult, RefusedSeed } from "../types.ts";
 import { PcodeState } from "./pcode.ts";
 import { decode, type Decoded, type Varnode } from "./wasm.ts";
@@ -170,13 +170,13 @@ export function walk(image: Uint8Array, start: number, end: number, seeds: WalkS
       .sort((a, b) => a - b)
       .map((entry) => {
         const name = labels.get(entry);
-        return name !== undefined && SYMBOL_NAME.test(name) ? { entry, name, nameSource: "seed" as const } : { entry, name: `FUN_${hex4(entry)}`, nameSource: "generated" as const };
+        return name !== undefined && SYMBOL_NAME.test(name) ? { entry, name, nameSource: "seed" as const } : { entry, name: `FUN_${hexWord(entry)}`, nameSource: "generated" as const };
       }),
     regions: regions(start, end, (address) => (owner[address] !== -1 ? "code" : isData[address] ? "data" : undefined)),
     references,
     instructions: sorted.map((address): DecompilerInstruction => {
       const { decoded, flows } = instructions.get(address)!;
-      return { address, bytes: decoded.bytes.map((byte) => byte.toString(16).padStart(2, "0")).join(""), mnemonic: decoded.mnemonic.toLowerCase(), operands: decoded.operands, flows };
+      return { address, bytes: decoded.bytes.map(hexByte).join(""), mnemonic: decoded.mnemonic.toLowerCase(), operands: decoded.operands, flows };
     }),
   };
 }
@@ -232,4 +232,3 @@ function regions(start: number, end: number, kind: (address: number) => "code" |
   return result;
 }
 
-const hex4 = (value: number) => value.toString(16).padStart(4, "0");

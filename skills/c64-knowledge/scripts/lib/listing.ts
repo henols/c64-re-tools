@@ -3,7 +3,8 @@
 // the bytes from coverage files, and the references in and out. Nothing here
 // reads files: knowledge.ts gives the lookups.
 
-import { COVERAGE, formatC64Address, formatC64Byte, POINTER_TABLE_TYPES, pointerEntryText, pointerTableEntries, type PointerTableType, splitEntryByte } from "#src/c64.ts";
+import { COVERAGE, formatC64Address, formatC64Byte, hexByte, POINTER_TABLE_TYPES, pointerEntryText, pointerTableEntries, type PointerTableType, splitEntryByte } from "#src/c64.ts";
+import { CODE_REGION_TYPES, INSTRUCTION_REGION_TYPES } from "#src/knowledge/schema.ts";
 import { instructionWith, MODE_LENGTH, OPCODES, type Mode } from "#src/opcodes.ts";
 
 export interface ListingSource {
@@ -44,7 +45,8 @@ export interface ListingLine {
 
 type Region = ListingSource["regions"][number];
 
-const CODE = new Set(["code", "jumps"]);
+const CODE = new Set<string>(CODE_REGION_TYPES);
+const INSTRUCTIONS = new Set<string>(INSTRUCTION_REGION_TYPES);
 const TABLES = new Set<string>(["words", ...POINTER_TABLE_TYPES]);
 const DATA_PER_LINE = 8;
 
@@ -64,7 +66,7 @@ function accessOf(coverage: Uint8Array | undefined, start: number, length: numbe
 function targetName(target: number, source: ListingSource): string | undefined {
   const own = source.nameOf(target);
   if (own !== undefined) return own;
-  const region = source.regions.find((row) => target > row.start && target <= row.end && !CODE.has(row.type) && row.type !== "dual-use");
+  const region = source.regions.find((row) => target > row.start && target <= row.end && !INSTRUCTIONS.has(row.type));
   const start = region?.start ?? source.entryStart?.(target);
   const name = start === undefined ? undefined : source.nameOf(start);
   return name === undefined ? undefined : `${name}+${target - start!}`;
@@ -118,7 +120,7 @@ export function listing(source: ListingSource, start: number, end: number, optio
   const lines: ListingLine[] = [];
   const data = options.code !== true;
   const line = (address: number, length: number, text: string): ListingLine => {
-    const bytes = Array.from({ length }, (_, offset) => source.byteAt(address + offset)!.toString(16).padStart(2, "0")).join(" ");
+    const bytes = Array.from({ length }, (_, offset) => hexByte(source.byteAt(address + offset)!)).join(" ");
     const label = source.nameOf(address);
     const second = source.secondNames(address).filter((name) => name !== label);
     const { line: lineComments, side: own } = source.comments(address);
@@ -162,9 +164,11 @@ export function listing(source: ListingSource, start: number, end: number, optio
       const length = MODE_LENGTH[opcode.mode];
       const bytes = Array.from({ length: length - 1 }, (_, offset) => source.byteAt(address + 1 + offset));
       if (address + length - 1 <= region.end && bytes.every((value) => value !== undefined)) {
-        // The operand expression of the knowledge in the syntax of the addressing mode, as c64-source writes it.
-        const operand = source.operand(address) ?? operandOf(opcode.mode, address, bytes[0] ?? 0, bytes[1] ?? 0, source);
-        if (address >= start) lines.push(line(address, length, instructionWith(byte, operand)));
+        if (address >= start) {
+          // The operand expression of the knowledge in the syntax of the addressing mode, as c64-source writes it.
+          const operand = source.operand(address) ?? operandOf(opcode.mode, address, bytes[0] ?? 0, bytes[1] ?? 0, source);
+          lines.push(line(address, length, instructionWith(byte, operand)));
+        }
         address += length;
         continue;
       }
@@ -205,19 +209,29 @@ export function listing(source: ListingSource, start: number, end: number, optio
   return lines;
 }
 
-/** A listing as text, one line for each line, with its line comments above it. */
-export function listingText(lines: readonly ListingLine[]): string {
+/**
+ * A listing as text lines, as the agent reads it: each line comment as a line
+ * of its own, `; <comment>`, before its line, and each line as
+ * `<address>  <bytes>  <access>  <label>: <text>  ; <comment> | refs in <n> out <n> | also <names>`.
+ * Two spaces separate the parts. A part that the line does not have is not there.
+ */
+export function listingLines(lines: readonly ListingLine[]): string[] {
   const out: string[] = [];
   for (const item of lines) {
-    for (const comment of item.lineComments ?? []) out.push(`                         ; ${comment}`);
-    const head = `${formatC64Address(item.address)}  ${item.bytes.padEnd(9)} ${(item.access ?? "").padEnd(3)}`;
-    const body = (item.label === undefined ? "" : `${item.label} `).padEnd(20) + item.text;
+    for (const comment of item.lineComments ?? []) out.push(`; ${comment}`);
     const notes = [
       ...(item.comment === undefined ? [] : [item.comment]),
       ...(item.referencesIn + item.referencesOut === 0 ? [] : [`refs in ${item.referencesIn} out ${item.referencesOut}`]),
       ...(item.analyzerNames === undefined ? [] : [`also ${item.analyzerNames.join(", ")}`]),
     ];
-    out.push(`${head} ${body.padEnd(44)}${notes.length === 0 ? "" : ` ; ${notes.join(" | ")}`}`.trimEnd());
+    const parts = [
+      formatC64Address(item.address),
+      item.bytes,
+      ...(item.access === undefined ? [] : [item.access]),
+      `${item.label === undefined ? "" : `${item.label}: `}${item.text}`,
+      ...(notes.length === 0 ? [] : [`; ${notes.join(" | ")}`]),
+    ];
+    out.push(parts.join("  "));
   }
-  return `${out.join("\n")}\n`;
+  return out;
 }

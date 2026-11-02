@@ -2,7 +2,7 @@
 // +01:00, also in summer: no timestamp repeats when the clocks go back, and
 // the text of two timestamps sorts in time order.
 
-const CET_OFFSET_MS = 60 * 60 * 1000;
+export const CET_OFFSET_MS = 60 * 60 * 1000;
 
 /** `time` as `2026-10-09T14:03:21.123+01:00`. */
 export function isoCet(time: Date = new Date()): string {

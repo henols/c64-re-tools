@@ -3,10 +3,11 @@
 
 import { z } from "zod";
 
-import { COVERAGE, executedRamCode, EXECUTE, formatC64Address, READ, WRITE, type CodeRange } from "../../c64.ts";
+import { COVERAGE, executedRamCode, EXECUTE, formatC64Address, formatC64RangeFields, hexByte, READ, WRITE, type CodeRange } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
-import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, TRACE_ENDS, MAX_MEMMAP_RANGES, MAX_MEMORY_READ, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type Watchpoint } from "../../protocol/vice.ts";
+import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, TRACE_ENDS, MAX_MEMMAP_RANGES, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type TraceHit, type TraceKind, type Watchpoint } from "../../protocol/vice.ts";
 import { readCoverage } from "../../host-client/coverage.ts";
+import { readMemoryInParts } from "../../host-client/vice-session.ts";
 import { linesText, OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, Byte, SpaceInput, TOOL_INPUTS } from "../inputs.ts";
 import { AddressOutput, ConditionOutput, defineTool, HexData, requireFields, requireOut, showCondition, toCondition } from "../server.ts";
@@ -33,10 +34,10 @@ function showBreakpoint(point: Breakpoint) {
 
 function showWatchpoint(point: Watchpoint) {
   const { condition, address, size, ...rest } = point;
-  return { ...rest, start: formatC64Address(address), end: formatC64Address(address + size - 1), ...(condition === undefined ? {} : { condition: showCondition(condition) }) };
+  return { ...rest, ...formatC64RangeFields({ start: address, end: address + size - 1 }), ...(condition === undefined ? {} : { condition: showCondition(condition) }) };
 }
 
-export const c64Breakpoint = defineTool({
+const c64Breakpoint = defineTool({
   name: "c64_breakpoint",
   title: "C64 breakpoints",
   description:
@@ -80,7 +81,7 @@ export const c64Breakpoint = defineTool({
   },
 });
 
-export const c64Watchpoint = defineTool({
+const c64Watchpoint = defineTool({
   name: "c64_watchpoint",
   title: "C64 watchpoints",
   description:
@@ -132,7 +133,7 @@ export const c64Watchpoint = defineTool({
   },
 });
 
-export const c64CpuHistory = defineTool({
+const c64CpuHistory = defineTool({
   name: "c64_cpu_history",
   title: "CPU history",
   description:
@@ -164,22 +165,89 @@ export const c64CpuHistory = defineTool({
   readOnly: false,
   async run(input, session) {
     const { out, project, ...request } = input;
-    if (out === undefined && project !== undefined) throw new WireFailure("invalid-input", "project is used only with out.");
+    requireOut(input);
     const { entries } = await session.cpuHistory(request);
     if (out === undefined) return { entries: entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
-    const byte = (value: number) => value.toString(16).padStart(2, "0");
     const lines = entries.map((entry) => {
       const raster = entry.rasterLine === undefined ? "" : `  line ${entry.rasterLine} cycle ${entry.rasterCycle ?? 0}`;
-      return `${formatC64Address(entry.address)}  ${spaced(entry.bytes).padEnd(9)} ${entry.text.padEnd(16)} a=${byte(entry.a)} x=${byte(entry.x)} y=${byte(entry.y)} sp=${byte(entry.sp)}${raster}`;
+      return `${formatC64Address(entry.address)}  ${spaced(entry.bytes).padEnd(9)} ${entry.text.padEnd(16)} a=${hexByte(entry.a)} x=${hexByte(entry.x)} y=${hexByte(entry.y)} sp=${hexByte(entry.sp)}${raster}`;
     });
     return { count: entries.length, ...writeOut(out, linesText(lines), project) };
   },
 });
 
-/** The hits that a trace result gives inline; out gives all of them in the file, and none inline. */
-const TRACE_LISTED = 200;
+/** The hits that a trace result gives inline; out gives all of them in the file, and none inline. The summary counts all hits. */
+const TRACE_LISTED = 50;
+/** The addresses and the pcs that the summary of a trace lists, the values of each address, and the pcs of each address. */
+const SUMMARY_LISTED = 20;
+const SUMMARY_VALUES = 16;
+const SUMMARY_PCS = 4;
 
-export const c64Trace = defineTool({
+/** Most hits first, then the lowest address. */
+const byHits = <T extends { hits: number }>(entries: Iterable<T>, at: (entry: T) => number) => [...entries].sort((a, b) => b.hits - a.hits || at(a) - at(b));
+
+/**
+ * The summary of all hits of a trace: the read and write hits of each address
+ * (with the kind of its point) and the hits of each pc, most hits first. An
+ * address gives its values from low to high and the pcs with the most hits
+ * there. A pc gives its instruction and the numbers of its first and last hit.
+ */
+export function traceSummary(hits: readonly TraceHit[], kinds: readonly TraceKind[]) {
+  const addresses = new Map<string, { kind: TraceKind; address: number; hits: number; values: Set<number>; pcs: Map<number, number> }>();
+  const pcs = new Map<number, { pc: number; text: string; hits: number; firstHit: number; lastHit: number }>();
+  hits.forEach((hit, index) => {
+    const pc = pcs.get(hit.pc) ?? pcs.set(hit.pc, { pc: hit.pc, text: hit.text, hits: 0, firstHit: index, lastHit: index }).get(hit.pc)!;
+    pc.hits++;
+    pc.lastHit = index;
+    if (hit.address === undefined) return;
+    const kind = kinds[hit.point]!;
+    const key = `${kind} ${hit.address}`;
+    const address = addresses.get(key) ?? addresses.set(key, { kind, address: hit.address, hits: 0, values: new Set(), pcs: new Map() }).get(key)!;
+    address.hits++;
+    if (hit.value !== undefined) address.values.add(hit.value);
+    address.pcs.set(hit.pc, (address.pcs.get(hit.pc) ?? 0) + 1);
+  });
+  return {
+    addresses: addresses.size,
+    byAddress: byHits(addresses.values(), (entry) => entry.address)
+      .slice(0, SUMMARY_LISTED)
+      .map((entry) => {
+        const values = [...entry.values].sort((a, b) => a - b);
+        return {
+          address: formatC64Address(entry.address),
+          kind: entry.kind,
+          hits: entry.hits,
+          values: values.slice(0, SUMMARY_VALUES),
+          ...(values.length > SUMMARY_VALUES ? { moreValues: values.length - SUMMARY_VALUES } : {}),
+          pcs: byHits([...entry.pcs].map(([pc, count]) => ({ pc, hits: count })), (item) => item.pc)
+            .slice(0, SUMMARY_PCS)
+            .map((item) => ({ pc: formatC64Address(item.pc), hits: item.hits })),
+        };
+      }),
+    pcs: pcs.size,
+    byPc: byHits(pcs.values(), (entry) => entry.pc)
+      .slice(0, SUMMARY_LISTED)
+      .map((entry) => ({ ...entry, pc: formatC64Address(entry.pc) })),
+  };
+}
+
+const TraceSummaryOutput = z.object({
+  addresses: z.number().int().min(0),
+  byAddress: z.array(
+    z.object({
+      address: AddressOutput,
+      kind: z.enum(TRACE_KINDS),
+      hits: z.number().int().min(1),
+      values: z.array(Byte),
+      moreValues: z.number().int().min(1).optional(),
+      pcs: z.array(z.object({ pc: AddressOutput, hits: z.number().int().min(1) })),
+    }),
+  ),
+  pcs: z.number().int().min(0),
+  byPc: z.array(z.object({ pc: AddressOutput, text: z.string(), hits: z.number().int().min(1), firstHit: z.number().int().min(0), lastHit: z.number().int().min(0) })),
+});
+
+const c64Trace = defineTool({
   name: "c64_trace",
   title: "Trace accesses and instructions",
   description:
@@ -193,6 +261,11 @@ export const c64Trace = defineTool({
     "At $D000-$DFFF only a load or a store gives value: a read after the access can give another byte. " +
     `The trace ends after frames frames (1 to ${MAX_TRACE_FRAMES}), at maxHits hits (at most ${MAX_TRACE_HITS}), or at a breakpoint, a watchpoint or a JAM. ` +
     `The result lists the first ${TRACE_LISTED} hits. With out, it writes all hits as JSON lines to that project file, and the result gives no hits. ` +
+    "summary counts all hits, also with out. " +
+    `summary.byAddress gives the read and write hits of each address, most hits first, at most ${SUMMARY_LISTED}. An address with read hits and write hits has an item for each kind. ` +
+    `Each item gives kind, hits and values, the values from low to high, at most ${SUMMARY_VALUES}. moreValues is the number of the other values. pcs are the pcs with the most hits at the address, at most ${SUMMARY_PCS}. ` +
+    `summary.byPc gives the hits of each pc, most hits first, at most ${SUMMARY_LISTED}, with text. firstHit and lastHit are the numbers of its first and last hit. The first hit of the trace is 0. ` +
+    "summary.addresses and summary.pcs are the numbers of all different addresses and pcs. " +
     "Each hit stops the machine for a short time. Thus a point with many hits in each frame makes the trace slow. Use a small range and a maxHits. " +
     "The machine is stopped after the trace.",
   inputSchema: z
@@ -209,6 +282,7 @@ export const c64Trace = defineTool({
     frames: z.number().int().min(0),
     pc: AddressOutput,
     count: z.number().int().min(0),
+    summary: TraceSummaryOutput,
     hits: z
       .array(
         z.object({
@@ -233,18 +307,19 @@ export const c64Trace = defineTool({
   readOnly: false,
   async run(input, session) {
     const { out, project, points, ...request } = input;
-    if (out === undefined && project !== undefined) throw new WireFailure("invalid-input", "project is used only with out.");
+    requireOut(input);
     const ranges = points.map((point) => ({ kind: point.kind, start: point.start, end: point.end ?? point.start }));
     if (ranges.some((point) => point.end < point.start)) throw new WireFailure("invalid-input", "A point end must not be before its start.");
     const traced = await session.trace({ points: ranges, ...request });
     const shown = traced.hits.map(({ address, ...hit }) => ({ ...hit, pc: formatC64Address(hit.pc), ...(address === undefined ? {} : { address: formatC64Address(address) }) }));
-    const summary = { end: traced.end, frames: traced.frames, pc: formatC64Address(traced.pc), count: traced.hits.length };
-    if (out === undefined) return { ...summary, hits: shown.slice(0, TRACE_LISTED) };
-    return { ...summary, ...writeOut(out, linesText(shown.map((hit) => JSON.stringify(hit))), project) };
+    const head = { end: traced.end, frames: traced.frames, pc: formatC64Address(traced.pc), count: traced.hits.length };
+    const summary = traceSummary(traced.hits, ranges.map((point) => point.kind));
+    if (out === undefined) return { ...head, summary, hits: shown.slice(0, TRACE_LISTED) };
+    return { ...head, summary, ...writeOut(out, linesText(shown.map((hit) => JSON.stringify(hit))), project) };
   },
 });
 
-export const c64Backtrace = defineTool({
+const c64Backtrace = defineTool({
   name: "c64_backtrace",
   title: "Call backtrace",
   description:
@@ -265,7 +340,7 @@ export const c64Backtrace = defineTool({
   },
 });
 
-export const c64Timing = defineTool({
+const c64Timing = defineTool({
   name: "c64_timing",
   title: "Cycle stopwatch",
   description:
@@ -280,7 +355,7 @@ export const c64Timing = defineTool({
   },
 });
 
-export const c64Profile = defineTool({
+const c64Profile = defineTool({
   name: "c64_profile",
   title: "Cycle profile",
   description:
@@ -329,9 +404,9 @@ function sources(flags: number): Array<"ram" | "rom" | "io"> {
 
 const count = (map: Uint8Array, bit: number) => map.reduce((sum, flags) => sum + ((flags & bit) === 0 ? 0 : 1), 0);
 const RangeOutput = z.object({ start: AddressOutput, end: AddressOutput });
-const showRanges = (ranges: CodeRange[]) => ranges.slice(0, MAX_SUMMARY_RANGES).map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) }));
+const showRanges = (ranges: CodeRange[]) => ranges.slice(0, MAX_SUMMARY_RANGES).map(formatC64RangeFields);
 
-export const c64Memmap = defineTool({
+const c64Memmap = defineTool({
   name: "c64_memmap",
   title: "Memory access map",
   description:
@@ -387,9 +462,7 @@ export const c64Memmap = defineTool({
       requireFields("summary", fields, ["start", "end"]);
       const map = await readCoverage(session, start, end);
       // The opcodes give the instruction lengths: RAM as it is now.
-      const parts: Buffer[] = [];
-      for (let at = 0; at < 0x10000; at += MAX_MEMORY_READ) parts.push(Buffer.from((await session.memoryRead({ address: at, size: MAX_MEMORY_READ, space: "c64", view: "ram" })).data, "hex"));
-      const memory = Buffer.concat(parts);
+      const memory = await readMemoryInParts(session, 0x0000, 0x10000, "ram");
       const code = executedRamCode(map, start, memory);
       const written = executedRamCode(map.map((flags) => ((flags & COVERAGE.ramWrite) === 0 ? 0 : flags)), start, memory);
       return {

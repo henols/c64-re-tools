@@ -3,8 +3,8 @@
 // graph as a mermaid flowchart. The callers give the rows, so the graph needs
 // no database and the documentation and the knowledge script draw one graph.
 
-import { formatC64Address } from "../c64.ts";
-import type { ReferenceKind, SymbolKind } from "./schema.ts";
+import { formatC64Address, hexWord, type ReferenceKind } from "../c64.ts";
+import type { SymbolKind } from "./schema.ts";
 
 /** How one routine reaches another: a call, a jump, or an entry of a table of addresses. */
 export type EdgeKind = "call" | "jump" | "table";
@@ -92,7 +92,7 @@ const ARROWS: Record<EdgeKind, string> = { call: "-->", table: "==>", jump: "-.-
 export function mermaidGraph(heads: readonly RoutineHead[], edges: readonly GraphEdge[], own: ReadonlySet<number> = new Set()): string {
   const used = new Set(edges.flatMap((edge) => [edge.from, edge.to]));
   for (const address of own) used.add(address);
-  const id = (address: number) => `n${address.toString(16).padStart(4, "0")}`;
+  const id = (address: number) => `n${hexWord(address)}`;
   const lines = ["flowchart LR"];
   for (const head of heads) {
     if (!used.has(head.address)) continue;

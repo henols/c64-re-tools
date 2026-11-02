@@ -10,7 +10,7 @@ import { Refusal } from "../errors.ts";
 import { WireFailure } from "../protocol/messages.ts";
 
 /** How long a process group gets between SIGTERM and SIGKILL. */
-export const STOP_GRACE_MS = 5_000;
+const STOP_GRACE_MS = 5_000;
 /** How long to wait for the group to vanish after SIGKILL before giving up. */
 const KILL_WAIT_MS = 2_000;
 const POLL_MS = 25;
@@ -72,6 +72,9 @@ export function isAlive(pid: number): boolean {
 
 /** Linux: true while a member of the process group runs; zombies do not count. */
 function groupRuns(pgid: number): boolean {
+  // The leader has the pid of the group: while it runs in the group, no scan of /proc is needed.
+  const leader = linuxProcess(pgid);
+  if (leader !== undefined && leader.group === pgid && !exitedState(leader.state)) return true;
   for (const entry of readdirSync("/proc")) {
     if (!/^\d+$/.test(entry)) continue;
     const found = linuxProcess(entry);

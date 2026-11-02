@@ -106,23 +106,26 @@ Compares the releases byte by byte at the addresses where all releases have byte
 
 `body` holds:
 
-- `releases`: the `name`, the `shift` and the `segments` of each release. An image has bytes only in its segments.
+- `releases`: the `release`, the `name`, the `shift` and the `segments` of each release. `release` is the number of the release. An image has bytes only in its segments.
+  - `outsideCommon`: the ranges of the release in `--range` that are not in `common`. Another release has no bytes there, so the script does not compare these bytes. Examine them in each release.
 - `common`: the ranges where all releases have bytes. The script compares only these ranges.
 - `identicalBytes` and `differingBytes`: the counts of the bytes.
 - `identicalShare`: the share of identical bytes, with 3 decimals. It is 1 only when no byte differs.
-- `differences`: each item has `start`, `end`, `values` and `groups`. `values` gives the bytes of each release, at most 32. `groups` gives the releases that have the same bytes there.
+- `differences`: each item has `start`, `end`, `values` and `groups`. `values` gives the bytes of each release, at most 32, by the number of the release. `groups` gives the numbers of the releases that have the same bytes there.
 - `moreDifferences: true`: `differences` holds only the first differences.
 - `suggestedShifts`: only when `identicalShare` is less than 0.5. Each item has `release`, `shift` and `matchingSequences`. Each release has at most 3 shifts, with the most `matchingSequences` first. `current: true` marks the shift of this run.
+  - `matchingSequences` counts the sequences of 8 bytes of release 1 in `--range` that the release has at that shift.
+  - A shift has at least 8 `matchingSequences`. Thus a range of fewer than 15 bytes gets no shift.
 - `shiftsNotSuggested`: each item has a `reason`. The reason tells why a shift does not fit in `$0000-$ffff`.
 
 With `--shift`, the addresses of `segments`, `common` and `differences` are the release addresses plus the `shift` of the release.
 
 With `--frames`, the body also holds:
 
-- `runtime` in each difference: one item for each release that started. `start` and `end` are the addresses in the release, without the shift.
+- `runtime` in each difference: one item for each release that started, by the number of the release. `start` and `end` are the addresses in the release, without the shift.
   - `first`: the first access in that release: `read`, `write`, `execute` or `none`. An instruction that reads and then writes the same byte, for example INC, counts as `read`. The operand bytes of an executed instruction count as `execute`, for example the `$03` of `LDA #$03`.
   - `changed`: `true` when the bytes at the end of the run are not the bytes of the release.
-- `run`: `frames`, `steps` and `releases`. `releases` tells for each release if it started, or the `reason` that it did not start. `skipped` tells that the releases have no differences, so no release ran.
+- `run`: `frames`, `steps` and `releases`. `releases` tells for each release, by its number, if it started, or the `reason` that it did not start. `skipped` tells that the releases have no differences, so no release ran.
 
 A PRG starts with RUN after its load. An image starts at its entry, with the entry state of its capture.
 
@@ -138,12 +141,13 @@ With `--align`, the body holds a map in place of `differences` and the shift sug
 `hint` and `nextAction`:
 
 - `identicalShare` is low, and a shift is in `suggestedShifts`: `nextAction` runs `compare` with the first shift that the run does not have. Try each shift. Data that did not move and code that moved give different shifts.
-- `identicalShare` is low, and no shift is better: `nextAction` runs `compare` with `--align`. The code and the data can be at other addresses in each release.
+- `identicalShare` is low, no shift is better, and `suggestedShifts` or `shiftsNotSuggested` has items: `nextAction` runs `compare` with `--align`. The code and the data can be at other addresses in each release.
 - `moreDifferences` or a `more...` count is in the body: `hint` tells you to compare a smaller `--range`.
 
 Traps:
 
 - `common` is empty: the releases do not have bytes at the same addresses. Give `--shift`, or a `--range` that all releases have.
+- `identicalShare` is low, and the body has no `suggestedShifts` and no `shiftsNotSuggested`: the bytes do not show a shift, for example in a small `--range`. The releases can have different bytes at the same addresses. Read `differences`.
 - A release has `started: false`: the PRG has no BASIC start, or the capture folder of the image has no entry state. The `reason` tells which. The other releases still give evidence.
 - Each release writes a range before it reads it: the range is probably runtime state, not a difference of the releases.
 - A range has `first: none` in each release: the run did not use it. Run more frames or other steps before you decide.
@@ -170,7 +174,7 @@ Gives evidence from the program in the project knowledge, its stages and its cov
   - A `read` byte right after executed code, or at a return address, can be a dummy read of the 6502. The program does not use it.
 - `roots`: the addresses where the reachability starts, each with `address` and `from`. The roots are the entry, and the NMI, RESET and IRQ vectors at `$fffa`-`$ffff` when the program holds them. A text in place of the list tells why no code region is reachable.
 - `codeRegions`: the code regions in the project knowledge, as a list. Each region has `reachable`, and `executed` with coverage. `unknown` is `true` for a region that is not dead code, as in `unknownCode` of `leftovers`.
-- `codeRegions.unreachable`: the code regions that no chain of call and jump references reaches from a root.
+- `codeRegions.unreachable`: the code regions that no chain of call and jump references reaches from a root. When the code stores the address of a handler with immediates in an interrupt vector at `$0314`-`$0319` or `$fffa`-`$ffff`, that code reaches the handler.
 - `unresolved`: only when a code region is unknown. These are the flows whose targets the project knowledge does not give, as in `leftovers`.
 - `outside`: only with coverage. `read` and `executed` give the RAM outside the program that the program used but did not write. A loader or an earlier stage put these bytes there. `generated` gives the code that the program wrote outside its segments.
 - `out`, `bytes` and `sha256`: the `--out` file. It has the fields of the body, with all items of each list.

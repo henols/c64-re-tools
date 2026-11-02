@@ -9,7 +9,7 @@ import { runToolOrFail, type ToolContext } from "../native/run.ts";
 import { WireFailure } from "../protocol/messages.ts";
 
 /** How long one AP SDK install, update or uninstall may take. */
-export const AP_SDK_TIMEOUT_MS = 120_000;
+const AP_SDK_TIMEOUT_MS = 120_000;
 
 const PLUGIN = fileURLToPath(new URL("../../distribution/plugin.ts", import.meta.url));
 

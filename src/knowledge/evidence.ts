@@ -2,12 +2,12 @@
 // is now. A revision keeps the SHA-256 of each file that it rests on, so a
 // file that is gone or that changed since then shows here.
 
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 
 import { LOCAL_DIRECTORY, PROJECT_DIRECTORY, resolveProjectFile } from "../project.ts";
 import { coverageRuns } from "./read.ts";
+import { sha256 } from "./text.ts";
 
 /** A file of the evidence that is not as the knowledge gives it: missing, or with other bytes. */
 export interface EvidenceChange {
@@ -21,7 +21,7 @@ export interface EvidenceChange {
 /** The SHA-256 of a project file, or undefined when it is not there. */
 function fileHash(root: string, path: string): string | undefined {
   try {
-    return createHash("sha256").update(readFileSync(resolveProjectFile(path, root))).digest("hex");
+    return sha256(readFileSync(resolveProjectFile(path, root)));
   } catch {
     return undefined;
   }

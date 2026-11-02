@@ -10,7 +10,7 @@
 
 import { basename } from "node:path";
 
-import { type AddressRange, c64AddressOf, formatC64Address, parseC64Address } from "#src/c64.ts";
+import { type AddressRange, c64AddressOf, formatC64Address, formatC64Byte, formatC64Range, formatC64RangeFields, parseC64Address } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState, type EntryState } from "#src/host-client/entry-state.ts";
 import { readImage } from "#src/host-client/image.ts";
@@ -18,7 +18,7 @@ import { readActionSteps, type ActionStep } from "#src/host-client/steps.ts";
 import { MAX_EXECUTION_COUNT } from "#src/host-client/tools.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
-import { openForRead, withWrite } from "#src/knowledge/database.ts";
+import { withRead, withWrite } from "#src/knowledge/database.ts";
 import { operandImages, programCoverage, requireProgram } from "#src/knowledge/program.ts";
 import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
 import {
@@ -40,7 +40,7 @@ import {
   symbolSuppressed,
 } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
-import { platformNames } from "#src/platform.ts";
+import { platformAddresses } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec } from "#src/script.ts";
@@ -73,13 +73,8 @@ function readRelease(name: string, shift: number): LoadedRelease {
   let image: { segments: AddressRange[]; byteAt: (address: number) => number; memory?: Uint8Array; entry?: number; stages?: Array<Record<string, unknown>>; state?: EntryState };
   let noState: string;
   if (name === "knowledge") {
-    const db = openForRead();
-    try {
-      const program = requireProgram(db);
-      image = { ...program, ...(program.state === undefined ? {} : { state: parseEntryState(program.state, "the entry state of the knowledge") }) } as typeof image;
-    } finally {
-      db?.close();
-    }
+    const program = withRead(requireProgram);
+    image = { ...program, ...(program.state === undefined ? {} : { state: parseEntryState(program.state, "the entry state of the knowledge") }) } as typeof image;
     noState = "The knowledge has no entry state. Put a capture of the unpacked program, with its entry state, into the project knowledge.";
   } else {
     image = readImage(name);
@@ -135,9 +130,15 @@ async function compare(call: Call): Promise<unknown> {
   const range = call.range("range");
   const comparison = compareReleases(releases, range === undefined ? {} : { from: range.start, to: range.end });
   const share = identicalShare(comparison.identicalBytes, comparison.differingBytes);
-  const show = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
+  const show = formatC64RangeFields;
   const compared = {
-    releases: loaded.map((item) => ({ name: item.release.name, shift: item.shift, segments: item.release.segments.map(show) })),
+    releases: loaded.map((item, index) => ({
+      release: index + 1,
+      name: item.release.name,
+      shift: item.shift,
+      segments: item.release.segments.map(show),
+      ...(comparison.outsideCommon[index]!.length === 0 ? {} : { outsideCommon: comparison.outsideCommon[index]!.map(show) }),
+    })),
     common: comparison.common.map(show),
     identicalBytes: comparison.identicalBytes,
     differingBytes: comparison.differingBytes,
@@ -158,12 +159,12 @@ async function compare(call: Call): Promise<unknown> {
     return cut ? reply(mapped, { hint: `A list holds only its first ${MAX_ALIGNED} items: moreBlocks, moreOnlyInA and moreOnlyInB count the others. Give --range to map a part of the releases.` }) : mapped;
   }
   // A poor match at the load addresses can mean that the releases are placed differently.
-  // Each release gets its best shifts: data that stayed can outvote code that moved, so one is not enough.
+  // Each release gets its best shifts for the bytes of release 1 in the range: data that stayed can outvote code that moved, so one is not enough.
   const applied = loaded.map((item) => item.shift);
   const suggestions =
     share < 0.5
       ? releases.slice(1).flatMap((release, index) =>
-          suggestShifts(releases[0]!, release).map((found) => {
+          suggestShifts(releases[0]!, release, range).map((found) => {
             const suggestion = shiftSuggestion(releases, applied, index + 1, found);
             // The shift that the run already has: its votes tell how good the present alignment is.
             return "shift" in suggestion && suggestion.shift === applied[suggestion.release - 1] ? { ...suggestion, current: true } : suggestion;
@@ -174,11 +175,12 @@ async function compare(call: Call): Promise<unknown> {
   const notSuggested = suggestions.filter((suggestion) => "reason" in suggestion);
 
   // The runtime evidence: one emulator for each release, the differences at the release's own addresses.
+  // Each release by its number: a file can be given two times, with another shift.
   const runtime = new Map<string, Array<AddressRange & { first: string; changed: boolean }>>();
   const runs: Record<string, unknown> = {};
   if (frames !== undefined && comparison.differences.length > 0) {
-    for (const item of loaded) {
-      const name = item.release.name;
+    for (const [index, item] of loaded.entries()) {
+      const name = String(index + 1);
       if (item.start.kind === "none") {
         runs[name] = { started: false, reason: item.start.reason };
         continue;
@@ -199,7 +201,7 @@ async function compare(call: Call): Promise<unknown> {
   }
 
   // The next compare: the best suggested shift that the run does not have yet, else --align for two releases.
-  const rangeArgs = range === undefined ? [] : ["--range", `${formatC64Address(range.start)}-${formatC64Address(range.end)}`];
+  const rangeArgs = range === undefined ? [] : ["--range", formatC64Range(range)];
   const runArgs = frames === undefined ? [] : ["--frames", String(frames), ...(stepsFile === undefined ? [] : ["--steps", stepsFile])];
   const best = suggested.find((suggestion) => !("current" in suggestion));
   const hints: string[] = [];
@@ -210,7 +212,8 @@ async function compare(call: Call): Promise<unknown> {
     const shiftArgs = next.flatMap((shift, index) => (shift === 0 ? [] : ["--shift", `${index + 1}:${shift}`]));
     hints.push("identicalShare is low: the releases can be at different addresses. nextAction runs compare with the first suggested shift. Try each shift in suggestedShifts. If no shift gives a high identicalShare, run compare with --align.");
     nextAction = call.next("compare", ...positionals, ...shiftArgs, ...rangeArgs, ...runArgs);
-  } else if (share < 0.5 && positionals.length === 2 && shifts.size === 0 && frames === undefined) {
+  } else if (share < 0.5 && suggestions.length > 0 && positionals.length === 2 && shifts.size === 0 && frames === undefined) {
+    // Only when release 2 has sequences of release 1 at some shift: else --align finds no block either.
     hints.push("identicalShare is low, and no suggested shift is better. The code and the data can be at other addresses in each release. Map the releases in blocks with --align.");
     nextAction = call.next("compare", ...positionals, "--align", ...rangeArgs);
   }
@@ -220,7 +223,7 @@ async function compare(call: Call): Promise<unknown> {
     differences: comparison.differences.map((difference, index) => ({
       start: formatC64Address(difference.start),
       end: formatC64Address(difference.end),
-      values: Object.fromEntries(Object.entries(difference.values).map(([name, bytes]) => [name, hexBytes(bytes.slice(0, 32)) + (bytes.length > 32 ? " ..." : "")])),
+      values: Object.fromEntries(difference.values.map((bytes, at) => [String(at + 1), hexBytes(bytes.slice(0, 32)) + (bytes.length > 32 ? " ..." : "")])),
       groups: difference.groups,
       // runtime gives the release's own addresses: with a shift, they are not the addresses of the difference.
       ...(runtime.size === 0
@@ -260,19 +263,12 @@ function stagesOf(stages: Array<Record<string, unknown>> | undefined, where = "t
 
 /** The program in the knowledge with its stages and coverage, and the separation of its bytes. */
 function programEvidence() {
-  const db = openForRead();
-  let program: ReturnType<typeof requireProgram>;
-  let coverage: Uint8Array | undefined;
-  let regions: ReturnType<typeof listRegions>;
-  let references: ReturnType<typeof listReferences>;
-  try {
-    program = requireProgram(db);
-    coverage = programCoverage(db)?.map;
-    regions = listRegions(db).filter((region) => CODE_REGION_TYPES.includes(region.type));
-    references = listReferences(db);
-  } finally {
-    db?.close();
-  }
+  const { program, coverage, regions, references } = withRead((db) => ({
+    program: requireProgram(db),
+    coverage: programCoverage(db)?.map,
+    regions: listRegions(db).filter((region) => CODE_REGION_TYPES.includes(region.type)),
+    references: listReferences(db),
+  }));
   const stages = stagesOf(program.stages);
   const found = separate({
     segments: program.segments,
@@ -298,7 +294,7 @@ function separateCommand(call: Call): unknown {
   const out = call.string("out");
   const { program, stages, coverage, found } = programEvidence();
   const loaded = { entry: program.entry, stages };
-  const show = (range: AddressRange) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
+  const show = formatC64RangeFields;
   const ranges = found.ranges.map((range) => ({ ...show(range), ...(range.stage === undefined ? {} : { stage: range.stage }), ...(range.access === undefined ? {} : { access: range.access }) }));
   const codeRegions = found.codeRegions.map((region) => ({ ...show(region), type: region.type, ...(region.reachable === undefined ? {} : { reachable: region.reachable }), ...(region.executed === undefined ? {} : { executed: region.executed }), ...(region.unknown === undefined ? {} : { unknown: true }) }));
   const unresolved = found.unresolved.map((flow) => ({ at: formatC64Address(flow.at), kind: flow.kind }));
@@ -409,14 +405,11 @@ function leftoversCommand(call: Call): unknown {
   return withFile(bodyOf, call.count("max-listed")!, out);
 }
 
-const platform = () => new Map(platformNames().map((entry) => [entry.name, entry.address]));
-
 /** routine: saves a module or a range of the program in the knowledge, with its knowledge, as a routine of the library. */
 function routineCommand(call: Call): unknown {
   const given = call.subject(0);
   const library = call.string("library")!;
-  const db = openForRead();
-  try {
+  return withRead((db) => {
     const image = requireProgram(db);
     const segmentOf = (at: number) => image.segments.find((segment) => at >= segment.start && at <= segment.end);
     let start: number;
@@ -433,7 +426,7 @@ function routineCommand(call: Call): unknown {
       title ??= module.title;
     } else {
       ({ start, end } = call.parseRange(given, "<range>"));
-      if (segmentOf(start) === undefined || segmentOf(start) !== segmentOf(end)) throw new UsageError(`${formatC64Address(start)}-${formatC64Address(end)} is not inside one segment of the program.`, { hint: "Give a range in one segment of the program." });
+      if (segmentOf(start) === undefined || segmentOf(start) !== segmentOf(end)) throw new UsageError(`${formatC64Range({ start, end })} is not inside one segment of the program.`, { hint: "Give a range in one segment of the program." });
     }
     const range = { start, end };
     const name = call.string("name") ?? listSymbols(db, { start, end: start }, undefined, SEMANTIC_ORIGINS)[0]?.name;
@@ -452,7 +445,7 @@ function routineCommand(call: Call): unknown {
       comments: listComments(db, range, SEMANTIC_ORIGINS),
       references: listReferences(db, range, undefined, SEMANTIC_ORIGINS),
       operands: listOperands(db, range, SEMANTIC_ORIGINS),
-      platform: platform(),
+      platform: platformAddresses(),
     });
     const written = saveRoutine(libraryFolder(library, { create: true, cwd: projectRoot() }), routine, call.flag("replace"), projectRoot());
     return {
@@ -467,9 +460,7 @@ function routineCommand(call: Call): unknown {
       counts: { symbols: routine.symbols.length, regions: routine.regions.length, comments: routine.comments.length, references: routine.references.length, operands: routine.operands.length },
       ...(leftOut.length === 0 ? {} : { leftOut }),
     };
-  } finally {
-    db?.close();
-  }
+  });
 }
 
 /**
@@ -484,15 +475,30 @@ function matchCommand(call: Call): unknown {
   const list = <T>(items: T[]) => listed(items, max);
   const routines = readLibrary(libraryFolder(library, { create: false, cwd: projectRoot() }));
   if (routines.length === 0) throw new Refusal("not-found", `The library ${library} has no routine files. Save a routine with routine first.`);
-  const programDb = openForRead();
-  let image: ReturnType<typeof requireProgram>;
-  try {
-    image = requireProgram(programDb);
-  } finally {
-    programDb?.close();
-  }
-  const found = routines.map((routine) => ({ routine, matches: findRoutine(routine, image) }));
-  const show = (value: number, size: 1 | 2) => `$${value.toString(16).padStart(2 * size, "0")}`;
+  // One read of the knowledge: the program to search, and the knowledge that the suggestions of the matches check.
+  const { found, suggestions } = withRead((db) => {
+    const image = requireProgram(db);
+    const found = routines.map((routine) => ({ routine, matches: findRoutine(routine, image) }));
+    if (found.every((item) => item.matches.length === 0)) return { found, suggestions: undefined };
+    const suggestions = suggest(
+      found,
+      {
+        symbolAt: (at) => symbolAt(db, at),
+        symbolNamed: (name) => symbolNamed(db, name),
+        regionsOverlapping: (start, end) => regionsOverlapping(db, start, end),
+        commentsAt: (at) => commentsAt(db, at),
+        referencesFrom: (at) => referencesFrom(db, at),
+        operandAt: (at) => operandAt(db, at),
+        symbolSuppressed: (at) => symbolSuppressed(db, at),
+        regionSuppressed: (start, end) => suppressionsOverlapping(db, "region", start, end).length > 0,
+        referenceSuppressed: (reference) => referenceSuppressed(db, reference),
+      },
+      image,
+      platformAddresses(),
+    );
+    return { found, suggestions };
+  });
+  const show = (value: number, size: 1 | 2) => (size === 1 ? formatC64Byte(value) : formatC64Address(value));
   const matches = found
     .flatMap(({ routine, matches: each }) =>
       each.map((match) => ({
@@ -507,29 +513,7 @@ function matchCommand(call: Call): unknown {
   const result: Record<string, unknown> = { library, routines: routines.length, matches: list(matches) };
   const noMatch = "No routine of the library is in the program. A packed program can hold a routine in a packed form. Unpack the program, put the unpacked program into the project knowledge, and run match again.";
   const withNote = (shown: unknown, hint: string) => [cutNote(shown), hint].filter((part) => part !== undefined).join(" ");
-  if (matches.length === 0) return reply(result, { hint: noMatch });
-  const db = openForRead();
-  let suggestions: ReturnType<typeof suggest>;
-  try {
-    suggestions = suggest(
-      found,
-      {
-        symbolAt: (at) => symbolAt(db, at),
-        symbolNamed: (name) => symbolNamed(db, name),
-        regionsOverlapping: (start, end) => regionsOverlapping(db, start, end),
-        commentsAt: (at) => commentsAt(db, at),
-        referencesFrom: (at) => referencesFrom(db, at),
-        operandAt: (at) => operandAt(db, at),
-        symbolSuppressed: (at) => symbolSuppressed(db, at),
-        regionSuppressed: (start, end) => suppressionsOverlapping(db, "region", start, end).length > 0,
-        referenceSuppressed: (reference) => referenceSuppressed(db, reference),
-      },
-      image,
-      platform(),
-    );
-  } finally {
-    db?.close();
-  }
+  if (suggestions === undefined) return reply(result, { hint: noMatch });
   const { writes, known, leftOut, check } = suggestions;
   const changes: Record<string, unknown> = { writes: list(writes), known, leftOut: list(leftOut), check: list(check) };
   const body = { ...result, changes };
@@ -538,8 +522,7 @@ function matchCommand(call: Call): unknown {
   if (!apply) {
     return reply(body, { hint: withNote(body, `Examine differing of each match, and changes.writes and changes.leftOut. Then nextAction writes the changes to the project knowledge.${review}`), nextAction: call.next("match", "--library", library, "--apply") });
   }
-  const platformNamed = new Map(platformNames().map((entry) => [entry.name, entry.address]));
-  const applied = withWrite((write) => applyBatch(write, { origin: "llm", description: `Names of the routines of the library ${library}`, image: operandImages(write, platformNamed) }, writes.map(toOperation)));
+  const applied = withWrite((write) => applyBatch(write, { origin: "llm", description: `Names of the routines of the library ${library}`, image: operandImages(write, platformAddresses()) }, writes.map(toOperation)));
   changes.revision = applied.revision;
   return reply(body, { hint: withNote(body, `The project knowledge has the changes in revision ${applied.revision}.${review}`) });
 }
@@ -577,7 +560,7 @@ const COMMANDS: CommandSpec[] = [
   },
   {
     name: "separate",
-    summary: "Evidence from the program in the knowledge: the unpack stage that wrote each range, its access in the coverage, whether call and jump references, or the run on from the code before it, reach each code region from the entry, and what the program reads or executes outside its segments.",
+    summary: "Evidence from the program in the knowledge: the unpack stage that wrote each range, its access in the coverage, whether call and jump references, a handler that the code stores in an interrupt vector, or the run on from the code before it, reach each code region from the entry, and what the program reads or executes outside its segments.",
     options: { out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write the fields of the body, with all items of each list, to this file" }, "max-listed": OPTIONS["max-listed"] },
     run: separateCommand,
   },

@@ -3,10 +3,12 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
+import { hexWord } from "#src/c64.ts";
 import type { NormalizedFindings } from "#src/knowledge/import.ts";
-import { listRegions, listSymbols } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, type Space } from "#src/knowledge/schema.ts";
+import { listRegions, listSuppressions, listSymbols } from "#src/knowledge/read.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, isSemantic, SEMANTIC_ORIGINS, type Space } from "#src/knowledge/schema.ts";
 import type { DxaResult, DecompilerParams, DecompilerResult } from "#src/native/types.ts";
+import type { Decided } from "./idioms.ts";
 
 export type Seeds = Pick<DecompilerParams, "entryPoints" | "dataRanges" | "labels">;
 
@@ -47,6 +49,17 @@ export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoint
   };
 }
 
+/** What the user and the LLM decided in a space, for the idiom pass: their regions, their region removals and their reference removals. */
+export function decidedFromKnowledge(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): Decided {
+  const suppressions = listSuppressions(db, undefined, space);
+  const removed = new Set(suppressions.filter((row) => row.entity === "reference").map((row) => `${row.start}|${row.to}|${row.kind}`));
+  return {
+    regions: listRegions(db, undefined, undefined, [...SEMANTIC_ORIGINS], space).map(({ start, end, type }) => ({ start, end, type })),
+    removedRegions: suppressions.filter((row) => row.entity === "region").map(({ start, end }) => ({ start, end })),
+    removedReference: (reference) => removed.has(`${reference.from}|${reference.to}|${reference.kind}`),
+  };
+}
+
 /**
  * The 6510 opcodes with a low nibble of 1 or 3 use (zp,x) or (zp),y, also the
  * undocumented ones. The decompiler gives such an instruction a reference to the target
@@ -81,7 +94,7 @@ export function decompilerFindings(result: DecompilerResult): NormalizedFindings
   const uses = new Map<string, number>();
   for (const fn of result.functions) uses.set(fn.name, (uses.get(fn.name) ?? 0) + 1);
   const nameOf = (fn: DecompilerResult["functions"][number]) =>
-    fn.nameSource !== "seed" && uses.get(fn.name)! > 1 ? `${fn.name}_${fn.entry.toString(16).padStart(4, "0")}` : fn.name;
+    fn.nameSource !== "seed" && uses.get(fn.name)! > 1 ? `${fn.name}_${hexWord(fn.entry)}` : fn.name;
   // A function that branches and jumps reach, and no call, is a place in a routine: a label.
   const called = new Set(result.references.filter((reference) => reference.type === "call").map((reference) => reference.to));
   const jumped = new Set(result.references.filter((reference) => reference.type === "jump").map((reference) => reference.to));

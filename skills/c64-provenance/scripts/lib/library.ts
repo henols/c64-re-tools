@@ -4,20 +4,20 @@
 // its start, so match finds it in another program at another address and
 // suggests its names there as writes of the knowledge. Nothing here writes knowledge.
 
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { Refusal } from "#src/errors.ts";
 import { writeRefusal, type Written } from "#src/host-client/transfer.ts";
-import { formatC64Address, instructionLength } from "#src/c64.ts";
-import { evaluate, identifiers, operandText } from "#src/knowledge/expression.ts";
+import { formatC64Address, instructionLength, REFERENCE_KINDS, type ReferenceKind } from "#src/c64.ts";
+import { evaluate, identifiers, OPERAND_SELECTS, operandText, type OperandSelect } from "#src/knowledge/expression.ts";
+import { sha256 } from "#src/knowledge/text.ts";
 import type { CommentRow, OperandRow, ReferenceRow, RegionRow, SymbolRow } from "#src/knowledge/read.ts";
-import { COMMENT_PLACEMENTS, type CommentPlacement, isSemantic, OPERAND_SELECTS, type OperandSelect, REFERENCE_KINDS, type ReferenceKind, REGION_TYPES, type RegionType, SYMBOL_KINDS, type SymbolKind } from "#src/knowledge/schema.ts";
+import { COMMENT_PLACEMENTS, type CommentPlacement, isSemantic, REGION_TYPES, type RegionType, SYMBOL_KINDS, type SymbolKind } from "#src/knowledge/schema.ts";
 import { checkOutputPath, isInside, knowledgePart, LOCAL_DIRECTORY, PROJECT_DIRECTORY } from "#src/project.ts";
 
 /** A routine shorter than this is not saved and not searched: its bytes occur by chance. */
-export const MIN_ROUTINE = 16;
+const MIN_ROUTINE = 16;
 
 /** A routine name is also its file name: a letter or underscore, then letters, digits or underscores. */
 const ROUTINE_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
@@ -181,10 +181,10 @@ export function routineFrom(source: RoutineSource): { routine: Routine; leftOut:
   }
   for (const at of relocations.keys()) variable.delete(at);
 
-  // The code regions of every origin, cut at the border: the routine's instructions are its code in any program.
-  // Other regions only from the user and the LLM, and only inside the routine.
-  const regions: Routine["regions"] = codeRegions.map((region) => ({ start: Math.max(region.start, start) - start, end: Math.min(region.end, end) - start, type: region.type }));
-  for (const region of source.regions.filter((item) => !CODE_TYPES.includes(item.type))) {
+  // The regions of the user and the LLM inside the routine. The code regions of the analyzers give only the instructions:
+  // as a region, a match writes them again as the LLM's, also in the program that the routine came from.
+  const regions: Routine["regions"] = [];
+  for (const region of source.regions) {
     if (region.start >= start && region.end <= end) regions.push({ start: region.start - start, end: region.end - start, type: region.type, ...(region.element === undefined ? {} : { element: region.element }) });
     else leftOut.push({ what: `the ${region.type} region ${where(region.start)}-${where(region.end)}`, reason: "it crosses the border of the routine" });
   }
@@ -372,7 +372,7 @@ export function saveRoutine(folder: string, routine: Routine, replace: boolean, 
   } catch (error) {
     throw writeRefusal(error, out, "--library") ?? error;
   }
-  return { out, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+  return { out, bytes: bytes.length, sha256: sha256(bytes) };
 }
 
 /** An image to search: its segments and its bytes inside them. */

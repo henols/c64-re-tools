@@ -98,8 +98,14 @@ function failed(event: Event): boolean {
   if (event.ok === false) return true;
   if (event.event.endsWith("-failed")) return true;
   if (event.event === "script.end" && event.error !== undefined) return true;
-  if (event.event === "tool.run") return event.code !== 0 || event.timedOut === true || event.spawnError !== undefined;
+  if (event.event === "tool.run") return (event.code !== 0 && !versionProbe(event)) || event.timedOut === true || event.spawnError !== undefined;
   return false;
+}
+
+/** A run of a tool with only a version flag: dxa -V prints its version and exits with 1. */
+function versionProbe(event: Event): boolean {
+  const argv = Array.isArray(event.argv) ? (event.argv as unknown[]) : [];
+  return argv.length === 2 && ["-V", "-v", "--version", "-version"].includes(String(argv[1]));
 }
 
 function subject(event: Event): string {

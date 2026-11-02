@@ -19,7 +19,9 @@ import { ciaSection, copierAreas, copyOrder, loaderLimits, planLoader, loaderSta
 import { packLoader } from "../../src/loader.ts";
 import { WireFailure } from "../../src/protocol/messages.ts";
 import { PACKAGE } from "../../src/package.ts";
-import { configText, configValues, entriesInData, entryOutsideImage, layout, render, stagePatchText, type Layout, type Rendered, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
+import { MODE_LENGTH, OPCODES } from "../../src/opcodes.ts";
+import { configText, entriesInData, entryOutsideImage, layout, render, stagePatchText, type Layout, type Rendered, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
+import { configValues } from "../../src/build-name.ts";
 import { planStage, STAGE_CODE_END, STAGE_FILE, stageParts, type StageInput } from "../../skills/c64-source/scripts/lib/stage.ts";
 import { decode, describeAddress, platformNames } from "../../src/platform.ts";
 import type { StartScreenRow } from "../../src/knowledge/read.ts";

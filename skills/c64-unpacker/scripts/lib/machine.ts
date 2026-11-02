@@ -5,18 +5,16 @@
 import { readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-import { formatC64Address } from "#src/c64.ts";
+import { type AddressRange, formatC64Address, hexWord, prgOf } from "#src/c64.ts";
 import { resetToReady } from "#src/host-client/entry-state.ts";
-import { writeRefusal } from "#src/host-client/transfer.ts";
-import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { writeRefusal, writeReported, type Written } from "#src/host-client/transfer.ts";
+import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { projectRoot, resolveProjectPath } from "#src/project.ts";
 
 type Registers = Awaited<ReturnType<ViceSessionClient["registersGet"]>>;
 
-const MAX_READ = 4096;
-
 /** The I/O areas of the entry state, read without side effects. The colour RAM is the colours of the screen: a start screen of a captured stage uses them. */
-export const IO_AREAS = { vic: [0xd000, 0x2f], sid: [0xd400, 0x1d], cia1: [0xdc00, 0x10], cia2: [0xdd00, 0x10], colour: [0xd800, 1000] } as const;
+const IO_AREAS = { vic: [0xd000, 0x2f], sid: [0xd400, 0x1d], cia1: [0xdc00, 0x10], cia2: [0xdd00, 0x10], colour: [0xd800, 1000] } as const;
 /** The I/O areas of chips: what differsFrom compares. The colour RAM is the content of the screen, not the state of the machine. */
 const CHIP_AREAS = ["vic", "sid", "cia1", "cia2"] as const;
 
@@ -36,19 +34,10 @@ export interface MachineState {
   romVectors: Buffer;
 }
 
-/** Reads `size` bytes from `address` in the RAM view, in parts. */
-export async function readRam(client: ViceSessionClient, address: number, size: number): Promise<Buffer> {
-  const parts: Buffer[] = [];
-  for (let at = address; at < address + size; at += MAX_READ) {
-    parts.push(Buffer.from((await client.memoryRead({ address: at, size: Math.min(MAX_READ, address + size - at), space: "c64", view: "ram" })).data, "hex"));
-  }
-  return Buffer.concat(parts);
-}
-
 /** The state the program finds at its entry: what a rebuild's loader must recreate. */
 export async function machineState(client: ViceSessionClient): Promise<MachineState> {
   const port = Buffer.from((await client.memoryRead({ address: 0x0000, size: 2, space: "c64", view: "cpu" })).data, "hex");
-  const pages = await readRam(client, 0x0000, 0x400);
+  const pages = await readMemoryInParts(client, 0x0000, 0x400, "ram");
   const io = {} as Record<keyof typeof IO_AREAS, Buffer>;
   for (const [name, [address, size]] of Object.entries(IO_AREAS)) io[name as keyof typeof IO_AREAS] = Buffer.from((await client.ioRead(address, size)).data, "hex");
   // The colour RAM has 4 bits: a read gives other bits above them.
@@ -78,7 +67,7 @@ export async function readyState(client: ViceSessionClient): Promise<MachineStat
 }
 
 /** The bytes that differ from a clean machine: the CPU port, pages 0-3 from $0002, and the I/O areas. */
-export function differsFrom(state: MachineState, clean: MachineState): Array<{ address: string; entry: number; reset: number }> {
+function differsFrom(state: MachineState, clean: MachineState): Array<{ address: string; entry: number; reset: number }> {
   const differs: Array<{ address: string; entry: number; reset: number }> = [];
   const compare = (base: number, entry: Buffer, reset: Buffer) => entry.forEach((value, offset) => value !== reset[offset] && differs.push({ address: formatC64Address(base + offset), entry: value, reset: reset[offset]! }));
   compare(0x0000, state.port, clean.port);
@@ -137,4 +126,35 @@ export function removeStaleFiles(folder: string, written: readonly string[]): st
   return removed.sort();
 }
 
-export const json = (value: unknown) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+const json = (value: unknown) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+
+/**
+ * Writes a capture into `folder` (a project path): image.bin with all of
+ * `memory`, a PRG for each segment, the other files, image.json (`image` of
+ * the names of the segment PRGs) and entry_state.json. Then removes the files
+ * of an earlier capture there that this one did not write. Gives the written
+ * files, the names of the segment PRGs and the removed files.
+ */
+export function writeCapture(
+  folder: string,
+  memory: Buffer,
+  segments: readonly AddressRange[],
+  other: ReadonlyArray<{ name: string; bytes: Uint8Array }>,
+  image: (files: string[]) => Record<string, unknown>,
+  entryState: Buffer,
+): { written: Written[]; files: string[]; removed: string[] } {
+  const written: Written[] = [];
+  const write = (name: string, bytes: Uint8Array) => written.push(writeReported(`${folder}/${name}`, bytes, { what: "--out" }));
+  write("image.bin", memory);
+  const files = segments.map((segment) => {
+    const name = `segment-${hexWord(segment.start)}-${hexWord(segment.end)}.prg`;
+    write(name, prgOf(segment.start, memory.subarray(segment.start, segment.end + 1)));
+    return name;
+  });
+  for (const file of other) write(file.name, file.bytes);
+  write("image.json", json(image(files)));
+  write("entry_state.json", entryState);
+  // A capture again into the folder: the files of the earlier capture that image.json no longer lists go.
+  const removed = removeStaleFiles(folder, [...files, ...other.map((file) => file.name)]);
+  return { written, files, removed };
+}

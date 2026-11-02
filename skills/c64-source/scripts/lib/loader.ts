@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { COPIER_LINE } from "#src/build-name.ts";
-import { type AddressRange, formatC64Address, formatC64Byte } from "#src/c64.ts";
+import { type AddressRange, formatC64Address, formatC64Byte, formatC64Range, hexWord, rangesOverlap, subtract, underRom } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState } from "#src/host-client/entry-state.ts";
 import { isRomFont, startScreenRanges, type StartScreenRow } from "#src/knowledge/read.ts";
@@ -145,7 +145,6 @@ export function loaderLimits(plan: { cia?: CiaPlan; colourLimit?: string }): str
   return [...cia, ...(plan.colourLimit === undefined ? [] : [plan.colourLimit])];
 }
 
-export { LOADER_JUMP, START_SCREEN_CONTINUE, START_SCREEN_WAIT } from "#src/knowledge/start-screen.ts";
 /** The file of the start screen in the generated source. */
 export const START_SCREEN_FILE = "start_screen.asm";
 /** The code of the start screen: the same for each program. loader.asm sets its values. */
@@ -234,27 +233,12 @@ const COPIER_PAGES = [
   ...Array.from({ length: 0x20 }, (_, index) => 0xe000 + index * 0x100),
 ];
 
-const overlaps = (a: AddressRange, b: AddressRange) => a.start <= b.end && b.start <= a.end;
-const show = (range: AddressRange) => `${formatC64Address(range.start)}-${formatC64Address(range.end)}`;
-
-/** Parts of `range` that no range in `holes` covers. */
-export function subtract(range: AddressRange, holes: AddressRange[]): AddressRange[] {
-  let pieces = [range];
-  for (const hole of holes) {
-    pieces = pieces.flatMap((piece) => {
-      if (!overlaps(piece, hole)) return [piece];
-      return [...(hole.start > piece.start ? [{ start: piece.start, end: hole.start - 1 }] : []), ...(hole.end < piece.end ? [{ start: hole.end + 1, end: piece.end }] : [])];
-    });
-  }
-  return pieces;
-}
-
 /** Orders the copies so that no copy writes over the source of a later one; undefined when they form a cycle. */
 export function copyOrder(copies: Array<Omit<Copy, "backward">>): number[] | undefined {
   const order: number[] = [];
   const done = new Set<number>();
   while (order.length < copies.length) {
-    const next = copies.findIndex((copy, index) => !done.has(index) && copies.every((other, at) => at === index || done.has(at) || !overlaps(copy.target, other.source)));
+    const next = copies.findIndex((copy, index) => !done.has(index) && copies.every((other, at) => at === index || done.has(at) || !rangesOverlap(copy.target, other.source)));
     if (next < 0) return undefined;
     order.push(next);
     done.add(next);
@@ -274,9 +258,6 @@ export function simulate(memory: Int16Array, copies: Copy[], expected: (address:
   for (const copy of copies) for (let address = copy.target.start; address <= copy.target.end; address++) if (memory[address] !== expected(address)) return address;
   return undefined;
 }
-
-/** True when a read of the address with $01 = $37, as RUN leaves it, gives a ROM byte. */
-const underRom = (address: number) => (address >= 0xa000 && address <= 0xbfff) || address >= 0xe000;
 
 /**
  * Why a loader stopped before its jump, from the RAM after the stop: the first
@@ -430,7 +411,7 @@ export function ciaSection(state: EntryState): { ops: Op[]; plan: CiaPlan } | un
       // The high byte loads the counter of a stopped timer too.
       loads.push(lda(latch & 0xff), sta(base + at), lda(latch >> 8), sta(base + at + 1));
       plan.counterAtJump = latch;
-      limits.push(`${name} is stopped with the counter $${counter.toString(16).padStart(4, "0")} and the latch $${latch.toString(16).padStart(4, "0")}: a stopped CIA timer loads its latch, so the counter is the latch.`);
+      limits.push(`${name} is stopped with the counter ${formatC64Address(counter)} and the latch ${formatC64Address(latch)}: a stopped CIA timer loads its latch, so the counter is the latch.`);
     }
     const mask = chip.interruptMask;
     if (mask !== KERNAL_MASKS[index]) {
@@ -440,7 +421,7 @@ export function ciaSection(state: EntryState): { ops: Op[]; plan: CiaPlan } | un
     }
     if (touched) acks.push({ text: `lda ${formatC64Address(base + 0x0d)}`, bytes: 3, cycles: 4 });
     const flags = chip.registers[0x0d]! & 0x1f;
-    if (flags !== 0) limits.push(`CIA ${id} has the interrupt flags $${flags.toString(16).padStart(2, "0")} at the entry: only an event sets a flag, so the loader cannot.`);
+    if (flags !== 0) limits.push(`CIA ${id} has the interrupt flags ${formatC64Byte(flags)} at the entry: only an event sets a flag, so the loader cannot.`);
   });
   if (loads.length === 0 && disable.length === 0) return { ops: [], plan: { timers, masks: [state.cia[0].interruptMask, state.cia[1].interruptMask], limits } };
   // The cycles from each start write to the entry: what follows it here, and the tail.
@@ -450,7 +431,7 @@ export function ciaSection(state: EntryState): { ops: Op[]; plan: CiaPlan } | un
     if (!item.system) return item.counter;
     const load = item.counter + followers + TAIL_CYCLES - CIA_START_DELAY;
     if (load <= 0xffff) return load;
-    limits.push(`${item.name} counts from $${item.counter.toString(16).padStart(4, "0")} at the entry: the loader cannot start it so near $ffff without an underflow, so the counter differs.`);
+    limits.push(`${item.name} counts from ${formatC64Address(item.counter)} at the entry: the loader cannot start it so near $ffff without an underflow, so the counter differs.`);
     delete item.plan.counterAtJump;
     return item.counter;
   });
@@ -489,19 +470,19 @@ function checkStartScreen(input: LoaderInput): StartScreenPlan | undefined {
   }
   for (const { what, range } of startScreenRanges(row)) {
     const inside = input.segments.some((segment) => range.start >= segment.start && range.end <= segment.end);
-    if (!inside) throw new WireFailure("invalid-input", `The start screen part ${what} (${show(range)}) is not in one segment of the program. The start screen must be in memory at the entry: capture it with the program, or correct the start screen in the knowledge.`);
+    if (!inside) throw new WireFailure("invalid-input", `The start screen part ${what} (${formatC64Range(range)}) is not in one segment of the program. The start screen must be in memory at the entry: capture it with the program, or correct the start screen in the knowledge.`);
   }
   return startScreenPlan(row);
 }
 
-/** The settings that loader.asm includes: switches.asm, else config.asm for a start screen, else none. */
-function settingsLines(input: LoaderInput): string[] {
+/** The settings that loader.asm and the show stage include: switches.asm, else config.asm for a start screen, else none. */
+export function settingsLines(input: Pick<LoaderInput, "switches" | "config">): string[] {
   if (input.switches === true) return ['!source "switches.asm"'];
   return input.config === true ? ['!source "config.asm"'] : [];
 }
 
 /** The label of a block: its first byte and the byte after it in the loader file, and its first address where it runs. */
-const blockLabel = (start: number, part: "from" | "end" | "to") => `loader_${part}_${start.toString(16).padStart(4, "0")}`;
+const blockLabel = (start: number, part: "from" | "end" | "to") => `loader_${part}_${hexWord(start)}`;
 const plus = (label: string, offset: number) => (offset === 0 ? label : `${label}+${offset}`);
 
 /** A block of the loader: a segment with its files, or bytes of pages 0-3. */
@@ -539,7 +520,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   }
   return {
     ...planForm(input, undefined)!,
-    colourLimit: `The loader has no room for the ${COLOURS} colours of the colour RAM in ${COLOUR_AREAS.map(show).join(" or ")} outside the segments, the loader and its copier, so it does not set the colour RAM. The program starts with the colours that the loader leaves there.`,
+    colourLimit: `The loader has no room for the ${COLOURS} colours of the colour RAM in ${COLOUR_AREAS.map(formatC64Range).join(" or ")} outside the segments, the loader and its copier, so it does not set the colour RAM. The program starts with the colours that the loader leaves there.`,
   };
 }
 
@@ -551,9 +532,9 @@ function planForm(input: LoaderInput, colours: Uint8Array | undefined): LoaderPl
   const copierPages = copierBytes >> 8;
   // What the copies write: each segment without $00/$01, which the loader sets last, and pages $0002-$03ff where no segment is.
   const blocks: Block[] = [];
-  for (const segment of input.segments) blocks.push({ what: `segment ${show(segment)}`, range: segment, files: segment.files, pseudo: segment.start, bytes: input.byteAt });
+  for (const segment of input.segments) blocks.push({ what: `segment ${formatC64Range(segment)}`, range: segment, files: segment.files, pseudo: segment.start, bytes: input.byteAt });
   for (const part of subtract({ start: 0x0002, end: 0x03ff }, input.segments)) {
-    blocks.push({ what: `entry state ${show(part)}`, range: part, pseudo: part.start, bytes: (address) => state.pages[address]! });
+    blocks.push({ what: `entry state ${formatC64Range(part)}`, range: part, pseudo: part.start, bytes: (address) => state.pages[address]! });
   }
   blocks.sort((a, b) => a.range.start - b.range.start);
 
@@ -590,19 +571,19 @@ function planForm(input: LoaderInput, colours: Uint8Array | undefined): LoaderPl
 
   const order = copyOrder(plain);
   if (order === undefined) {
-    const clashing = plain.filter((copy) => plain.some((other) => other !== copy && overlaps(copy.target, other.source))).map((copy) => `${copy.what} (packed at ${show(copy.source)})`);
+    const clashing = plain.filter((copy) => plain.some((other) => other !== copy && rangesOverlap(copy.target, other.source))).map((copy) => `${copy.what} (packed at ${formatC64Range(copy.source)})`);
     throw new WireFailure("invalid-input", `No copy order exists: each of these copies writes over the packed bytes of another one: ${clashing.join(", ")}. Give this reason to the user.`);
   }
   const loaded = { start: LOAD, end };
   const areas = copierAreas(state.port);
   const copier = COPIER_PAGES.find((page) => {
     const pages = { start: page, end: page + copierBytes - 1 };
-    return areas.some((area) => pages.start >= area.start && pages.end <= area.end) && !overlaps(pages, loaded) && plain.every((copy) => !overlaps(pages, copy.target));
+    return areas.some((area) => pages.start >= area.start && pages.end <= area.end) && !rangesOverlap(pages, loaded) && plain.every((copy) => !rangesOverlap(pages, copy.target));
   });
   if (copier === undefined) {
     if (colours !== undefined) return undefined;
     const count = copierPages === 2 ? "two" : "three";
-    throw new WireFailure("invalid-input", `No ${count} free pages exist for the copier in ${areas.map(show).join(" or ")} outside the loader (${show(loaded)}) and the targets: ${plain.map((copy) => show(copy.target)).join(", ")}.`);
+    throw new WireFailure("invalid-input", `No ${count} free pages exist for the copier in ${areas.map(formatC64Range).join(" or ")} outside the loader (${formatC64Range(loaded)}) and the targets: ${plain.map((copy) => formatC64Range(copy.target)).join(", ")}.`);
   }
   let colourRange: AddressRange | undefined;
   if (colours !== undefined) {
@@ -618,7 +599,7 @@ function planForm(input: LoaderInput, colours: Uint8Array | undefined): LoaderPl
   }
   const copies: Copy[] = order.map((index) => {
     const copy = plain[index]!;
-    return { ...copy, backward: copy.target.start > copy.source.start && overlaps(copy.target, copy.source) };
+    return { ...copy, backward: copy.target.start > copy.source.start && rangesOverlap(copy.target, copy.source) };
   });
   const copyBlocks = order.map((index) => blockOf[index]!);
 
@@ -717,8 +698,14 @@ export function copierAreas(port: readonly [number, number]): AddressRange[] {
   if (rom.basic) return [{ start: 0x0400, end: 0x9fff }, { start: 0xc000, end: 0xcfff }];
   return [{ start: 0x0400, end: 0xcfff }, ...(rom.kernal ? [] : [{ start: 0xe000, end: BELOW_VECTORS }])];
 }
-/** The free ranges that a refusal of the packed form names. */
+/** The free ranges that a refusal names. */
 const SHOWN_FREE = 8;
+
+/** The largest free ranges with their sizes, for a refusal: at most SHOWN_FREE of them, or none. */
+export function largestFree(ranges: readonly AddressRange[]): string {
+  const shown = [...ranges].sort((a, b) => b.end - b.start - (a.end - a.start)).slice(0, SHOWN_FREE);
+  return shown.length === 0 ? "none" : shown.map((range) => `${formatC64Range(range)} (${range.end - range.start + 1} bytes)`).join(", ");
+}
 
 /**
  * The packed form of the loader, for an image too large for one loader file:
@@ -741,7 +728,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     const range = { start: Math.max(block.range.start, 0x0002), end: Math.min(block.range.end, 0x03ff) };
     if (range.start > range.end) return [];
     const cut = range.start !== block.range.start || range.end !== block.range.end;
-    return [{ what: cut ? `${block.what}, part ${show(range)}` : block.what, range, bytes: block.bytes }];
+    return [{ what: cut ? `${block.what}, part ${formatC64Range(range)}` : block.what, range, bytes: block.bytes }];
   });
   const lowBytes = low.reduce((sum, block) => sum + block.range.end - block.range.start + 1, 0);
   const areas = copierAreas(state.port);
@@ -749,15 +736,11 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
   const copierFree = areas.flatMap((area) => subtract(area, input.segments));
   const placed = placePacked(copierFree, free, low, codeSize);
   if ("refusal" in placed) {
-    const largest = (ranges: AddressRange[]) => {
-      const shown = [...ranges].sort((a, b) => b.end - b.start - (a.end - a.start)).slice(0, SHOWN_FREE);
-      return shown.length === 0 ? "none" : shown.map((range) => `${show(range)} (${range.end - range.start + 1} bytes)`).join(", ");
-    };
-    const ranges = placed.refusal === "copies" ? `The largest free ranges for pages 0-3: ${largest(free)}.` : `The largest free ranges for the copier: ${largest(copierFree)}. The largest free ranges for pages 0-3: ${largest(free)}.`;
+    const ranges = placed.refusal === "copies" ? `The largest free ranges for pages 0-3: ${largestFree(free)}.` : `The largest free ranges for the copier: ${largestFree(copierFree)}. The largest free ranges for pages 0-3: ${largestFree(free)}.`;
     const why =
       placed.refusal === "copies"
-        ? `A packed loader needs more than ${MAX_PACKED_COPIES} copies for the ${lowBytes} bytes of pages 0-3 in the free ranges.`
-        : `A packed loader needs one free range of ${codeSize + COPY_ENTRY * Math.max(low.length, 1) + 2} bytes or more for its copier in ${areas.map(show).join(" or ")}, and ${lowBytes} more free bytes for pages 0-3 in ${show(PIECE_AREA)}, outside the segments. The copier runs with $01 = $35 and then with the $01 of the entry, so it is in RAM that both show.${screen === undefined ? "" : ` The start screen takes ${START_SCREEN_SIZES[screen.colourMode]} bytes of the copier: without it (unstart-screen), the copier is smaller.`}`;
+        ? `A packed loader needs more than ${TABLE_COPIES} copies for the ${lowBytes} bytes of pages 0-3 in the free ranges.`
+        : `A packed loader needs one free range of ${codeSize + COPY_ENTRY * Math.max(low.length, 1) + 2} bytes or more for its copier in ${areas.map(formatC64Range).join(" or ")}, and ${lowBytes} more free bytes for pages 0-3 in ${formatC64Range(PIECE_AREA)}, outside the segments. The copier runs with $01 = $35 and then with the $01 of the entry, so it is in RAM that both show.${screen === undefined ? "" : ` The start screen takes ${START_SCREEN_SIZES[screen.colourMode]} bytes of the copier: without it (unstart-screen), the copier is smaller.`}`;
     throw new WireFailure("invalid-input", `${tooLarge} ${why} ${ranges} Give this reason to the user.`);
   }
   const { copier, pieces } = placed;
@@ -808,7 +791,7 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     const within = { start: Math.max(segment.start, start), end: Math.min(segment.end, end) };
     if (within.start > within.end) continue;
     for (const range of subtract(within, used)) {
-      parts.push({ range, text: [`; The bytes of the image at ${show(range)}, so the build of this file does not change them`, `* = ${formatC64Address(range.start)}`, ...byteLines(range, input.byteAt)] });
+      parts.push({ range, text: [`; The bytes of the image at ${formatC64Range(range)}, so the build of this file does not change them`, `* = ${formatC64Address(range.start)}`, ...byteLines(range, input.byteAt)] });
     }
   }
   parts.sort((a, b) => a.range.start - b.range.start);
@@ -827,9 +810,6 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     packed: { start },
   };
 }
-
-/** The copy table of the packed form: X indexes it, so it fits in 256 bytes. */
-const MAX_PACKED_COPIES = Math.floor((256 - 2) / COPY_ENTRY);
 
 /** A piece of pages 0-3 in the packed form: its target and where the copier reads it. */
 export interface Piece {
@@ -863,7 +843,7 @@ export function placePieces(ranges: AddressRange[], low: ReadonlyArray<{ what: s
       const count = Math.min(block.range.end - next + 1, length(target));
       const part = { start: next, end: next + count - 1 };
       const cut = part.start !== block.range.start || part.end !== block.range.end;
-      pieces.push({ what: cut ? `${block.what}, bytes ${show(part)}` : block.what, target: part, at: target.start, bytes: block.bytes });
+      pieces.push({ what: cut ? `${block.what}, bytes ${formatC64Range(part)}` : block.what, target: part, at: target.start, bytes: block.bytes });
       target.start += count;
       next += count;
       rest -= count;
@@ -881,7 +861,7 @@ export function placePieces(ranges: AddressRange[], low: ReadonlyArray<{ what: s
 function placePacked(copierFree: AddressRange[], free: AddressRange[], low: Parameters<typeof placePieces>[1], codeSize: number): { copier: number; pieces: Piece[] } | { refusal: "room" | "copies" } {
   const candidates = [...COPIER_PAGES, ...copierFree.map((range) => range.start)];
   // The table has one entry per piece: a split can make the copier larger, so the room for the table grows until it holds every piece.
-  for (let copies = Math.max(low.length, 1); copies <= MAX_PACKED_COPIES; ) {
+  for (let copies = Math.max(low.length, 1); copies <= TABLE_COPIES; ) {
     const size = codeSize + COPY_ENTRY * copies + 2;
     let best: { copier: number; pieces: Piece[]; span: number } | undefined;
     for (const copier of candidates) {

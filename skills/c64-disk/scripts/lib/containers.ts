@@ -3,7 +3,7 @@
 // load address; a T64 file holds a directory of PRG files. TAP files hold
 // raw pulses and go through the emulator only.
 
-import { formatC64Address, petsciiNameToText } from "#src/c64.ts";
+import { formatC64Address, petsciiNameToText, prgOf } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { hasSignature } from "#src/media.ts";
 
@@ -118,5 +118,5 @@ export function parseT64(bytes: Uint8Array): Tape {
 
 /** The PRG of a tape entry: its start address, then its bytes. */
 export function tapeFile(bytes: Uint8Array, entry: TapeEntry): Buffer {
-  return Buffer.concat([Buffer.from([entry.start & 0xff, entry.start >> 8]), Buffer.from(bytes.subarray(entry.offset, entry.offset + entry.bytes))]);
+  return prgOf(entry.start, bytes.subarray(entry.offset, entry.offset + entry.bytes));
 }

@@ -9,8 +9,8 @@ import { WireFailure } from "../protocol/messages.ts";
 import { elapsedMs, trace } from "../trace.ts";
 import type { ProcessSupervisor } from "./processes.ts";
 
-export const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
-export const DEFAULT_OUTPUT_LIMIT = 1024 * 1024;
+const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
+const DEFAULT_OUTPUT_LIMIT = 1024 * 1024;
 
 /** What running a native tool needs from its caller: the supervisor that owns it, the request's abort signal, and optionally its environment and a log. */
 export interface ToolContext {
@@ -136,7 +136,7 @@ export async function runTool(options: {
     await closed;
     output.stdout += decoders.stdout.end();
     output.stderr += decoders.stderr.end();
-    trace().event("tool.run", { argv: options.argv, cwd: options.cwd, pid: child.pid, ms: elapsedMs(started), ...status, timedOut, aborted, truncated: output.truncated, stdout: lastLines(output.stdout), stderr: lastLines(output.stderr) });
+    if (trace().on) trace().event("tool.run", { argv: options.argv, cwd: options.cwd, pid: child.pid, ms: elapsedMs(started), ...status, timedOut, aborted, truncated: output.truncated, stdout: lastLines(output.stdout), stderr: lastLines(output.stderr) });
     return { ...status, ...output, timedOut, aborted };
   } finally {
     clearTimeout(timer);

@@ -10,8 +10,10 @@ import { readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "no
 import type { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 
+import { hexWord } from "../c64.ts";
 import { Refusal } from "../errors.ts";
-import { isoCet } from "../time.ts";
+import { CET_OFFSET_MS, isoCet } from "../time.ts";
+import { spaceOrder } from "./schema.ts";
 
 /** The value of "no revision": empty knowledge. It sorts before every revision id. */
 export const NO_REVISION = "0";
@@ -21,8 +23,6 @@ export const REVISION_ID = /^[0-9]{8}T[0-9]{6}\.[0-9]{3}-[0-9a-z]{6}$/;
 
 /** A row id: the id of the revision that added the row, then the order of the row in that revision. */
 const ROW_ID = /^([0-9]{8}T[0-9]{6}\.[0-9]{3}-[0-9a-z]{6})\/([1-9][0-9]*)$/;
-
-const CET_OFFSET_MS = 60 * 60 * 1000;
 
 /** `time` as `20261015T214501.123`: CET at +01:00, ISO 8601 basic form. */
 function stamp(ms: number): string {
@@ -64,13 +64,11 @@ type Format = "address" | "integer" | "text" | "hex" | "json" | "ranges";
 /** Address ranges as text: "$1000-$1002 $1005", in address order, one space between them. */
 const RANGES = /^\$[0-9a-f]{4}(?:-\$[0-9a-f]{4})?(?: \$[0-9a-f]{4}(?:-\$[0-9a-f]{4})?)*$/;
 
-interface Field {
+export interface Field {
   key: string;
   column: string;
   format: Format;
   optional?: boolean;
-  /** What to do when a line does not have this key: a key that an earlier toolkit version did not write. */
-  remedy?: string;
 }
 
 /** One fact table: its file, its fields in line order, and the column that sorts its lines after the space (an address, or a name). */
@@ -231,17 +229,20 @@ export const TABLES: readonly TableSpec[] = [
     sort: "map",
     fields: [
       space,
-      {
-        ...field("map", "map", "text"),
-        remedy:
-          "The coverage of an earlier toolkit version does not keep the ranges of each map. Delete .c64-re-tools/knowledge/coverage.jsonl. Then put the coverage maps that you have into the project knowledge again.",
-      },
+      field("map", "map", "text"),
       field("kind", "kind", "text"),
       field("ranges", "ranges", "ranges"),
       origin,
     ],
   },
 ];
+
+const SPECS = new Map(TABLES.map((spec) => [spec.table, spec]));
+
+/** The spec of a fact table, by its name. */
+export function tableSpec(table: string): TableSpec {
+  return SPECS.get(table)!;
+}
 
 export const REVISIONS_FILE = "revisions.jsonl";
 
@@ -264,7 +265,7 @@ export const sqlName = (table: string) => (table === "references" ? '"references
 type Raw = Record<string, unknown>;
 
 function formatted(value: unknown, format: Format): unknown {
-  if (format === "address") return `$${(value as number).toString(16).padStart(4, "0")}`;
+  if (format === "address") return `$${hexWord(value as number)}`;
   return format === "json" ? JSON.parse(value as string) : value;
 }
 
@@ -278,46 +279,65 @@ function lineOf(raw: Raw, fields: readonly Field[], extra: Raw): string {
   return JSON.stringify({ ...line, ...extra });
 }
 
-const spaceOrder = (space: string) => (space === "c64" ? -2 : space === "drive8" ? -1 : Number(space.slice(4)));
+/** A row with the order of the row in the revision that added it, from its id. */
+interface Ordered {
+  raw: Raw;
+  order: number;
+}
 
 /** The sort key of a row: space, address (or name), the revision that added it, its order in that revision. */
 function compareRows(spec: TableSpec) {
-  const order = (raw: Raw) => Number(ROW_ID.exec(raw.id as string)?.[2] ?? 0);
   const key = (a: unknown, b: unknown) => (typeof a === "number" ? a - (b as number) : compareText(a as string, b as string));
-  return (a: Raw, b: Raw) =>
+  return ({ raw: a, order: orderA }: Ordered, { raw: b, order: orderB }: Ordered) =>
     spaceOrder(a.space as string) - spaceOrder(b.space as string) ||
     key(a[spec.sort], b[spec.sort]) ||
     compareText(a.valid_from_revision as string, b.valid_from_revision as string) ||
-    order(a) - order(b) ||
+    orderA - orderB ||
     compareText(a.id as string, b.id as string);
 }
 
 /** The text of one fact table: every row, current and closed, one line each, sorted. */
 export function tableText(db: DatabaseSync, spec: TableSpec): string {
-  const rows = (db.prepare(`SELECT * FROM ${sqlName(spec.table)}`).all() as Raw[]).sort(compareRows(spec));
-  return rows.map((raw) => `${lineOf(raw, [field("id", "id", "text"), ...spec.fields], { added: raw.valid_from_revision, closed: raw.valid_to_revision })}\n`).join("");
+  const rows = (db.prepare(`SELECT * FROM ${sqlName(spec.table)}`).all() as Raw[]).map((raw): Ordered => ({ raw, order: Number(ROW_ID.exec(raw.id as string)?.[2] ?? 0) }));
+  const fields = [field("id", "id", "text"), ...spec.fields];
+  return rows
+    .sort(compareRows(spec))
+    .map(({ raw }) => `${lineOf(raw, fields, { added: raw.valid_from_revision, closed: raw.valid_to_revision })}\n`)
+    .join("");
 }
 
 /** The text of the revision log: every revision with its evidence, oldest first. */
 export function revisionsText(db: DatabaseSync): string {
-  const evidence = db.prepare("SELECT kind, ref, sha256, space FROM evidence WHERE revision = ? ORDER BY id");
+  const evidence = new Map<string, Raw[]>();
+  for (const item of db.prepare("SELECT revision, kind, ref, sha256, space FROM evidence ORDER BY revision, id").all() as Raw[]) {
+    const items = evidence.get(item.revision as string) ?? [];
+    items.push({ kind: item.kind, ref: item.ref, ...(item.sha256 === null ? {} : { sha256: item.sha256 }), ...(item.space === null ? {} : { space: item.space }) });
+    evidence.set(item.revision as string, items);
+  }
   return (db.prepare("SELECT * FROM revisions ORDER BY id").all() as Raw[])
     .map((raw) => {
-      const items = (evidence.all(raw.id as string) as Raw[]).map((item) => ({ kind: item.kind, ref: item.ref, ...(item.sha256 === null ? {} : { sha256: item.sha256 }), ...(item.space === null ? {} : { space: item.space }) }));
-      return `${lineOf(raw, REVISION_FIELDS, items.length === 0 ? {} : { evidence: items })}\n`;
+      const items = evidence.get(raw.id as string);
+      return `${lineOf(raw, REVISION_FIELDS, items === undefined ? {} : { evidence: items })}\n`;
     })
     .join("");
 }
 
-export const sha256 = (text: string | Buffer) => createHash("sha256").update(text).digest("hex");
+export const sha256 = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
+
+/** The names of the knowledge files in the folder, in name order. A file that is not knowledge text is refused. */
+export function knowledgeFiles(directory: string): string[] {
+  const known = new Set([REVISIONS_FILE, ...TABLES.map((spec) => spec.file)]);
+  const names = readdirSync(directory)
+    .sort()
+    .filter((name) => name.endsWith(".jsonl"));
+  for (const name of names) if (!known.has(name)) throw new Refusal("invalid-database", `.c64-re-tools/knowledge/${name} is not a knowledge file. Knowledge files are ${[...known].join(", ")}.`);
+  return names;
+}
 
 /** The files of the knowledge: their text and its SHA-256. A file that is not knowledge text is refused. */
 export function readText(directory: string): Map<string, { text: string; sha256: string }> {
-  const known = new Set([REVISIONS_FILE, ...TABLES.map((spec) => spec.file)]);
   const files = new Map<string, { text: string; sha256: string }>();
-  for (const name of readdirSync(directory).sort()) {
-    if (!name.endsWith(".jsonl")) continue;
-    if (!known.has(name)) throw new Refusal("invalid-database", `.c64-re-tools/knowledge/${name} is not a knowledge file. Knowledge files are ${[...known].join(", ")}.`);
+  for (const name of knowledgeFiles(directory)) {
     const bytes = readFileSync(join(directory, name));
     files.set(name, { text: bytes.toString("utf8"), sha256: sha256(bytes) });
   }
@@ -357,11 +377,11 @@ function parseLines(file: string, text: string): Array<{ line: number; value: Ra
   return lines;
 }
 
-/** The column values of one line, checked against its fields. */
-function columnsOf(file: string, line: number, value: Raw, fields: readonly Field[], extra: readonly string[]): Raw {
-  // A line of an earlier format: the key that this format added is missing, and the remedy tells what to do.
-  for (const { key, remedy } of fields) if (remedy !== undefined && (value[key] === undefined || value[key] === null)) bad(file, line, `the key ${JSON.stringify(key)} is missing. ${remedy}`);
-  const allowed = new Set([...fields.map((item) => item.key), ...extra]);
+/** The keys of a line: the keys of its fields and the extra keys. */
+const keysOf = (fields: readonly Field[], extra: readonly string[] = []): ReadonlySet<string> => new Set([...fields.map((item) => item.key), ...extra]);
+
+/** The column values of one line, checked against its fields; `allowed` holds the keys of the line (keysOf). */
+function columnsOf(file: string, line: number, value: Raw, fields: readonly Field[], allowed: ReadonlySet<string>): Raw {
   for (const key of Object.keys(value)) if (!allowed.has(key)) bad(file, line, `the key ${JSON.stringify(key)} is not known.`);
   const columns: Raw = {};
   for (const { key, column, format, optional } of fields) {
@@ -417,8 +437,9 @@ interface RevisionLine {
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 function parseRevisions(text: string): RevisionLine[] {
+  const allowed = keysOf(REVISION_FIELDS, ["evidence"]);
   const entries = parseLines(REVISIONS_FILE, text).map(({ line, value }) => {
-    const columns = columnsOf(REVISIONS_FILE, line, value, REVISION_FIELDS, ["evidence"]);
+    const columns = columnsOf(REVISIONS_FILE, line, value, REVISION_FIELDS, allowed);
     if (!REVISION_ID.test(columns.id as string)) bad(REVISIONS_FILE, line, `${JSON.stringify(columns.id)} is not a revision id.`);
     const evidence = value.evidence ?? [];
     if (!Array.isArray(evidence) || evidence.some((item) => typeof item !== "object" || item === null)) bad(REVISIONS_FILE, line, "evidence must be a list of objects.");
@@ -437,8 +458,10 @@ interface RowLine {
 }
 
 function parseRows(spec: TableSpec, text: string): RowLine[] {
+  const fields = [field("id", "id", "text"), ...spec.fields, field("added", "valid_from_revision", "text"), field("closed", "valid_to_revision", "text", true)];
+  const allowed = keysOf(fields);
   const entries = parseLines(spec.file, text).map(({ line, value }) => {
-    const columns = columnsOf(spec.file, line, value, [field("id", "id", "text"), ...spec.fields, field("added", "valid_from_revision", "text"), field("closed", "valid_to_revision", "text", true)], []);
+    const columns = columnsOf(spec.file, line, value, fields, allowed);
     const id = ROW_ID.exec(columns.id as string);
     if (id === null) bad(spec.file, line, `${JSON.stringify(columns.id)} is not a row id.`);
     if (id[1] !== columns.valid_from_revision) bad(spec.file, line, `the row ${columns.id} must be added in revision ${id[1]}.`);

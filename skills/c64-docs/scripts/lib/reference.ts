@@ -5,7 +5,7 @@
 
 import { posix } from "node:path";
 
-import { formatC64Address, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
+import { formatC64Address, hexWord, POINTER_TABLE_TYPES, pointerTableEntries, type PointerTableType } from "#src/c64.ts";
 import { IO_RAM } from "#src/host-client/coverage.ts";
 import { bitmapFrame, charsetFrame, encodePng, PATTERN_PALETTES, scaleFrame, screenText, spriteSheet, type GraphicsMode } from "#src/graphics.ts";
 import { mermaidGraph, ownerOf, routineEdges, routineHeads, type GraphReference, type RoutineHead } from "#src/knowledge/graph.ts";
@@ -65,6 +65,23 @@ const hex = (address: number) => formatC64Address(address).toUpperCase();
 const range = (start: number, end: number) => (start === end ? hex(start) : `${hex(start)}-${hex(end)}`);
 const stem = (file: string) => file.replace(/\.asm$/, "");
 
+/** The references with a target in [start, end], in their order in `references`: a binary search in the references sorted by target. */
+function byTarget(references: readonly ReferenceRow[]): (start: number, end: number) => ReferenceRow[] {
+  const sorted = references.map((reference, index) => ({ reference, index })).sort((a, b) => a.reference.to - b.reference.to);
+  return (start, end) => {
+    let low = 0;
+    let high = sorted.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (sorted[middle]!.reference.to < start) low = middle + 1;
+      else high = middle;
+    }
+    const hits: Array<{ reference: ReferenceRow; index: number }> = [];
+    for (let at = low; at < sorted.length && sorted[at]!.reference.to <= end; at++) hits.push(sorted[at]!);
+    return hits.sort((a, b) => a.index - b.index).map((hit) => hit.reference);
+  };
+}
+
 interface Entry {
   name: string;
   address: number;
@@ -115,7 +132,16 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
   for (const label of map.labels) if (!sourceNameAt.has(label.address)) sourceNameAt.set(label.address, label.name);
 
   // --- Links ------------------------------------------------------------------
-  const rel = (page: string, target: string) => posix.relative(posix.dirname(page), target) || posix.basename(target);
+  const relCache = new Map<string, string>();
+  const rel = (page: string, target: string) => {
+    const key = `${page}\n${target}`;
+    let found = relCache.get(key);
+    if (found === undefined) {
+      found = posix.relative(posix.dirname(page), target) || posix.basename(target);
+      relCache.set(key, found);
+    }
+    return found;
+  };
   const codeOfName = (page: string, name: string) => {
     const label = map.labelOf(name);
     return label === undefined ? `\`${name}\`` : `[\`${name}\`](${rel(page, map.pathOf(label.file))}#L${label.line})`;
@@ -163,6 +189,8 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
    */
   const named = new Set(input.symbols.map((symbol) => symbol.address));
   const dataReferences = input.references.filter((reference) => !(reference.to >= IO_RAM.start && reference.to <= IO_RAM.end && input.image?.inImage(reference.to) === true && !named.has(reference.to)));
+  const dataReferencesTo = byTarget(dataReferences);
+  const referencesTo = byTarget(input.references);
   /**
    * How the source line of a reference uses a platform name, as the source writes it: "named", "indexed"
    * (name,x or name,y: the index can reach the registers after it), or undefined when the line does not
@@ -181,8 +209,8 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     const use = platform === undefined ? undefined : new RegExp(`(?<![\\w.])${platform}(?!\\w)([^,)]*,\\s*[xXyY]\\b)?`);
     // A routine with an indexed use and a direct use shows once, as indexed.
     const owners = new Map<string, boolean>();
-    for (const reference of dataReferences) {
-      if (reference.kind !== kind || reference.to < start || reference.to > end) continue;
+    for (const reference of dataReferencesTo(start, end)) {
+      if (reference.kind !== kind) continue;
       const how = use === undefined ? "named" : platformUse(reference, use);
       if (how === undefined) continue;
       const name = ownerAt(reference.from)?.name ?? hex(reference.from);
@@ -224,13 +252,17 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     symbolKinds.get(address) === "routine" || symbolKinds.get(address) === "label" || input.regions.some((region) => (region.type === "code" || region.type === "jumps") && region.start <= address && region.end >= address);
   const dispatches: GraphReference[] = [];
   for (const [table, rows] of tableEntries) {
-    const readers = input.references.filter((reference) => TABLE_READS.includes(reference.kind) && reference.to >= table.start && reference.to <= table.end).map((reference) => reference.from);
+    const readers = referencesTo(table.start, table.end).filter((reference) => TABLE_READS.includes(reference.kind)).map((reference) => reference.from);
     for (const row of rows) if (row.target !== undefined && table.type !== "words" && inCode(row.target)) for (const from of new Set(readers)) dispatches.push({ from, to: row.target, kind: "table" });
   }
   const graphReferences: GraphReference[] = [...input.references, ...dispatches];
   const heads = routineHeads(input.symbols, graphReferences, (address) => sourceNameAt.get(address) ?? hex(address));
   const boundaries = input.modules.map((module) => module.start);
-  const ownerAt = (address: number) => ownerOf(heads, boundaries, address);
+  const ownerCache = new Map<number, RoutineHead | undefined>();
+  const ownerAt = (address: number) => {
+    if (!ownerCache.has(address)) ownerCache.set(address, ownerOf(heads, boundaries, address));
+    return ownerCache.get(address);
+  };
   const site = (page: string, from: number) => {
     const owner = ownerAt(from);
     const named = owner === undefined ? undefined : entries.has(owner.name) ? entryOfName(page, owner.name, owner.name) : codeOfName(page, owner.name);
@@ -260,13 +292,27 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
   const write = (path: string, lines: string[]) => files.push({ path, bytes: Buffer.from(`${[header, ...lines].join("\n").replace(/\n{3,}/g, "\n\n")}\n`, "utf8") });
 
   // --- One entry --------------------------------------------------------------
+  const commentsAt = new Map<number, CommentRow[]>();
+  for (const comment of input.comments) {
+    const list = commentsAt.get(comment.address);
+    if (list === undefined) commentsAt.set(comment.address, [comment]);
+    else list.push(comment);
+  }
   const commentLines = (address: number) =>
-    input.comments
-      .filter((comment) => comment.address === address)
+    [...(commentsAt.get(address) ?? [])]
       .sort((a, b) => (a.placement === b.placement ? 0 : a.placement === "line" ? -1 : 1))
       .map((comment) => comment.text.replace(/\s*\r?\n\s*/g, " ").trim());
-  const incoming = (entry: Entry) => dataReferences.filter((reference) => reference.to >= entry.address && reference.to <= entry.spanEnd);
-  const outgoing = (head: RoutineHead) => input.references.filter((reference) => ownerAt(reference.from)?.address === head.address);
+  const incoming = (entry: Entry) => dataReferencesTo(entry.address, entry.spanEnd);
+  /** The references from the code of each routine, in their order in the knowledge. */
+  const fromHead = new Map<number, ReferenceRow[]>();
+  for (const reference of input.references) {
+    const owner = ownerAt(reference.from)?.address;
+    if (owner === undefined) continue;
+    const list = fromHead.get(owner);
+    if (list === undefined) fromHead.set(owner, [reference]);
+    else list.push(reference);
+  }
+  const outgoing = (head: RoutineHead) => fromHead.get(head.address) ?? [];
   const entryText = (page: string, entry: Entry, labels: readonly Entry[]): string[] => {
     const lines = ["", `<a id="${entry.name}"></a>`, `### ${codeOfName(page, entry.name)} \`${entry.spanEnd > entry.address ? range(entry.address, entry.spanEnd) : hex(entry.address)}\``, "", `*${entry.kind}*`];
     const comments = commentLines(entry.address);
@@ -317,7 +363,7 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
   for (const reference of input.references) if (reference.kind === "call" || reference.kind === "jump") entersAt.set(reference.to, [...(entersAt.get(reference.to) ?? []), reference]);
   // A pointer to code (lda #<irq_handler) is a vector: the CPU enters there from no file.
   const pointedAt = new Set(input.references.filter((reference) => reference.kind === "pointer").map((reference) => reference.to));
-  const tableAnchor = (table: RegionRow) => entryAt.get(table.start)?.name ?? `table_${table.start.toString(16).padStart(4, "0")}`;
+  const tableAnchor = (table: RegionRow) => entryAt.get(table.start)?.name ?? `table_${hexWord(table.start)}`;
   function tableLink(page: string, table: RegionRow): string {
     return `[\`${entryAt.get(table.start)?.name ?? range(table.start, table.end)}\`](${rel(page, posix.join(out, "tables.md"))}#${tableAnchor(table)})`;
   }
@@ -404,7 +450,7 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
       lines.push("", `<a id="${tableAnchor(table)}"></a>`, `## ${name === undefined ? `\`${range(table.start, table.end)}\`` : `${codeOfName(page, name.name)} \`${range(table.start, table.end)}\``}`, "", `*${table.type}*`);
       const comments = commentLines(table.start);
       if (comments.length > 0) lines.push("", ...comments);
-      const readers = [...new Set(input.references.filter((reference) => reference.to >= table.start && reference.to <= table.end && TABLE_READS.includes(reference.kind)).map((reference) => site(page, reference.from)))];
+      const readers = [...new Set(referencesTo(table.start, table.end).filter((reference) => TABLE_READS.includes(reference.kind)).map((reference) => site(page, reference.from)))];
       if (readers.length > 0) lines.push("", `- **Read by:** ${capped(readers)}`);
       const rows = tableEntries.get(table);
       if (rows === undefined) continue;
@@ -430,7 +476,7 @@ export function buildReference(input: ReferenceInput): { files: ReferenceFile[];
     ];
     if (input.image === undefined && graphics.length > 0) lines.push("", "Put the program bytes into the project knowledge. Then generate the reference again to show the graphics.");
     for (const region of graphics) {
-      const anchor = entryAt.get(region.start)?.name ?? `${region.type}_${region.start.toString(16).padStart(4, "0")}`;
+      const anchor = entryAt.get(region.start)?.name ?? `${region.type}_${hexWord(region.start)}`;
       const name = entryAt.get(region.start);
       lines.push("", `<a id="${anchor}"></a>`, `## ${name === undefined ? codeOfAddress(page, region.start) : pair(page, name.name, region.start)} \`${range(region.start, region.end)}\``, "", `*${region.type}*`);
       const comments = commentLines(region.start);

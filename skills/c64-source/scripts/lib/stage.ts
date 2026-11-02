@@ -8,10 +8,10 @@
 // key or a fire button, stops the interrupts of the stage, sets the CIAs as
 // RUN leaves them, copies the stash back and starts the loader.
 
-import { type AddressRange, formatC64Address, formatC64Byte } from "#src/c64.ts";
+import { type AddressRange, formatC64Address, formatC64Byte, formatC64Range, hexWord, mergeRanges, rangesOverlap, subtract } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import type { StartScreenRow } from "#src/knowledge/read.ts";
-import { placePieces, START_SCREEN_FILE, startScreenValues, subtract, type StartScreenPlan } from "./loader.ts";
+import { largestFree, placePieces, START_SCREEN_FILE, startScreenValues, type StartScreenPlan } from "./loader.ts";
 
 /** Bytes at an address. */
 export interface StagePart {
@@ -55,7 +55,7 @@ export const STAGE_CODE_END = "c64_source_stage_code_end";
 /** The label of the colour RAM of the capture in the show code. */
 export const STAGE_COLOURS = "c64_source_stage_colours";
 /** The label of a part of the stage: its first byte and the byte after it. */
-export const stageLabel = (start: number, part: "from" | "end") => `stage_${part}_${start.toString(16).padStart(4, "0")}`;
+const stageLabel = (start: number, part: "from" | "end") => `stage_${part}_${hexWord(start)}`;
 
 /** One copy of the stash: the length, where it is read and where it is written. */
 const COPY_ENTRY = 6;
@@ -68,22 +68,8 @@ const CODE_AREAS: readonly AddressRange[] = [
 ];
 /** The RAM that the stash can use: the copy runs with all RAM in, and not on the hardware vectors. */
 const STASH_AREA: AddressRange = { start: 0x0400, end: 0xfff9 };
-/** The free ranges that a refusal names. */
-const SHOWN_FREE = 8;
 
-const show = (range: AddressRange) => `${formatC64Address(range.start)}-${formatC64Address(range.end)}`;
 const rangeOf = (part: StagePart): AddressRange => ({ start: part.start, end: part.start + part.body.length - 1 });
-
-/** The ranges in address order, with each run of touching or overlapping ranges as one. */
-function merged(ranges: readonly AddressRange[]): AddressRange[] {
-  const out: AddressRange[] = [];
-  for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
-    const last = out.at(-1);
-    if (last !== undefined && range.start <= last.end + 1) last.end = Math.max(last.end, range.end);
-    else out.push({ ...range });
-  }
-  return out;
-}
 
 /** The byte of the parts at an address; the last part that holds it wins. */
 function byteOf(parts: readonly StagePart[], address: number): number {
@@ -100,14 +86,12 @@ function byteOf(parts: readonly StagePart[], address: number): number {
  * ranges. Refuses by name when the memory is too small.
  */
 export function planStage(input: StageInput): StagePlan {
-  const used = merged([...input.inner.map(rangeOf), ...input.stage.map(rangeOf)]);
+  const used = mergeRanges([...input.inner.map(rangeOf), ...input.stage.map(rangeOf)]);
   const free = subtract(STASH_AREA, used);
-  const covered = merged(input.inner.map(rangeOf)).flatMap((inner) => input.stage.map(rangeOf).flatMap((part) => (part.start <= inner.end && inner.start <= part.end ? [{ start: Math.max(part.start, inner.start), end: Math.min(part.end, inner.end) }] : [])));
-  const stashed = merged(covered).map((range) => ({ what: `the loader at ${show(range)}`, range, bytes: (address: number) => byteOf(input.inner, address) }));
+  const covered = mergeRanges(input.inner.map(rangeOf)).flatMap((inner) => input.stage.map(rangeOf).flatMap((part) => (rangesOverlap(part, inner) ? [{ start: Math.max(part.start, inner.start), end: Math.min(part.end, inner.end) }] : [])));
+  const stashed = mergeRanges(covered).map((range) => ({ what: `the loader at ${formatC64Range(range)}`, range, bytes: (address: number) => byteOf(input.inner, address) }));
   const refuse = (why: string): never => {
-    const largest = [...free].sort((a, b) => b.end - b.start - (a.end - a.start)).slice(0, SHOWN_FREE);
-    const ranges = largest.length === 0 ? "none" : largest.map((range) => `${show(range)} (${range.end - range.start + 1} bytes)`).join(", ");
-    throw new WireFailure("invalid-input", `${why} The largest free ranges outside the loader and the bytes of the stage: ${ranges}. Capture the stage with less memory, so that its program holds only the start screen and the routine of the call.`);
+    throw new WireFailure("invalid-input", `${why} The largest free ranges outside the loader and the bytes of the stage: ${largestFree(free)}. Capture the stage with less memory, so that its program holds only the start screen and the routine of the call.`);
   };
   for (let copies = Math.max(stashed.length, 1); copies <= MAX_COPIES; ) {
     const size = input.codeSize + COPY_ENTRY * copies + 2;
@@ -245,7 +229,7 @@ export function stageText(input: StageInput, code: number, stash: StagePlan["sta
     `        jmp ${formatC64Address(input.innerStart)}`,
     ".count  !word 0",
     ".table",
-    ...stash.map((item) => `        !word ${item.target.end - item.target.start + 1}, ${formatC64Address(item.at)}, ${formatC64Address(item.target.start)} ; ${show(item.target)} of the loader`),
+    ...stash.map((item) => `        !word ${item.target.end - item.target.start + 1}, ${formatC64Address(item.at)}, ${formatC64Address(item.target.start)} ; ${formatC64Range(item.target)} of the loader`),
     "        !word 0",
     "}",
     ...(input.colourRam === undefined ? [] : [`; The colour RAM of the capture of ${row.stage}.`, STAGE_COLOURS, ...byteLines({ start: 0, body: input.colourRam })]),
@@ -253,7 +237,7 @@ export function stageText(input: StageInput, code: number, stash: StagePlan["sta
   ];
   // Each part at its own address: the code is in a free range, so no part overlaps it, and the build never runs past $ffff.
   for (const part of input.stage) {
-    lines.push("", `; ${row.stage} ${show(rangeOf(part))}`, `* = ${formatC64Address(part.start)}`, stageLabel(part.start, "from"), ...byteLines(part), stageLabel(part.start, "end"));
+    lines.push("", `; ${row.stage} ${formatC64Range(rangeOf(part))}`, `* = ${formatC64Address(part.start)}`, stageLabel(part.start, "from"), ...byteLines(part), stageLabel(part.start, "end"));
   }
   return `${lines.join("\n")}\n`;
 }

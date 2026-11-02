@@ -18,7 +18,7 @@ const PACKED = "packed.prg";
 const UNPACKED = "unpacked.prg";
 
 /** The unpacker of Exomizer runs below $0400; the emulator of desfx stops when the program counter leaves that area. */
-export const MIN_ENTRY = 0x0400;
+const MIN_ENTRY = 0x0400;
 
 export interface PackParams {
   /** The PRG files in load order: where two overlap, the later one wins. */

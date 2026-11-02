@@ -4,13 +4,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { COVERAGE } from "../../src/c64.ts";
+import { COVERAGE, coverageEntries, coverageSeedKinds, executedStarts, romOnlyRanges } from "../../src/c64.ts";
 import { openForRead, openForWrite, withWrite } from "../../src/knowledge/database.ts";
 import { importFindings } from "../../src/knowledge/import.ts";
 import { regionsOverlapping } from "../../src/knowledge/read.ts";
 import { classifyRegion, renameSymbol } from "../../src/knowledge/write.ts";
 import { DXA } from "../../src/native/discover.ts";
-import { codeEntries, coverageConflicts, coverageEntries, coverageSeedKinds, executedStarts, explainGaps, imageReader, romOnlyRanges, writtenNotExecuted } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
+import { codeEntries, coverageConflicts, explainGaps, imageReader, writtenNotExecuted } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
 import { VECTORED_ROUTINE, vectoredPrg } from "../fixtures/prg/vectored.ts";
 import { importCoverage, importImage, importPrg } from "../fixtures/program.ts";
 import { runScriptSync, scratchDir, skillScript, toolSkip, type ScriptRun } from "../kit.ts";

@@ -4,13 +4,13 @@
 // explicit, and the result is PASS, FAIL or INCONCLUSIVE.
 
 import { isRefusal, Refusal } from "#src/errors.ts";
-import { c64AddressOf, formatC64Address, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
-import { MAX_BASELINES, MAX_MASK_RECTANGLES, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
+import { c64AddressOf, formatC64Address, formatSprite, formatVicii, hexByte, parseC64Address } from "#src/c64.ts";
+import { isInteger, isObject, MAX_BASELINES, MAX_MASK_RECTANGLES, maskCoversFrame, WireFailure } from "#src/host-client/tools.ts";
 import { LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
-import { ACTION_STEP_KINDS, aStep, checkActionStep, checkLocation, isInteger, isObject, refuseOldStep, renamedField, runActionStep, type ActionStep, type ActionStepKind, type Location } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, aStep, checkActionStep, checkLocation, runActionStep, type ActionStep, type ActionStepKind, type Location } from "#src/host-client/steps.ts";
 import { applyEntryState, parseEntryState } from "#src/host-client/entry-state.ts";
 import { readPrg } from "#src/host-client/image.ts";
-import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
+import { readProjectFile, readProjectJson, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { checkSnapshotFile } from "#src/media.ts";
 import { openForRead } from "#src/knowledge/database.ts";
@@ -21,7 +21,7 @@ import { listed } from "#src/script.ts";
 import { passStartScreen } from "./start-screen.ts";
 
 export type Side = "reference" | "rebuild";
-export const SIDES: Side[] = ["reference", "rebuild"];
+const SIDES: Side[] = ["reference", "rebuild"];
 
 /** A "$xxxx" address or a symbol name that each side resolves on its own. */
 export type { Location };
@@ -120,18 +120,12 @@ const STEP_KEYS: Record<string, readonly string[]> = {
 };
 
 /** The registers an observe step can compare. */
-export const OBSERVED_REGISTERS = ["pc", "a", "x", "y", "sp", "flags"] as const;
+const OBSERVED_REGISTERS = ["pc", "a", "x", "y", "sp", "flags"] as const;
 type ObservedRegister = (typeof OBSERVED_REGISTERS)[number];
 
 /** Reads and checks a scenario file. Refuses it with the first problem. */
 export function readScenario(path: string): Scenario {
-  let value: unknown;
-  try {
-    value = JSON.parse(readProjectFile(path).bytes.toString("utf8"));
-  } catch (error) {
-    if (isRefusal(error)) throw error;
-    throw new Refusal("invalid-input", `cannot read the scenario ${path}: ${(error as Error).message}`);
-  }
+  const value = readProjectJson(path, (message) => `cannot read the scenario ${path}: ${message}`);
   const fail = (message: string): never => {
     throw new Refusal("invalid-input", `scenario ${path}: ${message}`);
   };
@@ -157,7 +151,6 @@ export function readScenario(path: string): Scenario {
     if (kinds.length > 1) return fail(`${at} has ${kinds.length} step kinds: ${kinds.join(", ")}. Give each one its own step`);
     if (kinds.length !== 1) return fail(`${at} must have exactly one of ${STEP_KINDS.join(", ")}${typeof step.screen === "string" ? `. A scenario compares the screen in an observe step: {"observe": "${step.screen}", "screen": {}}` : ""}`);
     const kind = kinds[0]!;
-    refuseOldStep(kind, step, at, fail);
     const allowed = [...(STEP_KEYS[kind] ?? [kind]), ...(kind === "observe" ? [] : ["side"])];
     for (const key of Object.keys(step)) if (!allowed.includes(key)) fail(`${at} has the key ${key}, which ${aStep(kind)} does not have`);
     if (step.side !== undefined && !(SIDES as unknown[]).includes(step.side)) fail(`${at}: side must be reference or rebuild`);
@@ -210,13 +203,13 @@ function checkObserve(step: Record<string, unknown>, at: string, fail: (message:
       }
       const itemFields = ["address", "size", "view", "tolerance", "mask", "exclude"];
       if (!isObject(item)) return fail(`${at}: memory must be a list of names, $ addresses or objects with address`);
-      for (const key of Object.keys(item)) if (!itemFields.includes(key)) fail(`${at}: a memory object has the field ${key}. ${renamedField(key, itemFields) ?? `It has ${itemFields.join(", ")}, and nothing else`}`);
+      for (const key of Object.keys(item)) if (!itemFields.includes(key)) fail(`${at}: a memory object has the field ${key}. It has ${itemFields.join(", ")}, and nothing else`);
       if (item.view !== undefined && item.view !== "cpu" && item.view !== "ram") fail(`${at}: memory.view must be cpu or ram`);
       if (item.exclude !== undefined) {
         if (!Array.isArray(item.exclude) || item.exclude.length === 0) fail(`${at}: memory.exclude must be a list of objects with address and reason`);
         for (const excluded of item.exclude as unknown[]) {
           if (!isObject(excluded)) return fail(`${at}: memory.exclude must be a list of objects with address and reason`);
-          for (const key of Object.keys(excluded)) if (key !== "address" && key !== "reason") fail(`${at}: an exclude has the field ${key}. ${renamedField(key, ["address", "reason"]) ?? "It has address and reason, and nothing else"}`);
+          for (const key of Object.keys(excluded)) if (key !== "address" && key !== "reason") fail(`${at}: an exclude has the field ${key}. It has address and reason, and nothing else`);
           checkLocation(excluded.address, `${at}: memory.exclude.address`, fail);
           if (typeof excluded.reason !== "string" || excluded.reason.trim() === "") fail(`${at}: an exclude needs a reason: why this byte may differ`);
         }
@@ -288,13 +281,7 @@ export function namesOf(source: string, kinds: "code" | "all" = "all"): Map<stri
       db?.close();
     }
   }
-  let value: unknown;
-  try {
-    value = JSON.parse(readProjectFile(source).bytes.toString("utf8"));
-  } catch (error) {
-    if (isRefusal(error)) throw error;
-    throw new Refusal("invalid-input", `cannot read the symbols ${source}: ${(error as Error).message}`);
-  }
+  const value = readProjectJson(source, (message) => `cannot read the symbols ${source}: ${message}`);
   const assembled = (value as { symbols?: Array<{ name: string; address?: string; value?: string }> }).symbols;
   const entries: Array<[string, unknown]> = Array.isArray(assembled)
     ? assembled.flatMap((symbol): Array<[string, unknown]> => {
@@ -311,6 +298,17 @@ export function namesOf(source: string, kinds: "code" | "all" = "all"): Map<stri
     names.set(name, at);
   }
   return names;
+}
+
+/** namesOf that reads each source once: a replay asks for the names of its two sides many times. */
+export function cachedNames(): typeof namesOf {
+  const read = new Map<string, Map<string, number>>();
+  return (source, kinds = "all") => {
+    const key = `${kinds} ${source}`;
+    const names = read.get(key) ?? namesOf(source, kinds);
+    read.set(key, names);
+    return names;
+  };
 }
 
 /** The remedy for a scenario program that is no PRG. */
@@ -389,7 +387,7 @@ async function normalize(client: ViceSessionClient): Promise<void> {
  * or hyphens. The checkpoint's number comes first, so two checkpoints never
  * get the same name.
  */
-export function baselineName(checkpoint: number, label: string): string {
+function baselineName(checkpoint: number, label: string): string {
   return `test-${checkpoint}-${label}`.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 64);
 }
 
@@ -509,14 +507,13 @@ type MemoryItem = Observation["memory"][number];
 
 /** The bytes of a memory item whose bits of the mask differ by more than its tolerance, without the excluded bytes. */
 function differingBytes(item: MemoryItem, other: MemoryItem): DifferingByte[] {
-  const hex = (byte: number) => byte.toString(16).padStart(2, "0");
   const skipped = new Set(item.excluded.map((excluded) => excluded.offset));
   const bits = (offset: number) => (item.mask === undefined ? 0xff : item.mask.length === 1 ? item.mask[0]! : item.mask[offset]!);
-  return item.bytes.flatMap((byte, offset) => (!skipped.has(offset) && Math.abs((byte & bits(offset)) - (other.bytes[offset]! & bits(offset))) > item.tolerance ? [{ address: formatC64Address(item.address + offset), reference: hex(byte), rebuild: hex(other.bytes[offset]!) }] : []));
+  return item.bytes.flatMap((byte, offset) => (!skipped.has(offset) && Math.abs((byte & bits(offset)) - (other.bytes[offset]! & bits(offset))) > item.tolerance ? [{ address: formatC64Address(item.address + offset), reference: hexByte(byte), rebuild: hexByte(other.bytes[offset]!) }] : []));
 }
 
 /** The most differing bytes of one memory item that a result lists when no --max-listed is given. */
-export const DEFAULT_LISTED_BYTES = 50;
+const DEFAULT_LISTED_BYTES = 50;
 
 /**
  * The differences between the two sides' observations at each checkpoint,

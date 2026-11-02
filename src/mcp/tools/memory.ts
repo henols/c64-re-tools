@@ -3,12 +3,13 @@
 
 import { z } from "zod";
 
-import { formatC64Address } from "../../c64.ts";
+import { formatC64Address, hexByte } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { MAX_COMPARE_DIFFERENCES, MAX_COMPARE_SIZE, MAX_DISASSEMBLE, MAX_MEMORY_READ, MAX_MEMORY_WRITE, MAX_SEARCH_PATTERN, MAX_SEARCH_RESULTS, type RegisterValues } from "../../protocol/vice.ts";
 import { linesText, OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, Byte, MemoryViewInput, SpaceInput, TOOL_INPUTS } from "../inputs.ts";
-import { AddressOutput, defineTool, HexData, requireFields } from "../server.ts";
+import { readMemoryInParts } from "../../host-client/vice-session.ts";
+import { AddressOutput, defineTool, HexData, requireFields, requireOut } from "../server.ts";
 
 /** With out, a read or a disassembly can be larger than one answer of the session: it is read in parts. */
 const MAX_MEMORY_READ_OUT = 0x10000;
@@ -16,7 +17,7 @@ const MAX_DISASSEMBLE_OUT = 32768;
 /** A memory byte in a result: two lowercase hex digits, as memory data is. */
 const HexByte = z.string().regex(/^[0-9a-f]{2}$/);
 
-export const c64MemoryRead = defineTool({
+const c64MemoryRead = defineTool({
   name: "c64_memory_read",
   title: "Read C64 memory",
   description:
@@ -38,23 +39,19 @@ export const c64MemoryRead = defineTool({
   readOnly: false,
   async run(input, session) {
     const { out, project, ...read } = input;
-    if (out === undefined && project !== undefined) throw new WireFailure("invalid-input", "project is used only with out.");
+    requireOut(input);
     if (out === undefined) {
       if (read.size > MAX_MEMORY_READ) throw new WireFailure("invalid-input", `size can be at most ${MAX_MEMORY_READ} without out.`);
       const result = await session.memoryRead(read);
       return { address: formatC64Address(result.address), size: result.data.length / 2, data: result.data };
     }
     if (read.address + read.size > 0x10000) throw new WireFailure("invalid-input", "The range must not go past $ffff.");
-    const parts: Buffer[] = [];
-    for (let at = read.address; at < read.address + read.size; at += MAX_MEMORY_READ) {
-      const part = await session.memoryRead({ ...read, address: at, size: Math.min(MAX_MEMORY_READ, read.address + read.size - at) });
-      parts.push(Buffer.from(part.data, "hex"));
-    }
-    return { address: formatC64Address(read.address), size: read.size, ...writeOut(out, Buffer.concat(parts), project) };
+    const bytes = await readMemoryInParts(session, read.address, read.size, read.view, read.space);
+    return { address: formatC64Address(read.address), size: read.size, ...writeOut(out, bytes, project) };
   },
 });
 
-export const c64MemoryWrite = defineTool({
+const c64MemoryWrite = defineTool({
   name: "c64_memory_write",
   title: "Write C64 memory",
   description:
@@ -118,7 +115,7 @@ const SearchPattern = z
   .transform((value) => value.trim().split(/\s+/).map((token) => (token === "??" ? null : Number.parseInt(token, 16))))
   .describe("hex bytes and ?? (any byte), separated by spaces, for example a9 ?? 8d 20 d0");
 
-export const c64MemorySearch = defineTool({
+const c64MemorySearch = defineTool({
   name: "c64_memory_search",
   title: "Search C64 memory",
   description:
@@ -156,7 +153,7 @@ const Location = z
   .object({ address: AddressInput, space: SpaceInput, view: MemoryViewInput })
   .strict();
 
-export const c64MemoryCompare = defineTool({
+const c64MemoryCompare = defineTool({
   name: "c64_memory_compare",
   title: "Compare C64 memory",
   description:
@@ -175,12 +172,11 @@ export const c64MemoryCompare = defineTool({
   readOnly: true,
   async run(input, session) {
     const result = await session.memoryCompare(input);
-    const hex = (byte: number) => byte.toString(16).padStart(2, "0");
-    return { ...result, firstDifferences: result.firstDifferences.map((difference) => ({ ...difference, left: hex(difference.left), right: hex(difference.right) })) };
+    return { ...result, firstDifferences: result.firstDifferences.map((difference) => ({ ...difference, left: hexByte(difference.left), right: hexByte(difference.right) })) };
   },
 });
 
-export const c64Disassemble = defineTool({
+const c64Disassemble = defineTool({
   name: "c64_disassemble",
   title: "Disassemble live C64 memory",
   description:
@@ -202,7 +198,7 @@ export const c64Disassemble = defineTool({
   readOnly: false,
   async run(input, session) {
     const { out, project, ...request } = input;
-    if (out === undefined && project !== undefined) throw new WireFailure("invalid-input", "project is used only with out.");
+    requireOut(input);
     if (out === undefined) {
       if (request.count > MAX_DISASSEMBLE) throw new WireFailure("invalid-input", `count can be at most ${MAX_DISASSEMBLE} without out.`);
       const result = await session.disassemble(request);
