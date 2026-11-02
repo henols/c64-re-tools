@@ -9,7 +9,7 @@ import { after, test } from "node:test";
 
 import { inspect, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/lib/evidence.ts";
 import { removeStaleFiles } from "../../skills/c64-unpacker/scripts/lib/machine.ts";
-import { callReturn, captureSegments, executedIn, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
+import { callReturn, captureSegments, droppedRanges, executedIn, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
 import { COVERAGE } from "../../src/c64.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
@@ -255,9 +255,41 @@ test("after the entry, the program uses the RAM that it executes, and the RAM th
   );
 });
 
+test("the RAM under the I/O area is a block of its own, so a leftover around it drops only its own part, and the capture gives what it dropped", () => {
+  // The TBC crack of Bruce Lee in the field run of 2.8.0-rc.2: the decruncher at $0100 changes $0800-$ffff, also the RAM
+  // under the I/O area. $0800 copies the game code to $cf00-$cfff and $d800-$ffff and a relocator to $c000, and the
+  // relocator moves the game to $033c-$a9ff. As one block, $0800-$ffff held the relocator at $c000, and the leftover rule
+  // dropped the music, the sound and the demo input at $e000-$ffff with it.
+  const stages = [
+    { entry: 0x0827, wrote: [range(0x000d, 0x000d), range(0x0014, 0x0015), range(0x0022, 0x0022), range(0x004d, 0x004d), range(0x0056, 0x0056), range(0x005d, 0x0070), range(0x007a, 0x007a), range(0x0100, 0x01ff)] },
+    { entry: 0x0100, wrote: [range(0x0001, 0x0001), range(0x0091, 0x0091), range(0x00a2, 0x00a2), range(0x00ac, 0x00af), range(0x00c0, 0x00c0), range(0x00c5, 0x00c5), range(0x00cb, 0x00cb), range(0x01f8, 0x01ff), range(0x028d, 0x028e), range(0x0800, 0xffff)] },
+    {
+      entry: 0x0800,
+      wrote: [range(0x0001, 0x0001), range(0x0091, 0x0091), range(0x00a1, 0x00a2), range(0x00c0, 0x00c0), range(0x00c5, 0x00c6), range(0x00cb, 0x00cb), range(0x00fb, 0x00fe), range(0x01f8, 0x01ff), range(0x028d, 0x028e), range(0xc000, 0xc1ff), range(0xcf00, 0xcfff), range(0xd800, 0xffff)],
+    },
+    { entry: 0xc000, wrote: [range(0x0000, 0x0002), range(0x0080, 0x0080), range(0x00ba, 0x00bb), range(0x01fe, 0x01ff), range(0x0301, 0x0303), range(0x0313, 0x0313), range(0x0318, 0x0319), range(0x033c, 0xa9ff), range(0xc020, 0xc020), range(0xc025, 0xc025)] },
+    { entry: 0x0400, wrote: [] },
+  ];
+  // The RAM at $d000-$dfff holds no entry of a later stage: it is a segment, and it touches $e000-$ffff.
+  const segments = captureSegments(stages, 0x0400);
+  assert.deepEqual(segments, [
+    { start: 0x033c, end: 0xa9ff, writtenBy: 3 },
+    { start: 0xd000, end: 0xffff, writtenBy: 2 },
+  ]);
+  // The rest of the decruncher's block holds the relocator. The later writes in it are not given again, and the stack page that stage 0 wrote is in the entry state.
+  assert.deepEqual(droppedRanges(stages, 0x0400, segments), [{ start: 0xaa00, end: 0xcfff, writtenBy: 1, stageEntry: 0xc000 }]);
+  assert.deepEqual(
+    droppedRanges(stages, 0x0400, [...segments, range(0xc000, 0xc1ff)]),
+    [
+      { start: 0xaa00, end: 0xbfff, writtenBy: 1, stageEntry: 0xc000 },
+      { start: 0xc200, end: 0xcfff, writtenBy: 1, stageEntry: 0xc000 },
+    ],
+    "an excluded range is no drop",
+  );
+});
+
 test("a part of a leftover that the program uses after its entry is a segment; a loader variable and the parts that it does not use are not", () => {
-  // The Bruce Lee field run of 2.8.0-rc.2: the decruncher at $0100 writes $0800-$ffff, $0800 copies the game code to
-  // $cf00-$cfff and $d800-$ffff and a relocator to $c000, and the relocator moves the game to $033c-$a9ff.
+  // The stages of the TBC crack of Bruce Lee, without the small blocks.
   const stages = [
     { entry: 0x0827, wrote: [range(0x0100, 0x01ff)] },
     { entry: 0x0100, wrote: [range(0x0800, 0xffff)] },
@@ -265,23 +297,19 @@ test("a part of a leftover that the program uses after its entry is a segment; a
     { entry: 0xc000, wrote: [range(0x033c, 0xa9ff), range(0xc020, 0xc020), range(0xc025, 0xc025)] },
     { entry: 0x0400, wrote: [] },
   ];
-  assert.deepEqual(captureSegments(stages, 0x0400), [{ start: 0x033c, end: 0xa9ff, writtenBy: 3 }], "without the use after the entry");
-  // After the entry, the game runs its code at $e000, reads $cf8f, and reads and writes its work area at $aa00-$cb3f.
+  // After the entry, the game reads $cf8f, and reads and writes its work area at $aa00-$cb3f: the game code at $cf00-$cfff is a segment.
   const map = new Uint8Array(0x10000);
-  map[0xe000] = COVERAGE.ramExecute;
   map[0xcf8f] = COVERAGE.ramRead;
   map.fill(COVERAGE.ramRead | COVERAGE.ramWrite, 0xaa00, 0xcb40);
   assert.deepEqual(captureSegments(stages, 0x0400, { used: usedAfterEntry(map) }), [
     { start: 0x033c, end: 0xa9ff, writtenBy: 3 },
-    { start: 0xcf00, end: 0xcfff, writtenBy: 2 },
-    { start: 0xd800, end: 0xffff, writtenBy: 2 },
+    { start: 0xcf00, end: 0xffff, writtenBy: 2 },
   ]);
   // Code at $c300 that the decruncher wrote and the program runs: the bytes of the decruncher there are a segment, the relocator at $c000 is not.
   map[0xc300] = COVERAGE.ramExecute;
   assert.deepEqual(captureSegments(stages, 0x0400, { used: usedAfterEntry(map) }), [
     { start: 0x033c, end: 0xa9ff, writtenBy: 3 },
-    { start: 0xc200, end: 0xcfff, writtenBy: 2 },
-    { start: 0xd800, end: 0xffff, writtenBy: 2 },
+    { start: 0xc200, end: 0xffff, writtenBy: 2 },
   ]);
 });
 

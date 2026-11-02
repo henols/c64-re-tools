@@ -6,7 +6,7 @@
 // writes the memory into the project. "loads" captures each part of a
 // multi-load program. No native unpack tool is used.
 
-import { type AddressRange, COVERAGE, EXECUTE, formatC64Address, formatC64Range, formatC64RangeFields, inRanges } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, EXECUTE, formatC64Address, formatC64Range, formatC64RangeFields, inRanges, parseC64Address } from "#src/c64.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { IO_RAM, markIoRamWrites, readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
 import { readActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
@@ -18,7 +18,7 @@ import { PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
 import { basicStart, inspect, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
-import { callReturn, captureSegments, executedIn, mergeMaps, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "./lib/stages.ts";
+import { callReturn, captureSegments, droppedRanges, executedIn, mergeMaps, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "./lib/stages.ts";
 import { entryStateFile, machineState, readyState, vectorsOf, writeCapture } from "./lib/machine.ts";
 
 /** Written-then-executed bytes from this many on are unpacking, decrypting or relocating, not self-changing code. */
@@ -560,6 +560,12 @@ async function capture(
         ? [options.range]
         : captureSegments(followed.stages, registers.pc, { loaded: { start: load, end: Math.min(0xffff, load + bytes.length - 3) }, used: await usedAfter(client) });
     const segments = withoutRanges(found, options.exclude);
+    // The written ranges that the leftover rule took out of the segments. A --range takes no rule.
+    const dropped = (options.range === undefined ? droppedRanges(followed.stages, registers.pc, [...found, ...options.exclude]) : []).map((range) => ({
+      ...formatC64RangeFields(range),
+      writtenBy: range.writtenBy,
+      stageEntry: formatC64Address(range.stageEntry),
+    }));
     const vectors = vectorsOf(state, memory);
     // A clean machine at the READY prompt shows what the loader and the stages changed.
     const entry = entryStateFile(registers, state, vectors, await readyState(client));
@@ -572,7 +578,10 @@ async function capture(
         entry: formatC64Address(registers.pc),
         segments: segments.map((segment, index) => ({ ...formatC64RangeFields(segment), ...("writtenBy" in segment ? { writtenBy: segment.writtenBy } : {}), ...("loaded" in segment ? { loaded: true } : {}), file: files[index] })),
         ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(formatC64RangeFields) }),
+        ...(dropped.length === 0 ? {} : { dropped }),
         vectors,
+        // The steps as the capture ran them, with their defaults: the steps file is usually in local/, which git ignores.
+        ...(options.steps.length === 0 ? {} : { steps: options.steps }),
         stages: showStages(followed.stages),
         image: "image.bin",
       }),
@@ -587,7 +596,8 @@ async function capture(
         ...(removed.length === 0 ? {} : { removed }),
         segments: segments.map((segment) => ({ ...formatC64RangeFields(segment), ...("loaded" in segment ? { loaded: true } : {}) })),
         ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(formatC64RangeFields) }),
-        stages: followed.stages.length,
+        ...(dropped.length === 0 ? {} : { dropped }),
+        stages: showStages(followed.stages),
         differsFromReset: entry.differsFromReset,
       },
       failed: false,
@@ -658,11 +668,18 @@ function staged(call: Call, { output, failed }: { output: Record<string, unknown
   });
 }
 
-/** capture: the next step is a check of the entry, then the capture goes into the project knowledge. */
+/** capture: the next step is a check of the entry and of the dropped bytes, then the capture goes into the project knowledge. */
 function captured(call: Call, { output, failed }: { output: Record<string, unknown>; failed: boolean }) {
   const result = outcome({ output, failed });
   if (failed) return result;
-  return reply(result, { hint: `Disassemble the code at ${output.pc as string}. Make sure that it is the program and not the unpacker again. Then put the capture ${call.string("out")!}/image.json into the project knowledge.` });
+  const dropped = ((output.dropped ?? []) as Array<{ start: string; end: string }>).reduce((sum, range) => sum + parseC64Address(range.end) - parseC64Address(range.start) + 1, 0);
+  return reply(result, {
+    hint: joined([
+      `Disassemble the code at ${output.pc as string}. Make sure that it is the program and not the unpacker again.`,
+      dropped === 0 ? undefined : `The segments do not hold ${dropped} bytes that the stages wrote, because they are in blocks with the entry of a later stage. dropped gives their ranges. Make sure that the program does not use these bytes.`,
+      `Then put the capture ${call.string("out")!}/image.json into the project knowledge.`,
+    ]),
+  });
 }
 
 /** loads: each capture goes into the project knowledge when the agent works on that part. */
@@ -706,7 +723,7 @@ const COMMANDS: CommandSpec[] = [
   },
   {
     name: "capture",
-    summary: "Runs the program until the CPU gets to --until after the steps, and writes into --out: image.bin (64 KiB of RAM), image.json (the entry, the segments that the stages wrote, the vectors, the stages), a PRG for each segment, and entry_state.json.",
+    summary: "Runs the program until the CPU gets to --until after the steps, and writes into --out: image.bin (64 KiB of RAM), image.json (the entry, the segments that the stages wrote, the written ranges that it dropped, the vectors, the steps, the stages), a PRG for each segment, and entry_state.json.",
     subjects: [PROGRAM],
     options: {
       until: { kind: "address", value: "<address>", required: true, help: "the unpacked entry point" },

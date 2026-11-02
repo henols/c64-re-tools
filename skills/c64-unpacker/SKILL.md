@@ -193,17 +193,18 @@ Traps:
 - `captured`: true when the CPU got to `--until`. `pc` is that address.
 - `files`: each file that the command wrote, as `{out, bytes, sha256}`. `removed` names the segment files of an earlier capture that the new `image.json` does not list.
 - `segments` and `excluded`: the ranges of the segment files, and the ranges that `--exclude` removed. `loaded: true` marks a segment with the bytes that the program loaded.
-- `stages`: the count of stages.
+- `dropped`: the ranges from `$0400` that the stages wrote and that no segment holds. The ranges of `excluded` are not in `dropped`. Each range is in a block that is not a segment because it holds the entry of a later stage. `writtenBy` is the stage that wrote the block. `stageEntry` is the entry of the later stage. When the capture dropped no byte, or with `--range`, the body has no `dropped`.
+- `stages`: one item for each stage, as `stages` gives it.
 - `differsFromReset`: the count of bytes that are not as a clean C64 has them at READY.
 
 The folder `--out` gets these files:
 
 - `image.bin`: all 64 KiB of RAM at the entry. This RAM includes the RAM under the ROMs and the I/O area. A segment can be in the RAM under the I/O area at `$d000`-`$dfff`.
-- `image.json`: the entry, the segments, the vectors and the stages. `writtenBy` of a segment tells the last stage that wrote into it.
+- `image.json`: the entry, the segments, `excluded`, `dropped`, the vectors, the steps and the stages. `writtenBy` of a segment tells the last stage that wrote into it. `steps` holds the steps of `--steps` with their default values. A steps file with these steps gives the same input to the program again. When the capture ran no steps, `image.json` has no `steps`.
 - One PRG for each segment.
 - `entry_state.json`: the registers, `$00` and `$01`, pages 0 to 3, the VIC, SID and CIA registers, the colour RAM, and the vectors. `io.colour` holds the 1000 colours at $d800. `cia` gives the CIA timer latches and interrupt masks. `differsFromReset` lists the bytes that are not as a clean C64 has them at READY. A rebuild must make these bytes the same, because the program can read them.
 
-A segment is a block that a stage wrote, also a small block. These blocks are not segments:
+A segment is a block that a stage wrote, also a small block. The script cuts each block at the start and at the end of the I/O area, `$d000`-`$dfff`. These blocks are not segments:
 
 - A block that holds the entry of a later stage before the program, when no stage wrote over that entry.
 - A block that a stage before the program wrote in such a block, for example a variable of a loader.
@@ -217,11 +218,12 @@ If no stage wrote the capture entry, the program runs as it loaded. Then the ran
 
 A capture into a folder with an earlier capture removes only the segment files that the new `image.json` does not list. It keeps all other files.
 
-On `PASS`, `hint` tells you to disassemble the code at `pc`, and then to put `<out>/image.json` into the project knowledge.
+On `PASS`, `hint` tells you to disassemble the code at `pc`, and then to put `<out>/image.json` into the project knowledge. When the body has `dropped`, `hint` also gives the count of dropped bytes.
 
 Traps:
 
 - The capture stops at the first arrival at `--until` after the steps. To capture a later arrival, add a `runUntil` step to an address after the first arrival.
+- A dropped range can be a part of the program. Make sure that the program does not use the bytes in `dropped`. If the program uses them, tell the user.
 - `captured: false`: the program did not get to `--until` in `--timeout-frames`. The reason tells where it stopped. Find a better address, or give more frames. If it stopped in a key wait, give `--steps` with a `type` step. If the CPU got to `--until` in a step, the reason names that step.
 
 ### `loads <program>`
