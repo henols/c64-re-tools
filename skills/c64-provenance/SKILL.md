@@ -24,6 +24,7 @@ To get the command list, run the script with no arguments.
 | Goal | Command |
 |---|---|
 | Compare two or more releases | `compare releases/a.prg releases/b.prg releases/c.prg` |
+| Compare the releases in the project knowledge | `compare V1 V2 V3` |
 | Compare a release that loads at a different address | `compare releases/a.prg releases/b.prg --shift 2:-256` |
 | Compare only the bytes in a range | `compare releases/a.prg releases/b.prg --range '$0900-$09ff'` |
 | Map two releases with moved code in blocks of equal bytes | `compare releases/a/image.json releases/b/image.json --align --range '$0400-$bfff'` |
@@ -44,6 +45,7 @@ To get the command list, run the script with no arguments.
 
 - `compare` takes two or more releases. A release is one of these:
   - `knowledge`: the program in the project knowledge.
+  - The label of a release in the project knowledge, for example `V2`. The base release is the program in the project knowledge. For another release, the project knowledge keeps only its bytes. Thus `--frames` cannot start it. To run that release, give its file. A label that is not a release gets error `not-found`, with the labels of the releases.
   - A PRG file. The script puts it at its load address.
   - The `image.json` of a capture folder. Keep all files of the capture folder together. Without them, `--frames` cannot start the release.
 - Get a PRG out of a disk image before you compare it. The script refuses a disk image, a tape image and a cartridge image.
@@ -148,11 +150,14 @@ Traps:
 
 - `common` is empty: the releases do not have bytes at the same addresses. Give `--shift`, or a `--range` that all releases have.
 - `identicalShare` is low, and the body has no `suggestedShifts` and no `shiftsNotSuggested`: the bytes do not show a shift, for example in a small `--range`. The releases can have different bytes at the same addresses. Read `differences`.
-- A release has `started: false`: the PRG has no BASIC start, or the capture folder of the image has no entry state. The `reason` tells which. The other releases still give evidence.
+- A release has `started: false`: the `reason` tells why it did not start. The other releases still give evidence. These releases do not start:
+  - A PRG without a BASIC start.
+  - An image whose capture folder has no entry state.
+  - The label of a release that is not the base release.
 - Each release writes a range before it reads it: the range is probably runtime state, not a difference of the releases.
 - A range has `first: none` in each release: the run did not use it. Run more frames or other steps before you decide.
 - The script refuses `--align` with `--shift` or `--frames`. It refuses `--min-block` without `--align`, and `--steps` without `--frames`.
-- Error `not-found`: the project has no file at that path.
+- Error `not-found`: the project has no file at that path, or the project knowledge has no release with that label. The message gives the labels of the releases. For a file with a name in upper case and no extension, give `./` before the name.
 
 ---
 

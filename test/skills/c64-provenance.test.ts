@@ -11,7 +11,8 @@ import { COVERAGE, formatC64Address } from "../../src/c64.ts";
 import { align, compareReleases, identicalShare, shiftSuggestion, suggestShifts } from "../../skills/c64-provenance/scripts/lib/compare.ts";
 import { withWrite } from "../../src/knowledge/database.ts";
 import { separate } from "../../src/knowledge/separate.ts";
-import { classifyRegion } from "../../src/knowledge/write.ts";
+import { memoryRows } from "../../src/knowledge/program.ts";
+import { classifyRegion, setRelease } from "../../src/knowledge/write.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
 import { importCoverage, importImage } from "../fixtures/program.ts";
 
@@ -209,6 +210,30 @@ test("compare --align maps two image.json files, and refuses --shift, and --min-
   };
   assert.match(refused(["--align", "--shift", "2:-32"]).message, /^--align does not work with --shift/);
   assert.match(refused(["--min-block", "20"]).message, /^--min-block works only with --align/);
+});
+
+test("compare takes the label of a release in the knowledge: the base release is the program, another release has its bytes and no entry state, and another label is refused with the labels", () => {
+  const root = fresh();
+  const memory = new Uint8Array(0x10000);
+  memory.set(base, 0x0801);
+  const segment = { start: 0x0801, end: 0x0801 + base.length - 1 };
+  importImage(root, memory, { segments: [segment], entry: 0x0810 });
+  withWrite((db) => {
+    setRelease(db, { origin: "user" }, { label: "ORIGINAL", base: true });
+    setRelease(db, { origin: "user" }, { label: "CRACK", file: "releases/crack.prg", rows: memoryRows([segment], (address) => crackA[address - 0x0801]!) });
+  }, root);
+  // Neither release can start, so no emulator starts and no host is needed.
+  const run = provenance(["compare", "ORIGINAL", "CRACK", "--frames", "10"], root, { ...process.env, C64RT_HOST: "127.0.0.1:1" });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const result = run.json as { releases: Array<{ name: string; segments: unknown }>; differences: Array<{ start: string; end: string; groups: number[][] }>; run: { releases: Record<string, { started: boolean; reason: string }> } };
+  assert.deepEqual(result.releases.map((release) => [release.name, release.segments]), [["ORIGINAL", [{ start: "$0801", end: "$1000" }]], ["CRACK", [{ start: "$0801", end: "$1000" }]]]);
+  assert.deepEqual(result.differences.map((difference) => [difference.start, difference.end, difference.groups]), [["$0900", "$0902", [[1], [2]]]]);
+  assert.match(result.run.releases["1"]!.reason, /^The knowledge has no entry state/);
+  assert.match(result.run.releases["2"]!.reason, /^The knowledge keeps only the bytes of the release CRACK.* releases\/crack\.prg /);
+  const missing = provenance(["compare", "ORIGINAL", "TBC"], root);
+  assert.equal(missing.status, 2, missing.stdout);
+  assert.equal(missing.json.error.code, "not-found");
+  assert.match(missing.json.error.message, /^There is no release TBC in the project knowledge\. The releases of the knowledge are ORIGINAL, CRACK\./);
 });
 
 test("compare refuses an unknown name in the steps before an emulator starts", () => {

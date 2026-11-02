@@ -9,6 +9,7 @@
 // program.
 
 import { basename } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
 
 import { type AddressRange, c64AddressOf, formatC64Address, formatC64Byte, formatC64Range, formatC64RangeFields, parseC64Address } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
@@ -19,7 +20,7 @@ import { MAX_EXECUTION_COUNT } from "#src/host-client/tools.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { withRead, withWrite } from "#src/knowledge/database.ts";
-import { operandImages, programCoverage, requireProgram } from "#src/knowledge/program.ts";
+import { operandImages, programCoverage, releaseImage, requireProgram } from "#src/knowledge/program.ts";
 import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
 import {
   commentsAt,
@@ -29,17 +30,19 @@ import {
   listOperands,
   listReferences,
   listRegions,
+  listReleases,
   listSymbols,
   operandAt,
   referencesFrom,
   referenceSuppressed,
+  releaseLabeled,
   regionsOverlapping,
   suppressionsOverlapping,
   symbolAt,
   symbolNamed,
   symbolSuppressed,
 } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, RELEASE_LABEL, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
 import { platformAddresses } from "#src/platform.ts";
 import { projectRoot } from "#src/project.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
@@ -62,29 +65,68 @@ interface LoadedRelease {
   stages?: Array<{ entry: number; wrote: AddressRange[] }>;
 }
 
+/** The bytes of a release, and its entry, stages and entry state when it has them. */
+interface ReleaseImage {
+  segments: AddressRange[];
+  byteAt: (address: number) => number;
+  memory?: Uint8Array;
+  entry?: number;
+  stages?: Array<Record<string, unknown>>;
+  state?: EntryState;
+}
+
+/**
+ * A release of the knowledge by its label. The base release is the program of
+ * the knowledge, with its entry state and stages. The knowledge keeps only the
+ * bytes of another release, so it cannot start. A label that is not a release
+ * is refused with the labels.
+ */
+function labeledRelease(label: string): { image: ReleaseImage; noState: string } {
+  return withRead((db) => {
+    const release = releaseLabeled(db, label);
+    if (release === undefined) {
+      const labels = listReleases(db).map((row) => row.label);
+      const known = labels.length === 0 ? "The knowledge has no release." : `The releases of the knowledge are ${labels.join(", ")}.`;
+      throw new Refusal("not-found", `There is no release ${label} in the project knowledge. ${known}`, { hint: `Give a release label, knowledge, or the path of a file. For a file with the name ${label}, give ./${label}.` });
+    }
+    if (release.base) return knowledgeProgram(db);
+    const file = release.file === undefined ? "its file" : `its file ${release.file}`;
+    return { image: releaseImage(db, label)!, noState: `The knowledge keeps only the bytes of the release ${label}, not its entry state. To run the release, give ${file} in place of ${label}.` };
+  });
+}
+
+/** The program of the knowledge with its entry state and stages. */
+function knowledgeProgram(db: DatabaseSync | undefined): { image: ReleaseImage; noState: string } {
+  const program = requireProgram(db);
+  return {
+    image: { ...program, ...(program.state === undefined ? {} : { state: parseEntryState(program.state, "the entry state of the knowledge") }) } as ReleaseImage,
+    noState: "The knowledge has no entry state. Put a capture of the unpacked program, with its entry state, into the project knowledge.",
+  };
+}
+
 /**
  * A release to compare: "knowledge" (the program of the knowledge, with its
- * entry state and stages), a PRG at its load address, or an image.json of an
- * unpacked program (a capture) with the entry_state.json beside it.
+ * entry state and stages), the label of a release in the knowledge, a PRG at
+ * its load address, or an image.json of an unpacked program (a capture) with
+ * the entry_state.json beside it.
  */
 function readRelease(name: string, shift: number): LoadedRelease {
   const moved = (range: AddressRange) => ({ start: range.start + shift, end: range.end + shift });
   const inside = (range: AddressRange) => range.start >= 0 && range.end <= 0xffff;
-  let image: { segments: AddressRange[]; byteAt: (address: number) => number; memory?: Uint8Array; entry?: number; stages?: Array<Record<string, unknown>>; state?: EntryState };
+  let image: ReleaseImage;
   let noState: string;
-  if (name === "knowledge") {
-    const program = withRead(requireProgram);
-    image = { ...program, ...(program.state === undefined ? {} : { state: parseEntryState(program.state, "the entry state of the knowledge") }) } as typeof image;
-    noState = "The knowledge has no entry state. Put a capture of the unpacked program, with its entry state, into the project knowledge.";
-  } else {
+  let prg = false;
+  if (name === "knowledge") ({ image, noState } = withRead(knowledgeProgram));
+  else if (RELEASE_LABEL.test(name)) ({ image, noState } = labeledRelease(name));
+  else {
     image = readImage(name);
     noState = "It has no entry_state.json beside it. Capture the unpacked program again, with its entry state.";
+    prg = !name.endsWith(".json");
   }
   const segments = image.segments.map(moved);
   if (!segments.every(inside)) throw new UsageError(`The shift moves ${name} outside $0000-$ffff.`, { hint: "Give a shift that keeps each segment of the release in $0000-$ffff." });
   const memory = image.memory ?? new Uint8Array(0x10000);
   if (image.memory === undefined) for (const segment of image.segments) for (let at = segment.start; at <= segment.end; at++) memory[at] = image.byteAt(at);
-  const prg = name !== "knowledge" && !name.endsWith(".json");
   const stages = stagesOf(image.stages, name);
   return {
     release: { name, segments, byteAt: (at) => memory[at - shift]! },
@@ -102,7 +144,7 @@ const MAX_ALIGNED = 64;
 /** compare: the releases byte by byte, with --align a map of two releases in blocks, and with --frames the first access of each difference in each release. */
 async function compare(call: Call): Promise<unknown> {
   const positionals = call.subjects;
-  if (positionals.length < 2) throw new UsageError("compare needs two or more releases.", { hint: "Give the paths of two or more releases, or knowledge for the program in the knowledge." });
+  if (positionals.length < 2) throw new UsageError("compare needs two or more releases.", { hint: "Give two or more releases: the path of a PRG or image.json, the label of a release in the knowledge, or knowledge for the program in the knowledge." });
   const shifts = new Map<number, number>();
   for (const text of call.strings("shift")) {
     const match = /^(\d+):([+-]?\d+)$/.exec(text);
@@ -540,7 +582,7 @@ const COMMANDS: CommandSpec[] = [
   {
     name: "compare",
     summary: "Compares releases byte by byte, in their common ranges, and suggests shifts when they are placed differently. With --align, maps two releases with moved code in blocks of equal bytes, each with its own shift.",
-    subjects: [{ name: "<release>", help: "knowledge (the program in the knowledge), a PRG at its load address, or the image.json of a capture of the unpacked program with the entry_state.json beside it. Two or more", list: true }],
+    subjects: [{ name: "<release>", help: "knowledge (the program in the knowledge), the label of a release in the knowledge, a PRG at its load address, or the image.json of a capture of the unpacked program with the entry_state.json beside it. Two or more", list: true }],
     options: {
       shift: {
         kind: "text",
