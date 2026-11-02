@@ -18,7 +18,7 @@ import { nameTable } from "#src/knowledge/names.ts";
 import { DEFAULT_SPACE } from "#src/knowledge/schema.ts";
 import { programImage } from "#src/knowledge/program.ts";
 import { listed } from "#src/script.ts";
-import { passStartScreen } from "./start-screen.ts";
+import { namesStartScreen, passStartScreen } from "./start-screen.ts";
 
 export type Side = "reference" | "rebuild";
 const SIDES: Side[] = ["reference", "rebuild"];
@@ -393,12 +393,14 @@ function baselineName(checkpoint: number, label: string): string {
 
 /**
  * Autostart that returns only when the program runs (runProgram), and after the
- * start screen of a loader program (passStartScreen), or INCONCLUSIVE with the reason.
+ * start screen of a loader program (passStartScreen) unless a step of the side
+ * names it (namesStartScreen), or INCONCLUSIVE with the reason.
  */
-async function startProgram(client: ViceSessionClient, program: string, side: Side, symbols: Map<string, number>): Promise<void> {
+async function startProgram(client: ViceSessionClient, program: string, side: Side, symbols: Map<string, number>, steps: readonly Step[]): Promise<void> {
   const failed = await runProgram(client, program, readProjectFile(program).bytes);
   if (failed === "not-loaded") throw new Inconclusive(`the ${side} program was not in memory after ${LOAD_LIMIT_FRAMES} frames of autostart`);
   if (failed === "not-started") throw new Inconclusive(`the ${side} program did not start within ${RUN_LIMIT_FRAMES} frames of RUN; autostart runs only a program with a BASIC start line`);
+  if (namesStartScreen(steps, (location) => resolve(location, symbols, side), symbols)) return;
   const screen = await passStartScreen(client, symbols);
   if (typeof screen === "object") throw new Inconclusive(`the ${side} side: ${screen.problem}`);
 }
@@ -488,7 +490,7 @@ async function runStep(client: ViceSessionClient, scenario: Scenario, side: Side
   } else if ("load" in step) {
     await client.programLoad({ path: subject.program });
   } else if ("autostart" in step) {
-    await startProgram(client, subject.program, side, symbols);
+    await startProgram(client, subject.program, side, symbols, scenario.steps.filter((other) => other.side === undefined || other.side === side));
   } else if ("snapshot" in step) {
     await client.snapshotRestore(readProjectFile(step.snapshot).bytes);
   } else if ("normalize" in step) {

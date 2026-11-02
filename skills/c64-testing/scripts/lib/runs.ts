@@ -20,9 +20,9 @@ import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-sess
 import { checkSnapshotFile } from "#src/media.ts";
 import { checkOutputPath, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, resolveProjectPath } from "#src/project.ts";
 import { namesOf } from "./scenario.ts";
-import { passStartScreen } from "./start-screen.ts";
+import { namesStartScreen, passStartScreen } from "./start-screen.ts";
 
-type RunStep =
+export type RunStep =
   | ActionStep
   | { snapshot: string }
   | { save: string }
@@ -334,7 +334,7 @@ export async function runFile(path: string, out: string): Promise<{ output: Reco
     } else {
       const failed = await runProgram(client, run.start.program, readProjectFile(run.start.program).bytes);
       if (failed !== undefined) reason = failed === "not-loaded" ? "The program was not in memory after autostart." : "The program did not start after RUN; it needs a BASIC start line.";
-      else {
+      else if (!namesStartScreen(run.steps, at, symbols)) {
         const screen = await passStartScreen(client, symbols);
         if (typeof screen === "object") reason = `${screen.problem[0]!.toUpperCase()}${screen.problem.slice(1)}.`;
         else startScreen = screen;

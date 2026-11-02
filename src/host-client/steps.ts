@@ -295,7 +295,7 @@ export function checkActionSteps(value: unknown, fail: (message: string) => neve
 }
 
 /** The names and addresses of an action step: each location that the step resolves when it runs. */
-function stepLocations(step: ActionStep): Location[] {
+export function stepLocations(step: ActionStep): Location[] {
   if ("write" in step) return [step.write.address];
   if ("registers" in step) return step.registers.pc === undefined ? [] : [step.registers.pc];
   if (!("runUntil" in step)) return [];
