@@ -111,6 +111,9 @@ type Stages = ReadonlyArray<{ entry: number; wrote: readonly AddressRange[] }>;
 type WrittenBlock = AddressRange & { writtenBy: number };
 type DroppedRange = WrittenBlock & { stageEntry: number };
 
+/** 0 below the I/O area, 1 in it, 2 above it. */
+const ioSide = (address: number) => (address < IO_RAM.start ? 0 : address <= IO_RAM.end ? 1 : 2);
+
 /** A range cut at the bounds of the I/O area: the RAM there that a stage changed never joins the blocks on its two sides. */
 function cutAtIoArea(range: AddressRange): AddressRange[] {
   if (!rangesOverlap(range, IO_RAM)) return [range];
@@ -151,7 +154,8 @@ function stageBlocks(stages: Stages, entry: number): Array<WrittenBlock & { stag
  * The segments of a capture: the blocks that the stages wrote, without loader
  * leftovers (stageBlocks) and without blocks that are all in pages 0-3
  * (the entry state holds them), joined into ranges that do not overlap or
- * touch. The filter comes before the join: a join first would drop the
+ * touch. A join never goes past a bound of the I/O area, so the RAM there is
+ * a segment of its own. The filter comes before the join: a join first would drop the
  * program with a leftover. `used` tells the addresses that the program used
  * after its entry: a part of a leftover that no later stage wrote is a segment
  * when the program used an address in it, as a stage can copy code of the
@@ -175,7 +179,7 @@ export function captureSegments(
   const segments: Array<AddressRange & { writtenBy: number }> = [];
   for (const block of blocks) {
     const previous = segments[segments.length - 1];
-    if (previous !== undefined && block.start <= previous.end + 1) {
+    if (previous !== undefined && block.start <= previous.end + 1 && ioSide(block.start) === ioSide(previous.end)) {
       previous.end = Math.max(previous.end, block.end);
       previous.writtenBy = Math.max(previous.writtenBy, block.writtenBy);
     } else segments.push({ ...block });
@@ -196,19 +200,32 @@ export function captureSegments(
  * leftover blocks (stageBlocks) that no range of `kept`, the segments and
  * the excluded ranges, holds. `writtenBy` is the stage that wrote the block,
  * and `stageEntry` the entry of the later stage that makes it a leftover. A
- * byte in the blocks of more than one stage is given once, with the first
- * stage that wrote it.
+ * byte in the blocks of more than one stage is given once, with the last
+ * stage that wrote it, as `writtenBy` of a segment.
  */
 export function droppedRanges(stages: Stages, entry: number, kept: readonly AddressRange[]): DroppedRange[] {
   const parts: DroppedRange[] = [];
   const given: AddressRange[] = [];
-  for (const block of stageBlocks(stages, entry)) {
+  for (const block of stageBlocks(stages, entry).sort((a, b) => b.writtenBy - a.writtenBy)) {
     if (block.stageEntry === undefined || block.end < FIRST_SEGMENT_ADDRESS) continue;
     const range = { start: Math.max(block.start, FIRST_SEGMENT_ADDRESS), end: block.end };
     for (const piece of subtract(range, [...kept, ...given])) parts.push({ ...piece, writtenBy: block.writtenBy, stageEntry: block.stageEntry });
     given.push(range);
   }
   return parts.sort((a, b) => a.start - b.start);
+}
+
+/**
+ * The segments in the RAM under the I/O area in which the program executed
+ * no code after its entry. The map gives a read there as an I/O read, so only
+ * code that ran shows that the program uses that RAM.
+ */
+export function notExecutedUnderIo<T extends AddressRange>(segments: readonly T[], used: (address: number) => boolean): T[] {
+  return segments.filter((segment) => {
+    if (ioSide(segment.start) !== 1 || ioSide(segment.end) !== 1) return false;
+    for (let address = segment.start; address <= segment.end; address++) if (used(address)) return false;
+    return true;
+  });
 }
 
 /** For each address, the last stage that wrote it, or -1. */

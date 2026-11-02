@@ -193,7 +193,8 @@ Traps:
 - `captured`: true when the CPU got to `--until`. `pc` is that address.
 - `files`: each file that the command wrote, as `{out, bytes, sha256}`. `removed` names the segment files of an earlier capture that the new `image.json` does not list.
 - `segments` and `excluded`: the ranges of the segment files, and the ranges that `--exclude` removed. `loaded: true` marks a segment with the bytes that the program loaded.
-- `dropped`: the ranges from `$0400` that the stages wrote and that no segment holds. The ranges of `excluded` are not in `dropped`. Each range is in a block that is not a segment because it holds the entry of a later stage. `writtenBy` is the stage that wrote the block. `stageEntry` is the entry of the later stage. When the capture dropped no byte, or with `--range`, the body has no `dropped`.
+- `notExecutedUnderIo`: the segments in the RAM under the I/O area in which the program executed no code in the 250 frames after the entry. The memory map shows a read of this RAM as an I/O read. Thus the script cannot tell if the program reads these bytes. When no segment is of this type, or with `--range`, the body has no `notExecutedUnderIo`.
+- `dropped`: the ranges from `$0400` that the stages wrote and that no segment holds. The ranges of `excluded` are not in `dropped`. Each range is in a block that is not a segment because it holds the entry of a later stage. `writtenBy` is the last stage that wrote the range. `stageEntry` is the entry of the later stage. When the capture dropped no byte, or with `--range`, the body has no `dropped`.
 - `stages`: one item for each stage, as `stages` gives it.
 - `differsFromReset`: the count of bytes that are not as a clean C64 has them at READY.
 
@@ -204,7 +205,7 @@ The folder `--out` gets these files:
 - One PRG for each segment.
 - `entry_state.json`: the registers, `$00` and `$01`, pages 0 to 3, the VIC, SID and CIA registers, the colour RAM, and the vectors. `io.colour` holds the 1000 colours at $d800. `cia` gives the CIA timer latches and interrupt masks. `differsFromReset` lists the bytes that are not as a clean C64 has them at READY. A rebuild must make these bytes the same, because the program can read them.
 
-A segment is a block that a stage wrote, also a small block. The script cuts each block at the start and at the end of the I/O area, `$d000`-`$dfff`. These blocks are not segments:
+A segment is a block that a stage wrote, also a small block. The script cuts each block at the start and at the end of the I/O area, `$d000`-`$dfff`. A segment does not cross the start or the end of the I/O area. Thus the RAM under the I/O area is always in segments of its own. These blocks are not segments:
 
 - A block that holds the entry of a later stage before the program, when no stage wrote over that entry.
 - A block that a stage before the program wrote in such a block, for example a variable of a loader.
@@ -218,7 +219,7 @@ If no stage wrote the capture entry, the program runs as it loaded. Then the ran
 
 A capture into a folder with an earlier capture removes only the segment files that the new `image.json` does not list. It keeps all other files.
 
-On `PASS`, `hint` tells you to disassemble the code at `pc`, and then to put `<out>/image.json` into the project knowledge. When the body has `dropped`, `hint` also gives the count of dropped bytes.
+On `PASS`, `hint` tells you to disassemble the code at `pc`, and then to put `<out>/image.json` into the project knowledge. When the body has `dropped`, `hint` also gives the count of dropped bytes. When the body has `notExecutedUnderIo`, `hint` also names these segments.
 
 Traps:
 
