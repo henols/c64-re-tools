@@ -114,7 +114,7 @@ test("a targeted region re-analysis keeps the parts outside its coverage", () =>
   importFindings(db, findings("dxa", 0x2000, 0x2fff, { regions: [{ start: 0x2000, end: 0x2fff, type: "code" }] }));
   const result = importFindings(db, findings("dxa", 0x2400, 0x24ff, { regions: [{ start: 0x2400, end: 0x24ff, type: "bytes" }] }));
   assert.equal(result.revision, nth(db, 2));
-  assert.deepEqual(result.regions, { added: 0, changed: 1, retired: 0, unchanged: 0, suppressed: 0 }, "the covered part changed its type");
+  assert.deepEqual(result.regions, { added: 0, changed: 1, retired: 0, unchanged: 0, suppressed: 0, onExecutedCode: 0 }, "the covered part changed its type");
   assert.deepEqual(regionList(db), [
     [0x2000, 0x23ff, "code", "dxa"],
     [0x2400, 0x24ff, "bytes", "dxa"],
@@ -125,7 +125,7 @@ test("a targeted region re-analysis keeps the parts outside its coverage", () =>
   assert.equal(importFindings(db, findings("dxa", 0x2300, 0x24ff, { regions: [{ start: 0x2300, end: 0x23ff, type: "code" }, { start: 0x2400, end: 0x24ff, type: "bytes" }] })).revision, null);
   // A region type that changes in place counts as changed.
   const changed = importFindings(db, findings("dxa", 0x2400, 0x24ff, { regions: [{ start: 0x2400, end: 0x24ff, type: "words" }] }));
-  assert.deepEqual(changed.regions, { added: 0, changed: 1, retired: 0, unchanged: 0, suppressed: 0 });
+  assert.deepEqual(changed.regions, { added: 0, changed: 1, retired: 0, unchanged: 0, suppressed: 0, onExecutedCode: 0 });
 });
 
 test("semantic knowledge is kept; only a code/data disagreement is a conflict; a reference from data is false code", () => {
@@ -347,7 +347,7 @@ test("a non-authoritative region import changes the type of the analyzer's own r
   };
   importFindings(db, partial([{ start: 0x2000, end: 0x20ff, type: "bytes" }, { start: 0x2400, end: 0x24ff, type: "code" }]));
   const result = importFindings(db, partial([{ start: 0x2080, end: 0x217f, type: "code" }, { start: 0x2400, end: 0x24ff, type: "code" }]));
-  assert.deepEqual(result.regions, { added: 1, changed: 1, retired: 0, unchanged: 1, suppressed: 0 });
+  assert.deepEqual(result.regions, { added: 1, changed: 1, retired: 0, unchanged: 1, suppressed: 0, onExecutedCode: 0 });
   assert.deepEqual(regionList(db), [
     [0x2000, 0x207f, "bytes", "dxa"],
     [0x2080, 0x217f, "code", "dxa"],
@@ -538,13 +538,22 @@ test("a re-run does not replace the analyzer's own code with data where a run ex
     [0x1386, 0x147d, "code", "dxa"],
     [0x147e, 0x1487, "bytes", "dxa"],
   ]);
-  // Executed code holds the same way, also with no name there.
+  // Executed code holds the same way, also with no name there. The knowledge holds the executed start as code, so the finding is only counted.
   const run = fresh();
   importFindings(run, findings("decompiler", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x20ff, type: "code" }] }));
   const executed = importFindings(run, findings("decompiler", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x207f, type: "code" }, { start: 0x2080, end: 0x20ff, type: "bytes" }], executed: (address) => address === 0x2090 }));
-  assert.deepEqual(executed.conflicts, [{ category: "code-evidence", start: 0x2080, end: 0x20ff, finding: { type: "bytes" }, executed: 0x2090 }]);
+  assert.deepEqual(executed.conflicts, []);
+  assert.equal(executed.regions.onExecutedCode, 1);
   assert.deepEqual(regionList(run), [[0x2000, 0x20ff, "code", "decompiler"]]);
   assert.equal(executed.revision, null, "nothing changed");
+  // An executed start that no code region of the knowledge holds leaves a decision: the finding is a conflict.
+  const bare = fresh();
+  const first = importFindings(bare, findings("dxa", 0x3000, 0x30ff, { regions: [{ start: 0x3000, end: 0x30ff, type: "bytes" }], executed: (address) => address === 0x3010 }));
+  assert.deepEqual(first.conflicts, [{ category: "code-evidence", start: 0x3000, end: 0x30ff, finding: { type: "bytes" }, executed: 0x3010 }]);
+  assert.equal(first.regions.onExecutedCode, 0);
+  classifyRegion(bare, { origin: "llm" }, { start: 0x3000, end: 0x301f, type: "code" });
+  const part = importFindings(bare, findings("dxa", 0x3000, 0x30ff, { regions: [{ start: 0x3000, end: 0x30ff, type: "bytes" }], executed: (address) => address === 0x3010 || address === 0x3080 }));
+  assert.deepEqual(part.conflicts.map((conflict) => conflict.category), ["code-evidence"], "the code region holds only one of the two executed starts");
   // Without evidence, the analyzer's newer data replaces its own code.
   const plain = importFindings(run, findings("decompiler", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x207f, type: "code" }, { start: 0x2080, end: 0x20ff, type: "bytes" }] }));
   assert.deepEqual(plain.conflicts, []);

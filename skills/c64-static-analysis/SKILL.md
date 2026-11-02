@@ -102,7 +102,7 @@ The script records only structure: code and data regions, analyzer names, and th
 
 - `analyzer`: `dxa` or `decompiler`. `analyzerVersion` gives the version of the analyzer when the analyzer tells it. `space` is in `body` only for a space that is not `c64`.
 - `revision`: the revision of the findings, or `null` when the knowledge did not change.
-- `changes`: for analyzer names (`names`), `regions` and `references`, the counts `added`, `changed`, `retired`, `unchanged` and `suppressed`. `suppressed` counts the findings that the script did not record, because the user or the LLM removed a fact at that place. `references.inData` counts the references that start in a data region of the user, the LLM or an idiom. The analyzer decoded these data bytes as code.
+- `changes`: for analyzer names (`names`), `regions` and `references`, the counts `added`, `changed`, `retired`, `unchanged` and `suppressed`. `suppressed` counts the findings that the script did not record, because the user or the LLM removed a fact at that place. `references.inData` counts the references that start in a data region of the user, the LLM or an idiom. The analyzer decoded these data bytes as code. `regions.onExecutedCode` counts the data findings on code that a run executed and that the project knowledge holds as code. The script does not record these findings, and they are not conflicts.
 - `conflicts`: each place where the analyzer and the project knowledge disagree. `problem` tells the disagreement. A conflict of code and data also gives these facts about its range:
   - `access`: only with coverage. `executed` counts the instructions in the range that a run executed. `read` and `written` count the bytes that a run read and wrote.
   - `references`: the references of the project knowledge into the range from outside it, each with `from` and `kind`.
@@ -174,7 +174,7 @@ The script does not record the candidates. Examine each candidate and decide.
 
 #### What the analysis replaces
 
-- The analysis never replaces a name or a region of the user or the LLM. Each disagreement shows in `conflicts`. A conflict with `executed` or `knowledge` shows data where a run executed code, or where the user or the LLM named code.
+- The analysis never replaces a name or a region of the user or the LLM. Each disagreement shows in `conflicts`. A conflict with `executed` shows data where a run executed code that the project knowledge does not hold as code. A conflict with `knowledge` shows data where the user or the LLM named code.
 - Put all coverage maps into the project knowledge first. Then run DXA, then the decompiler.
 - An idiom table can be too long or too short. Correct its region in the project knowledge. Your region replaces it, and the table stops at the end of your region. The next analysis removes the references and the entry points of the idiom after that end.
 - The idioms obey the regions of the user and the LLM. An example is a `code` region over the bytes of a BIT skip. Where your region has a different type, the idiom gives no region, no reference and no entry point. A reference that you removed gives no entry point.
