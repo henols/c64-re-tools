@@ -1263,8 +1263,10 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
       const macroUse = item.kind === "instruction" && !asInstructions.has(item.address) ? layout.macroUses.get(item.address) : undefined;
       if (macroUse !== undefined) {
         head(macroUse.start);
-        const count = piece.items.filter((other) => other.kind === "instruction" && other.address >= macroUse.start && other.address <= macroUse.end).length;
-        mark(macroUse.start, macroUse.end, count);
+        // Each instruction of the use has its own coverage: a run can execute the first and not the next.
+        for (const inner of piece.items) {
+          if (inner.kind === "instruction" && inner.address >= macroUse.start && inner.address <= macroUse.end) mark(inner.address, inner.address + inner.length - 1, 1);
+        }
         // The comments inside the use go to its side comment, as for the bytes of an instruction.
         const sides: string[] = [];
         for (let address = macroUse.start; address <= macroUse.end; address++) {
