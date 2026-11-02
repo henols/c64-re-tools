@@ -7,8 +7,9 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
-import { type AddressRange, formatC64Address, formatC64RangeFields, inRanges, REFERENCE_KINDS } from "#src/c64.ts";
+import { type AddressRange, formatC64Address, formatC64Range, formatC64RangeFields, inRanges, rangesOverlap, REFERENCE_KINDS } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
+import { IO_RAM } from "#src/host-client/coverage.ts";
 import { readImage } from "#src/host-client/image.ts";
 import { readProjectFile, readProjectJson, writeReported } from "#src/host-client/transfer.ts";
 import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
@@ -17,7 +18,7 @@ import { OPERAND_SELECTS, operandText, type OperandSelect } from "#src/knowledge
 import { historyAt, historyNamed, historyOfMacro, historyOfSwitch, revision, revisionCounts, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { addCoverage, coverageAccess, coverageRangeCounts, memoryRows, operandImages as programImages, programCoverage, programImage, releaseCode, requireProgram, setImage, type ImageRequest } from "#src/knowledge/program.ts";
+import { addCoverage, coverageAccess, coverageRangeCounts, memoryRows, operandImages as programImages, programCoverage, programImage, releaseCode, requireProgram, setImage, type ImageRequest, type ProgramImage } from "#src/knowledge/program.ts";
 import { coloursOfCapture, startScreenOfCapture, startScreenOfStage } from "#src/knowledge/start-screen.ts";
 import {
   at,
@@ -97,11 +98,11 @@ import {
   type OperandImage,
   type WriteContext,
 } from "#src/knowledge/write.ts";
-import { platformAddresses, platformNames } from "#src/platform.ts";
+import { platformAddresses, platformNamesFor, romUseOfProgram } from "#src/platform.ts";
 import { coverageMapOf } from "#src/knowledge/recording-files.ts";
 import { sha256 } from "#src/knowledge/text.ts";
 import { isInside, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
-import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec, type SubjectSpec } from "#src/script.ts";
+import { listed, OPTIONS, Reply, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec, type SubjectSpec } from "#src/script.ts";
 import { isoCet } from "#src/time.ts";
 import { CHECK_CLASSES, CHECK_VERDICTS, checkFolder, checkResult, pickSample, seedOfFolder, withVerdict, type CheckClass, type Sample, type Verdicts } from "./lib/check.ts";
 import { listing, listingLines, type ListingSource } from "./lib/listing.ts";
@@ -283,14 +284,25 @@ function programBytes(image: { segments: ReadonlyArray<{ start: number; end: num
   return (at) => (inRanges(image.segments, at) ? image.byteAt(at) : undefined);
 }
 
-/** The name of an address: a user or LLM name, else the platform name; an analyzer name in symbols (knowledge from an older version) gives way to it. */
-function nameOf(db: DatabaseSync | undefined, space: string): (at: number) => string | undefined {
-  const platform = new Map(space === DEFAULT_SPACE ? platformNames().map((entry) => [entry.address, entry.name]) : []);
+/** The platform names of the program in a space, as c64-source gives them: only the names of the ROMs that the program uses. None outside the C64. */
+function programPlatform(space: string, coverage: Uint8Array | undefined, state: Record<string, unknown> | undefined): ReturnType<typeof platformNamesFor> {
+  return space === DEFAULT_SPACE ? platformNamesFor(romUseOfProgram(coverage, state)) : [];
+}
+
+/**
+ * The names of addresses: the symbol of the user or the LLM, and the platform name of `platform`.
+ * A user or LLM name comes first; an analyzer name in symbols (knowledge from an older version) gives way to a platform name.
+ */
+function namesOf(db: DatabaseSync | undefined, space: string, platform: ReturnType<typeof platformNamesFor>): Required<Pick<ListingSource, "symbolOf" | "platformOf">> {
+  const names = new Map(platform.map((entry) => [entry.address, entry.name]));
   const symbols = new Map<number, SymbolRow>();
   for (const row of listSymbols(db, undefined, undefined, undefined, space)) if (!symbols.has(row.address)) symbols.set(row.address, row);
-  return (at) => {
-    const own = symbols.get(at);
-    return own !== undefined && isSemantic(own.origin) ? own.name : (platform.get(at) ?? own?.name);
+  return {
+    symbolOf: (at) => {
+      const own = symbols.get(at);
+      return own === undefined || (!isSemantic(own.origin) && names.has(at)) ? undefined : own.name;
+    },
+    platformOf: (at) => names.get(at),
   };
 }
 
@@ -302,14 +314,15 @@ function byAddress<T extends { address: number }>(rows: readonly T[]): Map<numbe
 }
 
 /**
- * The lookups of a listing of a range: the program and the coverage in the knowledge, the knowledge of the space and the platform names of the C64.
+ * The lookups of a listing of a range: the program and the coverage in the knowledge, the knowledge of the space and the platform names of the ROMs that the program uses.
  * The rows of the range are read once: a listing asks for each line.
  */
-function listingSource(db: DatabaseSync | undefined, space: string, range: AddressRange): ListingSource {
-  const image = requireProgram(db, space);
+function listingSource(db: DatabaseSync | undefined, image: ProgramImage, range: AddressRange): ListingSource {
+  const space = image.space;
   const coverage = programCoverage(db, space)?.map;
   const byteAt = programBytes(image);
-  const entries = space === DEFAULT_SPACE ? platformNames().filter((entry) => entry.end > entry.address) : [];
+  const platform = programPlatform(space, coverage, image.state);
+  const entries = platform.filter((entry) => entry.end > entry.address);
   const secondNames = byAddress(listAnalyzerNames(db, range, undefined, undefined, space));
   // The comments inside an instruction or a word of the last line are up to 2 bytes after the range.
   const comments = byAddress(listComments(db, { start: range.start, end: Math.min(range.end + 2, 0xffff) }, undefined, space));
@@ -323,7 +336,8 @@ function listingSource(db: DatabaseSync | undefined, space: string, range: Addre
   return {
     byteAt,
     entryStart: (at) => (byteAt(at) !== undefined ? undefined : entries.find((entry) => at > entry.address && at <= entry.end)?.address),
-    nameOf: nameOf(db, space),
+    ...namesOf(db, space, platform),
+    ...(space === DEFAULT_SPACE ? { io: IO_RAM } : {}),
     secondNames: (at) => (secondNames.get(at) ?? []).map((row) => row.name),
     regions: listRegions(db, undefined, undefined, undefined, space),
     comments: (at) => {
@@ -527,8 +541,8 @@ function sampleOf(seed: number): Sample {
 const SEED: SubjectSpec = { name: "<seed>", help: "the seed of a check" };
 const seedOf = (call: Call) => call.parseCount(call.subject(0), "<seed>", 0, 999_999);
 
-/** A read command: it opens the knowledge for reading, and its answer shows the conflicts that a git merge left. */
-function readCommand(spec: Omit<CommandSpec, "run">, answer: (db: DatabaseSync | undefined, call: Call) => Record<string, unknown>): CommandSpec {
+/** A read command: it opens the knowledge for reading, and its answer shows the conflicts that a git merge left. A hint of the answer comes first. */
+function readCommand(spec: Omit<CommandSpec, "run">, answer: (db: DatabaseSync | undefined, call: Call) => Record<string, unknown> | Reply): CommandSpec {
   return {
     ...spec,
     options: { ...SPACE, ...spec.options },
@@ -537,9 +551,13 @@ function readCommand(spec: Omit<CommandSpec, "run">, answer: (db: DatabaseSync |
         const result = answer(db, call);
         const found = conflicts(db);
         if (found.length === 0) return result;
+        const { body, hint } = result instanceof Reply ? { body: result.body as Record<string, unknown>, hint: result.hint } : { body: result, hint: undefined };
         return reply(
-          { ...result, conflicts: found.map(showConflict) },
-          { hint: "A git merge left conflicts in the knowledge: see conflicts. Each write stops until you decide them. Run merge, then tell the user each item of its choices.", nextAction: call.next("merge", "--reason", "decide the conflicts of a git merge") },
+          { ...body, conflicts: found.map(showConflict) },
+          {
+            hint: `${hint === undefined ? "" : `${hint} `}A git merge left conflicts in the knowledge: see conflicts. Each write stops until you decide them. Run merge, then tell the user each item of its choices.`,
+            nextAction: call.next("merge", "--reason", "decide the conflicts of a git merge"),
+          },
         );
       }),
   };
@@ -698,7 +716,8 @@ const READ_COMMANDS: CommandSpec[] = [
       if (direction !== undefined && range === undefined) throw new UsageError(`--direction needs --range: the direction is seen from that range. Give --range <start>-<end> --direction ${direction}.`);
       const rows = listReferences(db, rangeOf(call), call.string("kind") as (typeof REFERENCE_KINDS)[number] | undefined, originsOf(call), call.space).filter(direction === undefined ? () => true : goes(range!, direction));
       const { byKind, byTarget } = referenceCounts(rows);
-      const named = nameOf(db, call.space);
+      const { symbolOf, platformOf } = namesOf(db, call.space, programPlatform(call.space, programCoverage(db, call.space)?.map, programImage(db, call.space)?.state));
+      const named = (at: number) => symbolOf(at) ?? platformOf(at);
       const target = ({ to, count }: { to: number; count: number }) => ((name) => ({ to: formatC64Address(to), ...(name === undefined ? {} : { name }), count }))(named(to));
       return { references: list(call, rows, reference, RANGE_REST), byKind, byTarget: list(call, byTarget, target, MORE) };
     },
@@ -828,10 +847,13 @@ const READ_COMMANDS: CommandSpec[] = [
     },
     (db, call) => {
       const range = call.parseRange(call.subject(0), "<range>");
-      const lines = listingLines(listing(listingSource(db, call.space, range), range.start, range.end, { code: call.flag("code") }));
+      const image = requireProgram(db, call.space);
+      const lines = listingLines(listing(listingSource(db, image, range), range.start, range.end, { code: call.flag("code") }));
       const out = call.string("out");
-      if (out !== undefined) return { lines: lines.length, ...writeReported(out, lines.map((line) => `${line}\n`).join(""), { what: "--out" }) };
-      return { lines: list(call, lines, (line) => line, "a larger --max-listed, a smaller <range>, or --out <file> for all lines") };
+      const body = out !== undefined ? { lines: lines.length, ...writeReported(out, lines.map((line) => `${line}\n`).join(""), { what: "--out" }) } : { lines: list(call, lines, (line) => line, "a larger --max-listed, a smaller <range>, or --out <file> for all lines") };
+      // A range outside the program has no lines: the hint names the segments that have them.
+      if (image.segments.some((segment) => rangesOverlap(segment, range))) return body;
+      return reply(body, { hint: `The range ${formatC64Range(range)} is outside the program. The program has bytes only in ${image.segments.map(formatC64Range).join(", ")}. Give a range in one of them.` });
     },
   ),
 ];
