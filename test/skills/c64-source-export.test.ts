@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { RegionType } from "../../src/knowledge/schema.ts";
-import { blocksOf, type DropInput, planDrops, readmeText, rewriteTest } from "../../skills/c64-source/scripts/lib/export.ts";
+import { blocksOf } from "../../src/knowledge/code-reach.ts";
+import { type DropInput, planDrops, readmeText, rewriteTest } from "../../skills/c64-source/scripts/lib/export.ts";
 
 const EXECUTE = 1 << 2;
 const READ = 1 << 0;

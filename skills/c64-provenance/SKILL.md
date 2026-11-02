@@ -178,9 +178,9 @@ Gives evidence from the program in the project knowledge, its stages and its cov
   - `access` is `executed`, `read`, `written`, `read-written` or `untouched`. `untouched` bytes did not take part in the runs.
   - A `read` byte right after executed code, or at a return address, can be a dummy read of the 6502. The program does not use it.
 - `roots`: the addresses where the reachability starts, each with `address` and `from`. The roots are the entry, and the NMI, RESET and IRQ vectors at `$fffa`-`$ffff` when the program holds them. A text in place of the list tells why no code region is reachable.
-- `codeRegions`: the code regions in the project knowledge, as a list. Each region has `reachable`, and `executed` with coverage. `unknown` is `true` for a region that is not dead code, as in `unknownCode` of `leftovers`.
+- `codeRegions`: the code regions in the project knowledge, as a list. Each region has `reachable`, and `executed` with coverage. `unknown` is `true` for a region that no root reaches and that no run executed, when the project knowledge has no coverage. It is also `true` when a flow in `unresolved` can go to the region.
 - `codeRegions.unreachable`: the code regions that no chain of call and jump references reaches from a root. When the code stores the address of a handler with immediates in an interrupt vector at `$0314`-`$0319` or `$fffa`-`$ffff`, that code reaches the handler.
-- `unresolved`: only when a code region is unknown. These are the flows whose targets the project knowledge does not give, as in `leftovers`.
+- `unresolved`: only when a code region is unknown. These are the flows in the reached or executed code regions whose targets the project knowledge does not give.
 - `outside`: only with coverage. `read` and `executed` give the RAM outside the program that the program used but did not write. A loader or an earlier stage put these bytes there. `generated` gives the code that the program wrote outside its segments.
 - `out`, `bytes` and `sha256`: the `--out` file. It has the fields of the body, with all items of each list.
 
@@ -203,10 +203,10 @@ Finds what the program in the project knowledge holds in addition to its working
 | `text` | Text, and lines of assembler source. `encoding` is `petscii`, `screen`, `ascii` or `high-bit`. `reversed: true` marks screen codes with bit 7 set. `source: true` marks lines of assembler source. A line end in `text` is a new line. `mnemonics` counts 6502 instructions in the text. A text of more than 120 characters is cut, and `length` gives its full length. |
 | `basic` | Two or more BASIC lines away from the BASIC start. `linkedAt` is the address where BASIC linked the lines. It can be a different address from the address of the bytes now. |
 | `fill` | One byte that repeats at least 16 times, or a pattern of two to four bytes that repeats for at least 32 bytes. `pattern` is the repeated bytes. |
-| `residue` | Bytes that no run touched, and that are not text, BASIC, fill or a code region. `bytes` shows the first 16 bytes. |
+| `residue` | Bytes that no run touched, and that are not text, BASIC, fill, a code region, dead code or unknown code. `bytes` shows the first 16 bytes. |
 | `copies` | At least 32 bytes that are the same as earlier bytes of the program. `copyOf` is the address of the earlier bytes. |
-| `deadCode` | Code regions that no root reaches, as in `codeRegions.unreachable` of `separate`, and that no run executed. |
-| `unknownCode` | Code regions that no root reaches and that no run executed, but that are not dead code. No coverage shows that they did not run, or a flow in `unresolved` can go to them. Each flow has `at` and `kind`: `indirect-jump`, `written-operand` or `pushed-return`. |
+| `deadCode` | Code that no run executed and that nothing reaches. The script decodes the instructions from the entry, the routines, the code regions and the coverage. A call, a jump, a branch, a table entry or an interrupt vector reaches code. The reach starts at the entry, at the code that a run executed, at the patches and at the start screen. The leftover files of a generated source hold the same code. |
+| `unknownCode` | Code that no run executed and that nothing reaches, but that is not dead code: a flow in `unresolved` can go to it. Each flow has `at` and `kind`: `indirect-jump`, `written-operand` or `pushed-return`. |
 
 Each finding has `stages`: the unpack stages that wrote its bytes. A stage before the last stage is a depacker, an intro or a loader. Each finding also has `access`: the accesses of its bytes in the coverage.
 
@@ -229,9 +229,9 @@ Read the findings with care:
 
 Traps:
 
-- No coverage: `residue` is empty. Put the coverage of runs that use many parts of the program into the project knowledge.
-- No code regions: `deadCode` is empty, and `residue` can include code. Analyze the program for its code regions first.
-- `unknownCode` has items: a flow in `unresolved` can go to the code, or the knowledge has no coverage. Do not call this code dead. Find the targets of each flow in the emulator, and record a jump reference from the flow to each target in the project knowledge. When the flow goes outside the program, record the reference to that address.
+- No coverage: `residue`, `deadCode` and `unknownCode` are empty. Put the coverage of runs that use many parts of the program into the project knowledge.
+- No code regions and no routines: the script decodes only the code that the entry and the coverage reach. Then `deadCode` is empty, and `residue` can include code. Analyze the program for its code regions first.
+- `unknownCode` has items: a flow in `unresolved` can go to the code. Do not call this code dead. Find the targets of each flow in the emulator, and record a jump reference from the flow to each target in the project knowledge. When the flow goes outside the program, record the reference to that address.
 - Error `not-found`: the project knowledge has no program. Put the program into the project knowledge.
 
 ---

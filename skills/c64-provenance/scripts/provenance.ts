@@ -20,7 +20,8 @@ import { MAX_EXECUTION_COUNT } from "#src/host-client/tools.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { withRead, withWrite } from "#src/knowledge/database.ts";
-import { operandImages, programCoverage, releaseImage, requireProgram } from "#src/knowledge/program.ts";
+import { codeKnowledge, codeReach, decodeProgram, leftoverInput } from "#src/knowledge/code-reach.ts";
+import { operandImages, releaseImage, requireProgram } from "#src/knowledge/program.ts";
 import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
 import {
   commentsAt,
@@ -303,14 +304,10 @@ function stagesOf(stages: Array<Record<string, unknown>> | undefined, where = "t
   }));
 }
 
-/** The program in the knowledge with its stages and coverage, and the separation of its bytes. */
+/** The program in the knowledge with its stages and coverage, the knowledge of its code, and the separation of its bytes. */
 function programEvidence() {
-  const { program, coverage, regions, references } = withRead((db) => ({
-    program: requireProgram(db),
-    coverage: programCoverage(db)?.map,
-    regions: listRegions(db).filter((region) => CODE_REGION_TYPES.includes(region.type)),
-    references: listReferences(db),
-  }));
+  const knowledge = withRead((db) => codeKnowledge(db));
+  const { program, coverage } = knowledge;
   const stages = stagesOf(program.stages);
   const found = separate({
     segments: program.segments,
@@ -318,10 +315,10 @@ function programEvidence() {
     ...(program.entry === undefined ? {} : { entry: program.entry }),
     ...(stages === undefined ? {} : { stages }),
     ...(coverage === undefined ? {} : { coverage }),
-    codeRegions: regions,
-    references,
+    codeRegions: knowledge.regions.filter((region) => CODE_REGION_TYPES.includes(region.type)),
+    references: knowledge.references,
   });
-  return { program, stages, coverage, found };
+  return { knowledge, program, stages, coverage, found };
 }
 
 /** The roots of the reachability as a person reads them. */
@@ -397,15 +394,23 @@ function withFile(bodyOf: (most: number, rest: string) => Record<string, unknown
 /** The longest text that the result shows; --out has all of it. */
 const SHOWN_TEXT = 120;
 
-/** leftovers: what the program in the knowledge holds besides its working code. --out gets the fields of the body with all items and the full texts. */
-function leftoversCommand(call: Call): unknown {
+/**
+ * leftovers: what the program in the knowledge holds besides its working
+ * code. The dead and the unknown code come from the code reach of the decoded
+ * program, as the leftovers of a generated source do. --out gets the fields of
+ * the body with all items and the full texts.
+ */
+async function leftoversCommand(call: Call): Promise<unknown> {
   const out = call.string("out");
   const min = call.count("min-text")!;
-  const { program, stages, coverage, found } = programEvidence();
+  const { knowledge, program, stages, coverage, found } = programEvidence();
+  const { instructions } = await decodeProgram(program, knowledge, [], coverage);
+  const code = codeReach(leftoverInput(knowledge, instructions));
   const leftovers = findLeftovers({
     segments: program.segments,
     memory: program.memory,
     separation: found,
+    code,
     ...(program.segments.some((segment) => segment.start === 0x0801) ? { basicStart: 0x0801 } : {}),
     minText: min,
   });
@@ -424,7 +429,7 @@ function leftoversCommand(call: Call): unknown {
     copies: leftovers.copies.map(({ copyOf, ...rest }) => ({ ...show(rest), copyOf: formatC64Address(copyOf) })),
     deadCode: leftovers.deadCode.map(show),
     unknownCode: leftovers.unknownCode.map(show),
-    unresolved: found.unresolved.map((flow) => ({ at: formatC64Address(flow.at), kind: flow.kind })),
+    unresolved: code.unresolved.map((flow) => ({ at: formatC64Address(flow.at), kind: flow.kind })),
   };
   /** The body with at most `most` items in each list; the file has the full texts. */
   const bodyOf = (most: number, rest: string) => {
@@ -434,7 +439,7 @@ function leftoversCommand(call: Call): unknown {
       ...(program.entry === undefined ? {} : { entry: formatC64Address(program.entry) }),
       roots: found.roots.length === 0 ? NO_ROOTS : showRoots(found.roots),
       ...(stages === undefined ? { noStages: NO_STAGES } : { stages: stages.length }),
-      ...(coverage === undefined ? { noCoverage: "The knowledge has no coverage, so residue is empty and no finding has access. Put the coverage of runs into the project knowledge." } : {}),
+      ...(coverage === undefined ? { noCoverage: "The knowledge has no coverage, so residue, deadCode and unknownCode are empty, and no finding has access. Put the coverage of runs into the project knowledge." } : {}),
       text: list(all.text.map((item) => (item.text.length > shown ? { ...item, text: `${item.text.slice(0, shown)} ...`, length: item.text.length } : item))),
       basic: list(all.basic),
       fill: list(all.fill),
@@ -608,7 +613,7 @@ const COMMANDS: CommandSpec[] = [
   },
   {
     name: "leftovers",
-    summary: "What the program in the knowledge holds besides its working code: texts in PETSCII, screen codes, ASCII or with bit 7 set (Apple II), assembler source, BASIC lines away from the BASIC start, fills, untouched bytes outside code, copies of earlier bytes, and code regions that nothing reaches and no run executed.",
+    summary: "What the program in the knowledge holds besides its working code: texts in PETSCII, screen codes, ASCII or with bit 7 set (Apple II), assembler source, BASIC lines away from the BASIC start, fills, untouched bytes outside code, copies of earlier bytes, and code that nothing reaches and no run executed.",
     options: {
       out: { ...OPTIONS.out, output: "file", value: "<file>", help: "write the fields of the body, with all findings and the full texts, to this file" },
       "min-text": { kind: "count", value: "<n>", min: 4, max: 999, default: 8, help: "the shortest text to find (default 8)" },

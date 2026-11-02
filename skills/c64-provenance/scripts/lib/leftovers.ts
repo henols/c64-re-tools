@@ -1,13 +1,14 @@
 // Leftovers in one program for the c64-provenance script: text in PETSCII,
 // screen codes, ASCII or text with bit 7 set (Apple II), assembler source
 // lines, BASIC lines away from the BASIC start, fills, untouched
-// bytes outside code regions that no other finding explains, exact copies of
-// a byte range, and code that no call or jump reaches and no run executed. Each finding gets the stages and the accesses of
+// bytes outside code that no other finding explains, exact copies of
+// a byte range, and the unused and the unknown code of the code reach. Each finding gets the stages and the accesses of
 // its bytes from the separation. Evidence only: nothing here decides what a
 // leftover is or who made it.
 
-import { type AddressRange, basicLineText, subtract } from "#src/c64.ts";
+import { type AddressRange, basicLineText, mergeRanges, subtract } from "#src/c64.ts";
 import { MNEMONICS } from "#src/opcodes.ts";
+import type { CodeReach } from "#src/knowledge/code-reach.ts";
 import type { Access, Separation } from "#src/knowledge/separate.ts";
 
 export interface LeftoversInput {
@@ -15,6 +16,8 @@ export interface LeftoversInput {
   /** 64 KiB with the program bytes at their addresses. */
   memory: Uint8Array;
   separation: Separation;
+  /** The code reach of the program, as the leftovers of a generated source take it. */
+  code: Pick<CodeReach, "unused" | "unknown">;
   /** The first address of the BASIC start, which RUN lists: it is no leftover. */
   basicStart?: number;
   /** The fewest characters of a text (default 8). */
@@ -62,12 +65,8 @@ export interface CopyFinding extends AddressRange, Placement {
   copyOf: number;
 }
 
-/** A code region that no call or jump reaches from the entry, and that no run executed. */
-export interface DeadCodeFinding extends AddressRange, Placement {
-  type: string;
-  /** false when the coverage shows that it did not run; absent without coverage. */
-  executed?: false;
-}
+/** Code that nothing that stays reaches and that no run executed. */
+export type CodeFinding = AddressRange & Placement;
 
 export interface Leftovers {
   text: TextFinding[];
@@ -75,9 +74,10 @@ export interface Leftovers {
   fill: FillFinding[];
   residue: ResidueFinding[];
   copies: CopyFinding[];
-  deadCode: DeadCodeFinding[];
-  /** Code that nothing reaches and that no run executed, which is not dead: a flow that nobody resolved can go there, or no coverage shows that it did not run. */
-  unknownCode: DeadCodeFinding[];
+  /** The unused code of the code reach. */
+  deadCode: CodeFinding[];
+  /** Code that nothing reaches and that no run executed, which is not dead: a flow that nobody resolved can go there. */
+  unknownCode: CodeFinding[];
 }
 
 const MIN_TEXT = 8;
@@ -400,7 +400,7 @@ export function findCopies(memory: Uint8Array, segments: AddressRange[]): CopyFi
 }
 
 export function findLeftovers(input: LeftoversInput): Leftovers {
-  const { memory, segments, separation } = input;
+  const { memory, segments, separation, code } = input;
   const ranges = separation.ranges;
   const placement = (range: AddressRange): Placement => {
     const parts = ranges.filter((part) => part.start <= range.end && part.end >= range.start);
@@ -421,15 +421,9 @@ export function findLeftovers(input: LeftoversInput): Leftovers {
     if (last !== undefined && last.end + 1 === part.start) last.end = part.end;
     else untouched.push({ start: part.start, end: part.end });
   }
+  const deadCode = mergeRanges(code.unused);
   // Untouched code is code that the runs did not get to, or dead code, which has its own list.
-  const explained = [...text, ...basic, ...fill, ...separation.codeRegions];
+  const explained = [...text, ...basic, ...fill, ...separation.codeRegions, ...deadCode, ...code.unknown];
   const residue = untouched.flatMap((range) => subtract(range, explained).filter((piece) => piece.end - piece.start + 1 >= MIN_RESIDUE));
-  // The references miss IRQ vectors and jumps through tables: code that ran is not dead.
-  const unreached = separation.codeRegions
-    .filter((region) => region.reachable === false && region.executed !== true)
-    .map((region) => ({ start: region.start, end: region.end, type: region.type, ...(region.executed === false ? { executed: false as const } : {}), unknown: region.unknown === true }));
-  const finding = ({ unknown: _, ...region }: (typeof unreached)[number]): DeadCodeFinding => region;
-  const deadCode = unreached.filter((region) => !region.unknown).map(finding);
-  const unknownCode = unreached.filter((region) => region.unknown).map(finding);
-  return { text: placed(text), basic: placed(basic), fill: placed(fill), residue: placed(residue), copies: placed(findCopies(memory, segments)), deadCode: placed(deadCode), unknownCode: placed(unknownCode) };
+  return { text: placed(text), basic: placed(basic), fill: placed(fill), residue: placed(residue), copies: placed(findCopies(memory, segments)), deadCode: placed(deadCode), unknownCode: placed(code.unknown) };
 }
