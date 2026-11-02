@@ -12,7 +12,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import { type AddressRange, formatC64Address, formatC64Range, mergeRanges, rangesOverlap, type ReferenceKind, REFERENCE_KINDS, subtract, SYMBOL_NAME } from "../c64.ts";
+import { type AddressRange, formatC64Address, formatC64Range, inRanges, mergeRanges, rangesOverlap, type ReferenceKind, REFERENCE_KINDS, subtract, SYMBOL_NAME } from "../c64.ts";
 import { Refusal } from "../errors.ts";
 import { transaction } from "./database.ts";
 import { analyzerNamed, FACTS, referenceSuppressed, regionsOverlapping, suppressionsOverlapping, symbolAt, type ReferenceRow, type RegionRow, type SymbolRow } from "./read.ts";
@@ -96,7 +96,10 @@ export interface ImportResult {
   revision: string | null;
   /** The analyzer names. */
   names: ImportCounts;
-  regions: ImportCounts;
+  regions: ImportCounts & {
+    /** Data findings on executed code that the knowledge holds as code: not written, and no conflict. */
+    onExecutedCode: number;
+  };
   references: ImportCounts & {
     /** Findings from an address in a data region of the user, the LLM or a heuristic: false code, not written. */
     inData: number;
@@ -270,12 +273,21 @@ function contradictedData(db: DatabaseSync, findings: NormalizedFindings, space:
   return found;
 }
 
+/** True when the knowledge holds each executed instruction start in the range in a code or dual-use region. */
+function executedIsCode(db: DatabaseSync, findings: NormalizedFindings, range: AddressRange, space: Space): boolean {
+  const code = regionsOverlapping(db, range.start, range.end, space).filter((row) => isCode(row.type) || row.type === "dual-use");
+  for (let address = range.start; address <= range.end; address++) if (findings.executed!(address) && !inRanges(code, address)) return false;
+  return true;
+}
+
 function importRegions(db: DatabaseSync, change: Change, given: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = given;
   const space = given.space ?? DEFAULT_SPACE;
-  // Data findings over code evidence are conflicts, not facts.
+  // Data findings over code evidence are conflicts, not facts. Where a run executed the code and the knowledge holds it as code, nothing is left to decide: the finding is only counted.
   const contradicted = contradictedData(db, given, space);
-  result.conflicts.push(...contradicted);
+  const decided = contradicted.filter((item) => item.executed !== undefined && executedIsCode(db, given, item, space));
+  result.regions.onExecutedCode = decided.length;
+  result.conflicts.push(...contradicted.filter((item) => !decided.includes(item)));
   const findings = { ...given, regions: given.regions.filter((region) => !contradicted.some((item) => item.start === region.start && item.end === region.end)) };
   if (analyzer === "heuristic") {
     // An idiom is specific evidence about its bytes: the DXA or decompiler region there gives way, its parts outside stay.
@@ -450,7 +462,7 @@ export function importFindings(db: DatabaseSync, findings: NormalizedFindings, c
   const coverage = validateFindings(findings);
   return transaction(db, () => {
     const change = new Change(db, { origin: findings.analyzer, ...context }, `import-${findings.analyzer}`);
-    const result: ImportResult = { revision: null, names: counts(), regions: counts(), references: { ...counts(), inData: 0 }, conflicts: [] };
+    const result: ImportResult = { revision: null, names: counts(), regions: { ...counts(), onExecutedCode: 0 }, references: { ...counts(), inData: 0 }, conflicts: [] };
     importNames(db, change, findings, coverage, result);
     importRegions(db, change, findings, coverage, result);
     importReferences(db, change, findings, coverage, result);
