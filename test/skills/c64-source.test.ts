@@ -298,7 +298,7 @@ test("the loader sets the colour RAM of the entry from a free range outside the 
   assert.match(packed.text, new RegExp(`\\n\\* = \\$${hex(colours.start)}\\n {8}!byte \\$00,\\$07,\\$0e,\\$05,`));
 
   // Without the colour RAM in the entry state, and without room for the colours, the loader is the one without them.
-  assert.equal(loaderLimits(planLoader({ segments: [{ start: 0x0801, end: 0x0fff, files: ["a.asm"] }], byteAt, state: state(), entry: 0x0810, header: [] })).at(-1), "The entry state has no colour RAM, so the loader does not set it. Capture the program again at its entry point to get it.");
+  assert.equal(loaderLimits(planLoader({ segments: [{ start: 0x0801, end: 0x0fff, files: ["a.asm"] }], byteAt, state: state(), entry: 0x0810, header: [] })).at(-1), "The entry state has no colour RAM, so the loader does not set it. The colour RAM of a capture of a crack is the state of the crack.");
   const full = planLoader({ segments: [{ start: 0x0400, end: 0x1234, files: ["a.asm"] }, { start: 0x1700, end: 0xffff, files: ["b.asm"] }], byteAt, state: state({ colourRam }), entry: 0x0810, header: [] });
   assert.deepEqual([full.colours, full.copier, full.copies.map((copy) => copy.what)], [undefined, 0x1235, ["entry state $0002-$03ff"]]);
   assert.match(loaderLimits(full).at(-1)!, /^The loader has no room for the 1000 colours of the colour RAM in \$0400-\$cfff or \$e000-\$fff9 outside the segments, the loader and its copier, so it does not set the colour RAM\./);

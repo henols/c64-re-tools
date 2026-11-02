@@ -40,7 +40,8 @@ In these cases, set the switch values in `config.asm`. Then run `generate --out 
 - `program` and `symbols`: the loader program and its symbols file.
 - The `copies` in their order, `copier` and `stackByte`.
 - `verified: true`: the check ran the loader program to its jump to the entry. There, the memory, $00/$01, the registers, the VIC-II and the colour RAM are equal to the entry state. The raster line and the CIA values are also equal. An interrupt can run right at the entry, as in the program of the base release.
-- `limits`: each CIA value that the loader cannot set as it was at the entry. An old capture has no CIA values or no colour RAM. Then capture the program again at its entry point.
+- `limits`: each CIA value that the loader cannot set as it was at the entry. An old capture has no CIA values. Then capture the program again at its entry point.
+  When the entry state has no colour RAM, the loader does not set the colour RAM. The colour RAM of a capture of a crack is the state of the crack.
   When no free RAM outside the segments has room for the 1000 colours, the loader does not set the colour RAM, and `limits` tells this. Then the program starts with other colours where it does not write them.
 - `startScreen`: with a start screen, `shown: true` when the VIC-II had the values of the start screen, and `waits: true` when the start screen waited without a key.
 - `packed`: `packedBytes` and `unpackedBytes` of the packed form. A program that is too large for one loader file gets the packed form. With a start screen of a captured stage, this is the packed program in the loader program.

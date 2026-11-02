@@ -510,7 +510,7 @@ function byteLines(range: AddressRange, bytes: (address: number) => number): str
  */
 export function planLoader(input: LoaderInput): LoaderPlan {
   const { colourRam } = input.state;
-  if (colourRam === undefined) return { ...planForm(input, undefined)!, colourLimit: "The entry state has no colour RAM, so the loader does not set it. Capture the program again at its entry point to get it." };
+  if (colourRam === undefined) return { ...planForm(input, undefined)!, colourLimit: "The entry state has no colour RAM, so the loader does not set it. The colour RAM of a capture of a crack is the state of the crack." };
   // The colours take 1000 bytes of free RAM and make the loader larger: a plan that has no room for them is made without them.
   try {
     const plan = planForm(input, colourRam);
