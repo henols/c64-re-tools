@@ -17,7 +17,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { PACKAGE } from "#src/package.ts";
 import { BUILD_DIRECTORY, buildName, CONFIG_FILE, configValues, symbolsPath } from "#src/build-name.ts";
-import { type AddressRange, coverageSeedKinds, findHandoffs, formatC64Address, formatC64Byte, formatC64Range, formatC64RangeFields, hexWord, inRanges, mergeRanges, parseTokenized, rangesOverlap, subtract, textToPetscii } from "#src/c64.ts";
+import { type AddressRange, formatC64Address, formatC64Byte, formatC64Range, formatC64RangeFields, hexWord, inRanges, mergeRanges, rangesOverlap, subtract, textToPetscii } from "#src/c64.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { IO_RAM } from "#src/host-client/coverage.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
@@ -26,16 +26,17 @@ import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-sess
 import { conflicts } from "#src/knowledge/conflicts.ts";
 import { withRead, withWrite } from "#src/knowledge/database.ts";
 import { identifiers } from "#src/knowledge/expression.ts";
-import { analyzedBytes, memoryRows, programCoverage, releaseImage, requireProgram, type ProgramImage } from "#src/knowledge/program.ts";
-import { ANALYZER_NAME_ORDER, baseValue, currentRevision, currentStartScreen, sourceRevision, startScreenRanges, type StartScreenRow, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listReleases, listSpaces, listSwitches, listSymbols, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, INSTRUCTION_REGION_TYPES, isSemantic, LEFTOVER_FOLDER, LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
+import { clipped, codeKnowledge, effectiveRegions } from "#src/knowledge/code-reach.ts";
+import { memoryRows, releaseImage, type ProgramImage } from "#src/knowledge/program.ts";
+import { ANALYZER_NAME_ORDER, baseValue, currentRevision, sourceRevision, startScreenRanges, type StartScreenRow, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listReleases, listSpaces, listSwitches, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
+import { DEFAULT_SPACE, LEFTOVER_FOLDER, LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
 import { write } from "#src/knowledge/write.ts";
 import { assemble, symbolsFileText } from "#src/native/acme.ts";
-import { analyze } from "#src/native/decompiler/analyze.ts";
 import { PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
+import { decodeProgram, leftoverInput, reachInput } from "#src/program-code.ts";
 import { localToolContext } from "#src/native/local.ts";
-import { DECOMPILER_LIMITS, type AssembledSymbol, type Diagnostic } from "#src/native/types.ts";
-import { decode as decodeRegister, describeAddress, platformNames, platformNamesFor, romRanges, romUseOfProgram } from "#src/platform.ts";
+import type { AssembledSymbol, Diagnostic } from "#src/native/types.ts";
+import { decode as decodeRegister, describeAddress, platformNames, platformNamesFor, romUseOfProgram } from "#src/platform.ts";
 import { ensureLocal, generatedDirectory, LOCAL_DIRECTORY, newProjectFolder, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { generatedReferences } from "#src/reference-pages.ts";
 import { isoCet } from "#src/time.ts";
@@ -88,34 +89,22 @@ function knowledgeOf(db: DatabaseSync | undefined, space: Space, analyzerNames =
   // With conflicts from a git merge, the source would depend on which of two rows comes first.
   const found = conflicts(db).length;
   if (found > 0) throw new Refusal("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Merge the open changes of the project knowledge. Then run the command again.`);
-  const symbols = listSymbols(db, undefined, undefined, undefined, space);
-  const second = listAnalyzerNames(db, undefined, undefined, undefined, space);
+  const code = codeKnowledge(db, space);
   const releases = listReleases(db, undefined, space);
   const base = releases.find((release) => release.base)?.label;
-  const startScreen = space === DEFAULT_SPACE ? currentStartScreen(db, space) : undefined;
   return {
     revision: currentRevision(db),
     // The source and its loader hold the program of this space and the stage of its start screen: a change elsewhere does not change them.
     sourceRevision: sourceRevision(db, space),
-    program: requireProgram(db, space),
-    // The coverage of the space: a run of the C64, or of a captured stage that coverage put into that space.
-    coverage: programCoverage(db, space)?.map,
-    symbols: analyzerNames ? withAnalyzerNames(symbols, second) : symbols,
-    // Analyzer routines are entry points for the decode, also without --analyzer-names.
-    routines: [...symbols, ...second].filter((symbol) => symbol.kind === "routine").map((symbol) => symbol.address),
-    regions: listRegions(db, undefined, undefined, undefined, space),
+    ...code,
+    symbols: analyzerNames ? withAnalyzerNames(code.symbols, listAnalyzerNames(db, undefined, undefined, undefined, space)) : code.symbols,
     comments: listComments(db, undefined, undefined, space),
     modules: listModules(db, undefined, undefined, space),
-    references: listReferences(db, undefined, undefined, undefined, space),
-    operands: listOperands(db, undefined, undefined, space),
-    patches: listPatches(db, undefined, undefined, undefined, space),
     switches: listSwitches(db, undefined, space).map((row): SourceSwitch => ({ name: row.name, kind: row.kind, default: row.default, base: baseValue(row, base), releases: row.releases, ...(row.comment === undefined ? {} : { comment: row.comment }) })),
     // Each release with its bytes: the check builds it and compares the build with them.
     releases: releases.map((release) => ({ ...release, image: releaseImage(db, release.label, space)! })),
     macros: listMacros(db, undefined, space),
     macroUses: listMacroUses(db, undefined, undefined, undefined, space),
-    // The start screen is of the C64 program: the loader shows it.
-    startScreen,
   };
 }
 
@@ -141,64 +130,6 @@ function withAnalyzerNames(symbols: SymbolRow[], second: SymbolRow[]): SymbolRow
     }
   }
   return [...symbols, ...added].sort((a, b) => a.address - b.address);
-}
-
-/** The byte of the image at an address, or undefined outside its segments. */
-const imageByte = (image: ProgramImage) => (address: number) => (inRanges(image.segments, address) ? image.byteAt(address) : undefined);
-
-/** Where the CPU sees ROM in the image (romRanges): the entry, the routines, the code regions and `entries` stay code. */
-function romOf(image: ProgramImage, knowledge: Pick<SourceKnowledge, "routines" | "regions">, entries: readonly number[], coverage: Uint8Array | undefined): AddressRange[] {
-  const code = knowledge.regions.filter((region) => INSTRUCTION_REGION_TYPES.includes(region.type)).map((region) => region.start);
-  const known = [...(image.entry === undefined ? [] : [image.entry]), ...entries, ...knowledge.routines, ...code];
-  return romRanges(coverage, image.state, imageByte(image), known);
-}
-
-/**
- * The decompiler's instruction starts and lengths inside the image, seeded from the
- * entry, from knowledge of any origin, and from the coverage: a run's flow
- * starts, also after a JSR, so code that an analyzer does not reach by itself
- * is in the source. A program without a seed has no known code: it is data
- * only, and the decompiler does not run.
- */
-async function decode(image: ProgramImage, knowledge: Pick<SourceKnowledge, "routines" | "regions">, entries: number[], coverage: Uint8Array | undefined): Promise<{ instructions: Map<number, number>; dataOnly: boolean }> {
-  const inImage = (address: number) => inRanges(image.segments, address);
-  const seeds = new Set<number>([...(image.entry === undefined ? [] : [image.entry]), ...entries]);
-  for (const address of knowledge.routines) seeds.add(address);
-  const flows = coverage === undefined ? { routines: [], codeStarts: [] } : coverageSeedKinds(coverage, imageByte(image));
-  for (const address of flows.routines) seeds.add(address);
-  for (const region of knowledge.regions) {
-    if (CODE_REGION_TYPES.includes(region.type)) seeds.add(region.start);
-    if (region.type === "jumps") for (let at = region.start; at + 2 <= region.end; at += 3) seeds.add(at);
-  }
-  const entryPoints = [...seeds].filter(inImage).sort((a, b) => a - b);
-  if (entryPoints.length === 0) {
-    // An entry in no segment is a capture fault: the image is data only, and the result says entryOutside.
-    return { instructions: new Map(), dataOnly: image.entry === undefined || inImage(image.entry) };
-  }
-  const dataRanges = knowledge.regions
-    .filter((region) => !INSTRUCTION_REGION_TYPES.includes(region.type))
-    .flatMap((region) => image.segments.filter((segment) => rangesOverlap(region, segment)).map((segment) => ({ start: Math.max(region.start, segment.start), end: Math.min(region.end, segment.end) })));
-  // A JSR into ROM runs the ROM: the RAM bytes of the image under it are data, not the code of the call.
-  for (const range of romOf(image, knowledge, entries, coverage)) if (!dataRanges.some((data) => rangesOverlap(range, data))) dataRanges.push(range);
-  const { result } = await analyze(
-    {
-      imageKind: analyzedBytes(image).kind,
-      entryPoints: entryPoints.slice(0, DECOMPILER_LIMITS.entryPoints),
-      codeStarts: flows.codeStarts.filter((address) => !seeds.has(address)).slice(0, DECOMPILER_LIMITS.codeStarts),
-      dataRanges: dataRanges.slice(0, DECOMPILER_LIMITS.dataRanges),
-      labels: [],
-      decompile: [],
-    },
-    analyzedBytes(image).bytes,
-    localToolContext(),
-  );
-  const instructions = new Map<number, number>();
-  for (const instruction of result.instructions) {
-    const bytes = Buffer.from(instruction.bytes, "hex");
-    const inside = Array.from({ length: bytes.length }, (_, offset) => instruction.address + offset).every((address, offset) => inImage(address) && image.byteAt(address) === bytes[offset]);
-    if (inside) instructions.set(instruction.address, bytes.length);
-  }
-  return { instructions, dataOnly: false };
 }
 
 /** Assembles files given as text with ACME; the program or the diagnostics. */
@@ -787,7 +718,7 @@ function removeOldFiles(out: string, keep: ReadonlySet<string>, loaderRun: boole
 }
 
 /** The instructions that the decompiler decoded, and whether the program has known code. */
-type DecodedProgram = Awaited<ReturnType<typeof decode>>;
+type DecodedProgram = Awaited<ReturnType<typeof decodeProgram>>;
 
 /** How buildSource makes and checks the source of a knowledge. */
 interface SourceOptions {
@@ -826,7 +757,7 @@ async function buildSource(knowledge: SourceKnowledge, options: SourceOptions) {
   const coverage = knowledge.coverage;
   const romUse = romUseOfProgram(coverage, image.state);
   const platform = platformNamesFor(romUse);
-  const { instructions, dataOnly } = options.decoded ?? (await decode(image, knowledge, options.entries, coverage));
+  const { instructions, dataOnly } = options.decoded ?? (await decodeProgram(image, knowledge, options.entries, coverage));
   const leftoverPlan = options.leftovers === true && !dataOnly ? leftoversOf(knowledge, instructions) : { ranges: [], unknown: [], unresolved: [] };
   const leftovers = leftoverPlan.ranges;
   const laid = layout({
@@ -1015,7 +946,7 @@ async function stageBytes(row: StartScreenRow): Promise<{ parts: StagePart[]; co
     }
     // The call is the entry of the stage: what it does not reach and its run did not touch stays out.
     const called = { ...knowledge, program: { ...image, entry: row.call } };
-    const { instructions } = await decode(called.program, called, [row.call], knowledge.coverage);
+    const { instructions } = await decodeProgram(called.program, called, [row.call], knowledge.coverage);
     const free = leftoversOf(called, instructions, screen).ranges;
     ranges = [...screen, ...image.segments.flatMap((segment) => subtract(segment, free))];
   }
@@ -1378,79 +1309,17 @@ function exportValue(row: SourceSwitch): 0 | 1 {
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /**
- * The BASIC line that starts a PRG: its bytes, and the address of its first
- * SYS when the image holds it (the entry of a PRG without one in the
- * knowledge). Undefined when the first segment holds no BASIC line with a SYS.
- */
-function basicStart(image: ProgramImage): { line: AddressRange; entry?: number } | undefined {
-  const first = image.segments[0];
-  if (first === undefined) return undefined;
-  const tokenized = parseTokenized(Uint8Array.from([first.start & 0xff, first.start >> 8, ...image.memory.subarray(first.start, first.end + 1)]));
-  if ("reason" in tokenized) return undefined;
-  const sys = findHandoffs(tokenized.lines).find((handoff) => handoff.kind === "sys");
-  if (sys === undefined) return undefined;
-  const line = { start: first.start, end: Math.min(first.end, tokenized.basicEnd - 1) };
-  const address = "address" in sys ? sys.address : undefined;
-  return address !== undefined && inRanges(image.segments, address) ? { line, entry: address } : { line };
-}
-
-/** The parts of a region outside the holes. A part that is not the whole region has no element size: its length need not be a multiple of it. */
-function clipped<R extends { start: number; end: number; element?: number }>(region: R, holes: readonly AddressRange[]): R[] {
-  return subtract(region, [...holes]).map((piece) => {
-    if (piece.start === region.start && piece.end === region.end) return region;
-    const part = { ...region, ...piece };
-    delete part.element;
-    return part;
-  });
-}
-
-/** The regions that decide the memory map: the user and LLM regions, and the parts of analyzer regions outside them. */
-function effectiveRegions(regions: SourceKnowledge["regions"]): SourceKnowledge["regions"] {
-  const semantic = regions.filter((region) => isSemantic(region.origin));
-  const holes = semantic.map((region) => ({ start: region.start, end: region.end }));
-  return [...semantic, ...regions.filter((region) => !isSemantic(region.origin)).flatMap((region) => clipped(region, holes))].sort((a, b) => a.start - b.start);
-}
-
-/** The names and the four-digit hex addresses that the code of a patch has: a switch can go to them, so they stay. */
-function patchTargets(code: string, addressOf: ReadonlyMap<string, number>): number[] {
-  const words = code.replace(/;.*$/gm, "").match(/\$[0-9a-fA-F]{4}\b|[A-Za-z_][A-Za-z0-9_]*/g) ?? [];
-  return words.flatMap((word) => (word.startsWith("$") ? [Number.parseInt(word.slice(1), 16)] : addressOf.has(word) ? [addressOf.get(word)!] : []));
-}
-
-/**
  * The free ranges of a program: code that no run executed and that nothing
  * reaches, and data that no run touched and that nothing names (planDrops).
  * The export makes them $00; generate makes them the leftovers. `memory` and
  * `instructions` are of the build that the ranges are free in.
  */
 function freeRanges(knowledge: SourceKnowledge, memory: Uint8Array, instructions: ReadonlyMap<number, number>, ranges: { changed: readonly AddressRange[]; keep: readonly AddressRange[]; drop: readonly AddressRange[] }) {
-  const image = knowledge.program;
-  const addressOf = new Map(knowledge.symbols.map((symbol) => [symbol.name, symbol.address]));
-  const operandTargets = new Map<number, number[]>();
-  for (const operand of knowledge.operands) {
-    const names = operand.symbol !== undefined ? [operand.symbol] : identifiers(operand.expression ?? "");
-    const targets = names.flatMap((item) => (addressOf.has(item) ? [(addressOf.get(item)! + (operand.symbol !== undefined ? operand.offset : 0)) & 0xffff] : []));
-    operandTargets.set(operand.address, targets);
-  }
-  const basic = basicStart(image);
-  const entry = image.entry ?? basic?.entry;
-  return planDrops({
-    segments: image.segments,
-    memory,
-    ...(entry === undefined ? {} : { entry }),
-    instructions,
-    ...(knowledge.coverage === undefined ? {} : { coverage: knowledge.coverage }),
-    regions: effectiveRegions(knowledge.regions),
-    references: knowledge.references,
-    operandTargets,
-    rom: romOf(image, knowledge, [], knowledge.coverage),
-    ...(basic === undefined ? {} : { basic: basic.line }),
-    changed: [...ranges.changed],
-    keep: [...ranges.keep],
-    drop: [...ranges.drop],
-    routines: knowledge.symbols.filter((symbol) => symbol.kind === "routine"),
-  });
+  return planDrops({ ...reachInput(knowledge, memory, instructions, ranges), routines: routinesOf(knowledge) });
 }
+
+/** The routine names of the source: they name the code that a run executed and that the entry does not reach. */
+const routinesOf = (knowledge: SourceKnowledge) => knowledge.symbols.filter((symbol) => symbol.kind === "routine");
 
 /**
  * The leftovers of generate: the free ranges of the program as it is. The
@@ -1459,14 +1328,7 @@ function freeRanges(knowledge: SourceKnowledge, memory: Uint8Array, instructions
  * LEFTOVERS = 0.
  */
 function leftoversOf(knowledge: SourceKnowledge, instructions: ReadonlyMap<number, number>, kept: readonly AddressRange[] = []): UnknownCode & { ranges: AddressRange[] } {
-  const image = knowledge.program;
-  const inImage = (range: AddressRange) => image.segments.some((segment) => range.start >= segment.start && range.end <= segment.end);
-  const addressOf = new Map(knowledge.symbols.map((symbol) => [symbol.name, symbol.address]));
-  const screenParts = knowledge.startScreen === undefined || knowledge.startScreen.stage !== undefined ? [] : startScreenRanges(knowledge.startScreen).map((part) => part.range);
-  const named = knowledge.patches.flatMap((patch) => patchTargets(patch.code, addressOf)).map((address) => ({ start: address, end: address }));
-  const keep = [...screenParts, ...kept, ...named].map((range) => ({ start: range.start, end: range.end })).filter(inImage);
-  const changed = knowledge.patches.map((patch) => ({ start: patch.start, end: patch.end })).filter(inImage);
-  const plan = freeRanges(knowledge, image.memory, instructions, { changed, keep, drop: [] });
+  const plan = planDrops({ ...leftoverInput(knowledge, instructions, kept), routines: routinesOf(knowledge) });
   const free = plan.free.map((range) => ({ start: range.start, end: range.end }));
   // A macro use in code that nothing uses goes with that code. A leftover never cuts a use in two: its edge stops at the use.
   const cut = (range: AddressRange) => knowledge.macroUses.filter((use) => rangesOverlap(use, range) && (use.start < range.start || use.end > range.end));
@@ -1565,7 +1427,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   });
   const bakedImage: ProgramImage = { space: DEFAULT_SPACE, segments: image.segments, memory, byteAt: (address) => memory[address]!, ...(image.entry === undefined ? {} : { entry: image.entry }), ...(image.state === undefined ? {} : { state: image.state }) };
   // Without a changed byte, the baked image is the image: the decode of the base source holds.
-  const decoded = changed.length === 0 ? { instructions: baseSource.instructions, dataOnly: baseSource.dataOnly } : await decode(bakedImage, knowledge, [], knowledge.coverage);
+  const decoded = changed.length === 0 ? { instructions: baseSource.instructions, dataOnly: baseSource.dataOnly } : await decodeProgram(bakedImage, knowledge, [], knowledge.coverage);
 
   // 4. The free ranges.
   const regions = effectiveRegions(knowledge.regions);

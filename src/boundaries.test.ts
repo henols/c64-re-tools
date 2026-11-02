@@ -16,7 +16,7 @@ function areaOf(path: string): string | undefined {
   if (parts[0] === "src") {
     if (parts.length === 2) {
       const leaf = parts[1]!.replace(/(\.test|\.testkit)?\.ts$/, "");
-      return ["build-name", "c64", "c64-keys", "compare", "errors", "graphics", "loader", "media", "opcodes", "package", "platform", "project", "reference-pages", "script", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
+      return ["build-name", "c64", "c64-keys", "compare", "errors", "graphics", "loader", "media", "opcodes", "package", "platform", "program-code", "project", "reference-pages", "script", "time", "trace", "vsf", "zip"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
     return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
@@ -41,6 +41,8 @@ const ALLOWED: Record<string, readonly string[]> = {
   opcodes: ["c64"],
   // The platform memory map: names and meanings of C64 addresses.
   platform: ["c64"],
+  // The code of a program from the knowledge: the decompiler's decode and the input of the code reach, for c64-source and c64-provenance.
+  "program-code": ["c64", "knowledge", "native", "platform"],
   // The first line of a generated reference page: c64-docs writes it, c64-source reads it.
   "reference-pages": [],
   // Indexed images: the PNG encoder of emulator frames, and sprites and bitmaps as images.
@@ -74,7 +76,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   cli: ["host-client", "native", "protocol", "script", "distribution", "trace", "package"],
   distribution: ["package"],
 };
-const SKILL_ALLOWED = ["build-name", "loader", "host-client", "native", "knowledge", "project", "c64", "c64-keys", "compare", "graphics", "opcodes", "package", "platform", "reference-pages", "script", "time", "media", "vsf", "zip"];
+const SKILL_ALLOWED = ["build-name", "loader", "host-client", "native", "knowledge", "project", "c64", "c64-keys", "compare", "graphics", "opcodes", "package", "platform", "program-code", "reference-pages", "script", "time", "media", "vsf", "zip"];
 
 /**
  * Checks one import. `from` is the repository-relative importing file.

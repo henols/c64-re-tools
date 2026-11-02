@@ -1,6 +1,7 @@
 // The leftovers of c64-provenance: text in PETSCII and screen codes, BASIC
 // lines away from the BASIC start, fills, untouched bytes outside code,
-// copies, and code that nothing reaches and nothing ran.
+// copies, and code that nothing reaches and nothing ran, which is the code of
+// the leftovers of a generated source.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -10,6 +11,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
+import { ACME, findTool } from "../../src/native/discover.ts";
 import { withWrite } from "../../src/knowledge/database.ts";
 import { applyBatch } from "../../src/knowledge/write.ts";
 import { findBasic, findCopies, findFills, findLeftovers, findText } from "../../skills/c64-provenance/scripts/lib/leftovers.ts";
@@ -22,7 +24,15 @@ after(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
+let acmeSkip: string | false = false;
+try {
+  findTool(ACME);
+} catch {
+  acmeSkip = "ACME is not installed: install acme or set C64RT_ACME to run this test";
+}
+
 const provenance = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
+const source = resolve(import.meta.dirname, "../../skills/c64-source/scripts/source.ts");
 /** Runs a script in `cwd`: the exit status, the envelope, and json (the body, or { error: { code, message } }). */
 const script = (path: string, args: string[], cwd: string) => {
   const spawned = spawnSync(process.execPath, [...process.execArgv, path, ...args], { cwd, encoding: "utf8" });
@@ -129,7 +139,7 @@ test("fills of one byte and of a short pattern, copies of earlier bytes", () => 
   assert.deepEqual(findCopies(memory, segments), [{ start: 0x2400, end: 0x24ff, copyOf: 0x2000 }]);
 });
 
-test("residue is untouched bytes without text and fill; dead code and the placement come from the separation", () => {
+test("residue is untouched bytes without text, fill, code regions and dead code; the placement comes from the separation", () => {
   const memory = new Uint8Array(0x10000);
   memory.set(seededBytes(3, 0x7f), 0x1000); // a zero ends the bytes before the text
   memory.set(petscii("VERSION 1.2 BY ME"), 0x1080);
@@ -139,30 +149,51 @@ test("residue is untouched bytes without text and fill; dead code and the placem
   coverage.fill(COVERAGE.ramRead, 0x1000, 0x1040);
   const segments = [{ start: 0x1000, end: 0x10ff }];
   const stages = [{ entry: 0x0810, wrote: [{ start: 0x1000, end: 0x10ff }] }];
-  const separation = separate({ segments, memory, entry: 0x1000, stages, coverage, codeRegions: [{ start: 0x1000, end: 0x1003, type: "code" }, { start: 0x10f0, end: 0x10ff, type: "code" }], references: [] });
-  const found = findLeftovers({ segments, memory, separation });
+  const separation = separate({ segments, memory, entry: 0x1000, stages, coverage, codeRegions: [{ start: 0x1000, end: 0x1003, type: "code" }], references: [] });
+  // The code reach gives the dead code: two blocks that touch are one finding.
+  const found = findLeftovers({ segments, memory, separation, code: { unused: [{ start: 0x10f0, end: 0x10f7 }, { start: 0x10f8, end: 0x10ff }], unknown: [] } });
   assert.deepEqual(found.text.map((item) => [item.start, item.text, item.stages, item.access]), [[0x1080, "VERSION 1.2 BY ME", [0], ["untouched"]]]);
   // The zeros right after the text belong to the fill.
   assert.deepEqual(found.fill.map((item) => [item.start, item.end]), [[0x1091, 0x10bf]]);
   // The dead code at $10f0 has its own list, so residue stops before it.
   assert.deepEqual(found.residue.map((item) => [item.start, item.end]), [[0x1040, 0x107f], [0x10c0, 0x10ef]]);
-  assert.deepEqual(found.deadCode, [{ start: 0x10f0, end: 0x10ff, type: "code", executed: false, stages: [0], access: ["untouched"] }]);
+  assert.deepEqual(found.deadCode, [{ start: 0x10f0, end: 0x10ff, stages: [0], access: ["untouched"] }]);
 });
 
-test("code that nothing reaches is unknown, not dead code, while the program has a jump that nobody resolved", () => {
-  const segments = [{ start: 0x1000, end: 0x10ff }];
+test("with real ACME, the dead and the unknown code of the leftovers command are the code of the leftovers and the unknown code of a generated source", { skip: acmeSkip, timeout: 600_000 }, () => {
+  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-leftovers-"));
+  roots.push(root);
+  // $1000 JSR $1010; JMP ($1030): a run wrote the vector. $1006 LDA #2; RTS: nothing reaches it, no run executed it. $1010 RTS.
   const memory = new Uint8Array(0x10000);
-  memory.set([0x6c, 0x00, 0x20, 0x60], 0x1000); // JMP ($2000): a vector outside the program
-  memory.set([0xa9, 0x00, 0x60], 0x10f0);
+  memory.set([0x20, 0x10, 0x10, 0x6c, 0x30, 0x10, 0xa9, 0x02, 0x60], 0x1000);
+  memory.set([0x60], 0x1010);
+  memory.set([0x00, 0x10], 0x1030);
+  importImage(root, memory, { segments: [{ start: 0x1000, end: 0x1031 }], entry: 0x1000 });
+  withWrite((db) => applyBatch(db, { origin: "llm" }, [{ op: "classify", start: 0x1006, end: 0x1008, type: "code" }]), root);
   const coverage = new Uint8Array(0x10000);
-  coverage[0x1000] = COVERAGE.ramExecute;
-  const codeRegions = [{ start: 0x1000, end: 0x1003, type: "code" }, { start: 0x10f0, end: 0x10f2, type: "code" }];
-  const open = findLeftovers({ segments, memory, separation: separate({ segments, memory, entry: 0x1000, coverage, codeRegions, references: [] }) });
-  assert.deepEqual(open.deadCode, []);
-  assert.deepEqual(open.unknownCode.map((item) => [item.start, item.end]), [[0x10f0, 0x10f2]]);
-  const resolved = findLeftovers({ segments, memory, separation: separate({ segments, memory, entry: 0x1000, coverage, codeRegions, references: [{ from: 0x1000, to: 0x1000, kind: "jump", origin: "llm" }] }) });
-  assert.deepEqual(resolved.deadCode.map((item) => [item.start, item.end]), [[0x10f0, 0x10f2]]);
-  assert.deepEqual(resolved.unknownCode, []);
+  for (const address of [0x1000, 0x1003, 0x1010]) coverage[address] = COVERAGE.ramExecute;
+  coverage[0x1030] = COVERAGE.ramWrite;
+  importCoverage(root, { "cov.bin": coverage });
+  type Listed = { count: number; listed: Array<{ start?: string; end?: string; at?: string; kind?: string }> };
+  const spans = (list: Listed | undefined) => (list?.listed ?? []).map((item) => [item.start, item.end]);
+  const flows = (list: Listed | undefined) => (list?.listed ?? []).map((item) => [item.at, item.kind]);
+  const both = () => {
+    const left = script(provenance, ["leftovers"], root);
+    assert.equal(left.status, 0, left.stdout + left.stderr);
+    const made = script(source, ["generate", "--out", "src"], root);
+    assert.equal(made.status, 0, made.stdout + made.stderr);
+    const found = left.json as { deadCode: Listed; unknownCode?: Listed; unresolved?: Listed };
+    const generated = made.json as { leftovers?: Listed; unknownCode?: Listed & { unresolved: Listed } };
+    assert.deepEqual([spans(found.deadCode), spans(found.unknownCode), flows(found.unresolved)], [spans(generated.leftovers), spans(generated.unknownCode), flows(generated.unknownCode?.unresolved)]);
+    return found;
+  };
+  // While the jump through the vector is open, the code at $1006 is unknown in both.
+  const open = both();
+  assert.deepEqual([spans(open.deadCode), spans(open.unknownCode), flows(open.unresolved)], [[], [["$1006", "$1008"]], [["$1003", "indirect-jump"]]]);
+  // A jump reference of the LLM from $1003 resolves the jump: the code at $1006 is dead in both.
+  withWrite((db) => applyBatch(db, { origin: "llm" }, [{ op: "reference", from: 0x1003, to: 0x1000, kind: "jump" }]), root);
+  const resolved = both();
+  assert.deepEqual([spans(resolved.deadCode), spans(resolved.unknownCode)], [[["$1006", "$1008"]], []]);
 });
 
 test("the leftovers command lists each kind of finding with --max-listed, and --out gets the fields of the body with all findings", () => {

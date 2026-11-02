@@ -298,7 +298,7 @@ test("the loader sets the colour RAM of the entry from a free range outside the 
   assert.match(packed.text, new RegExp(`\\n\\* = \\$${hex(colours.start)}\\n {8}!byte \\$00,\\$07,\\$0e,\\$05,`));
 
   // Without the colour RAM in the entry state, and without room for the colours, the loader is the one without them.
-  assert.equal(loaderLimits(planLoader({ segments: [{ start: 0x0801, end: 0x0fff, files: ["a.asm"] }], byteAt, state: state(), entry: 0x0810, header: [] })).at(-1), "The entry state has no colour RAM, so the loader does not set it. Capture the program again at its entry point to get it.");
+  assert.equal(loaderLimits(planLoader({ segments: [{ start: 0x0801, end: 0x0fff, files: ["a.asm"] }], byteAt, state: state(), entry: 0x0810, header: [] })).at(-1), "The entry state has no colour RAM, so the loader does not set it. The colour RAM of a capture of a crack is the state of the crack.");
   const full = planLoader({ segments: [{ start: 0x0400, end: 0x1234, files: ["a.asm"] }, { start: 0x1700, end: 0xffff, files: ["b.asm"] }], byteAt, state: state({ colourRam }), entry: 0x0810, header: [] });
   assert.deepEqual([full.colours, full.copier, full.copies.map((copy) => copy.what)], [undefined, 0x1235, ["entry state $0002-$03ff"]]);
   assert.match(loaderLimits(full).at(-1)!, /^The loader has no room for the 1000 colours of the colour RAM in \$0400-\$cfff or \$e000-\$fff9 outside the segments, the loader and its copier, so it does not set the colour RAM\./);
@@ -1540,6 +1540,23 @@ test("a macro use is one +name args line, and macros.asm holds the macros", () =
   assert.deepEqual(rendered.uses.map((use) => [use.start, use.line]), [[0x1000, 5], [0x1006, 6]]);
   const without = render(layout(macroInput([], { macros: [] })), new Set(), []);
   assert.equal(without.files.some((file) => file.name === "macros.asm"), false, "no macros, no macros.asm");
+});
+
+test("with coverage, an instruction inside a macro use that no run executed is marked and listed with its own range", () => {
+  const uses = [{ start: 0x1000, end: 0x1005, macro: "inc16", args: ["ptr"] }, { start: 0x1006, end: 0x100b, macro: "inc16", args: ["ptr+2"] }];
+  const covered = (...executed: number[]) => {
+    const coverage = new Uint8Array(0x10000);
+    for (const address of executed) coverage[address] = COVERAGE.ramExecute;
+    return render(layout(macroInput(uses, { coverage })), new Set(), []);
+  };
+  // The runs executed the INC and BNE of each use, and not the INC of the high byte of the first one or the RTS.
+  const inner = covered(0x1000, 0x1002, 0x1006, 0x1008, 0x100a);
+  assert.deepEqual(inner.notExecuted, { instructions: 2, ranges: [{ start: 0x1004, end: 0x1005 }, { start: 0x100c, end: 0x100c }] });
+  assert.equal(textOf(inner, "segments/segment_1000.asm"), "; Segment $1000-$100c\n; $1000-$100c\n\nstart\n; not executed $1004-$1005\n        +inc16 ptr\n        +inc16 ptr+2\n; not executed $100c-$100c\n        rts\n");
+  // The last instruction of the first use and the first of the second use make one range.
+  const across = covered(0x1000, 0x1002, 0x1008, 0x100a, 0x100c);
+  assert.deepEqual(across.notExecuted, { instructions: 2, ranges: [{ start: 0x1004, end: 0x1007 }] });
+  assert.match(textOf(across, "segments/segment_1000.asm"), /^start\n; not executed \$1004-\$1007\n {8}\+inc16 ptr\n {8}\+inc16 ptr\+2\n {8}rts\n$/m);
 });
 
 test("a macro arg that is a platform name of a ROM that the program does not use gets that reason, not that it is no platform name", () => {
