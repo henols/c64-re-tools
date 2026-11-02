@@ -9,7 +9,7 @@ import { after, test } from "node:test";
 
 import { inspect, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/lib/evidence.ts";
 import { removeStaleFiles } from "../../skills/c64-unpacker/scripts/lib/machine.ts";
-import { callReturn, captureSegments, droppedRanges, executedIn, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
+import { callReturn, captureSegments, droppedRanges, executedIn, notExecutedUnderIo, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
 import { COVERAGE } from "../../src/c64.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
@@ -208,8 +208,10 @@ test("capture segments do not overlap, and a block that later stages wrote over 
     0x8ab2,
   );
   // The blocks that are all in pages 0-3 are in the entry state: the program starts at the block of stage 2 that goes past $03ff.
+  // The RAM under the I/O area is a segment of its own.
   assert.deepEqual(segments, [
-    { start: 0x00c5, end: 0xd0ff, writtenBy: 3 },
+    { start: 0x00c5, end: 0xcfff, writtenBy: 3 },
+    { start: 0xd000, end: 0xd0ff, writtenBy: 3 },
     { start: 0xe000, end: 0xffff, writtenBy: 2 },
   ]);
 });
@@ -255,7 +257,7 @@ test("after the entry, the program uses the RAM that it executes, and the RAM th
   );
 });
 
-test("the RAM under the I/O area is a block of its own, so a leftover around it drops only its own part, and the capture gives what it dropped", () => {
+test("the RAM under the I/O area is a block and a segment of its own, so a leftover around it drops only its own part, and the capture gives what it dropped", () => {
   // The TBC crack of Bruce Lee in the field run of 2.8.0-rc.2: the decruncher at $0100 changes $0800-$ffff, also the RAM
   // under the I/O area. $0800 copies the game code to $cf00-$cfff and $d800-$ffff and a relocator to $c000, and the
   // relocator moves the game to $033c-$a9ff. As one block, $0800-$ffff held the relocator at $c000, and the leftover rule
@@ -270,19 +272,31 @@ test("the RAM under the I/O area is a block of its own, so a leftover around it 
     { entry: 0xc000, wrote: [range(0x0000, 0x0002), range(0x0080, 0x0080), range(0x00ba, 0x00bb), range(0x01fe, 0x01ff), range(0x0301, 0x0303), range(0x0313, 0x0313), range(0x0318, 0x0319), range(0x033c, 0xa9ff), range(0xc020, 0xc020), range(0xc025, 0xc025)] },
     { entry: 0x0400, wrote: [] },
   ];
-  // The RAM at $d000-$dfff holds no entry of a later stage: it is a segment, and it touches $e000-$ffff.
+  // The RAM at $d000-$dfff holds no entry of a later stage: it is a segment, and it does not join $e000-$ffff.
   const segments = captureSegments(stages, 0x0400);
   assert.deepEqual(segments, [
     { start: 0x033c, end: 0xa9ff, writtenBy: 3 },
-    { start: 0xd000, end: 0xffff, writtenBy: 2 },
+    { start: 0xd000, end: 0xdfff, writtenBy: 2 },
+    { start: 0xe000, end: 0xffff, writtenBy: 2 },
   ]);
-  // The rest of the decruncher's block holds the relocator. The later writes in it are not given again, and the stack page that stage 0 wrote is in the entry state.
-  assert.deepEqual(droppedRanges(stages, 0x0400, segments), [{ start: 0xaa00, end: 0xcfff, writtenBy: 1, stageEntry: 0xc000 }]);
+  // The rest of the decruncher's block holds the relocator, and the relocator writes its variables in itself. Each byte is
+  // given once, with the last stage that wrote it, and the stack page that stage 0 wrote is in the entry state.
+  assert.deepEqual(droppedRanges(stages, 0x0400, segments), [
+    { start: 0xaa00, end: 0xbfff, writtenBy: 1, stageEntry: 0xc000 },
+    { start: 0xc000, end: 0xc01f, writtenBy: 2, stageEntry: 0xc000 },
+    { start: 0xc020, end: 0xc020, writtenBy: 3, stageEntry: 0xc000 },
+    { start: 0xc021, end: 0xc024, writtenBy: 2, stageEntry: 0xc000 },
+    { start: 0xc025, end: 0xc025, writtenBy: 3, stageEntry: 0xc000 },
+    { start: 0xc026, end: 0xc1ff, writtenBy: 2, stageEntry: 0xc000 },
+    { start: 0xc200, end: 0xceff, writtenBy: 1, stageEntry: 0xc000 },
+    { start: 0xcf00, end: 0xcfff, writtenBy: 2, stageEntry: 0xc000 },
+  ]);
   assert.deepEqual(
     droppedRanges(stages, 0x0400, [...segments, range(0xc000, 0xc1ff)]),
     [
       { start: 0xaa00, end: 0xbfff, writtenBy: 1, stageEntry: 0xc000 },
-      { start: 0xc200, end: 0xcfff, writtenBy: 1, stageEntry: 0xc000 },
+      { start: 0xc200, end: 0xceff, writtenBy: 1, stageEntry: 0xc000 },
+      { start: 0xcf00, end: 0xcfff, writtenBy: 2, stageEntry: 0xc000 },
     ],
     "an excluded range is no drop",
   );
@@ -301,16 +315,26 @@ test("a part of a leftover that the program uses after its entry is a segment; a
   const map = new Uint8Array(0x10000);
   map[0xcf8f] = COVERAGE.ramRead;
   map.fill(COVERAGE.ramRead | COVERAGE.ramWrite, 0xaa00, 0xcb40);
-  assert.deepEqual(captureSegments(stages, 0x0400, { used: usedAfterEntry(map) }), [
+  const used = usedAfterEntry(map);
+  const segments = captureSegments(stages, 0x0400, { used });
+  assert.deepEqual(segments, [
     { start: 0x033c, end: 0xa9ff, writtenBy: 3 },
-    { start: 0xcf00, end: 0xffff, writtenBy: 2 },
+    { start: 0xcf00, end: 0xcfff, writtenBy: 2 },
+    { start: 0xd000, end: 0xdfff, writtenBy: 2 },
+    { start: 0xe000, end: 0xffff, writtenBy: 2 },
   ]);
+  // No code ran in the RAM under the I/O area, and the map cannot show a read there: the capture names that segment.
+  assert.deepEqual(notExecutedUnderIo(segments, used), [{ start: 0xd000, end: 0xdfff, writtenBy: 2 }]);
   // Code at $c300 that the decruncher wrote and the program runs: the bytes of the decruncher there are a segment, the relocator at $c000 is not.
   map[0xc300] = COVERAGE.ramExecute;
+  map[0xd100] = COVERAGE.ioExecute;
   assert.deepEqual(captureSegments(stages, 0x0400, { used: usedAfterEntry(map) }), [
     { start: 0x033c, end: 0xa9ff, writtenBy: 3 },
-    { start: 0xc200, end: 0xffff, writtenBy: 2 },
+    { start: 0xc200, end: 0xcfff, writtenBy: 2 },
+    { start: 0xd000, end: 0xdfff, writtenBy: 2 },
+    { start: 0xe000, end: 0xffff, writtenBy: 2 },
   ]);
+  assert.deepEqual(notExecutedUnderIo(segments, usedAfterEntry(map)), [], "code that ran under the I/O area shows that the program uses it");
 });
 
 test("a capture entry that no stage wrote is in the loaded bytes: the range of the PRG is a segment, joined with the blocks that it touches", () => {

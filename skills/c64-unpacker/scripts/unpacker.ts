@@ -18,7 +18,7 @@ import { PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
 import { basicStart, inspect, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
-import { callReturn, captureSegments, droppedRanges, executedIn, mergeMaps, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "./lib/stages.ts";
+import { callReturn, captureSegments, droppedRanges, executedIn, mergeMaps, notExecutedUnderIo, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "./lib/stages.ts";
 import { entryStateFile, machineState, readyState, vectorsOf, writeCapture } from "./lib/machine.ts";
 
 /** Written-then-executed bytes from this many on are unpacking, decrypting or relocating, not self-changing code. */
@@ -555,11 +555,10 @@ async function capture(
     const state = await machineState(client);
     // The segments: what the stages wrote, without loader leftovers, with no overlap.
     const load = bytes[0]! | (bytes[1]! << 8);
-    const found =
-      options.range !== undefined
-        ? [options.range]
-        : captureSegments(followed.stages, registers.pc, { loaded: { start: load, end: Math.min(0xffff, load + bytes.length - 3) }, used: await usedAfter(client) });
+    const used = options.range === undefined ? await usedAfter(client) : undefined;
+    const found = used === undefined ? [options.range!] : captureSegments(followed.stages, registers.pc, { loaded: { start: load, end: Math.min(0xffff, load + bytes.length - 3) }, used });
     const segments = withoutRanges(found, options.exclude);
+    const underIo = used === undefined ? [] : notExecutedUnderIo(segments, used).map(formatC64RangeFields);
     // The written ranges that the leftover rule took out of the segments. A --range takes no rule.
     const dropped = (options.range === undefined ? droppedRanges(followed.stages, registers.pc, [...found, ...options.exclude]) : []).map((range) => ({
       ...formatC64RangeFields(range),
@@ -595,6 +594,7 @@ async function capture(
         files: written,
         ...(removed.length === 0 ? {} : { removed }),
         segments: segments.map((segment) => ({ ...formatC64RangeFields(segment), ...("loaded" in segment ? { loaded: true } : {}) })),
+        ...(underIo.length === 0 ? {} : { notExecutedUnderIo: underIo }),
         ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(formatC64RangeFields) }),
         ...(dropped.length === 0 ? {} : { dropped }),
         stages: showStages(followed.stages),
@@ -673,10 +673,14 @@ function captured(call: Call, { output, failed }: { output: Record<string, unkno
   const result = outcome({ output, failed });
   if (failed) return result;
   const dropped = ((output.dropped ?? []) as Array<{ start: string; end: string }>).reduce((sum, range) => sum + parseC64Address(range.end) - parseC64Address(range.start) + 1, 0);
+  const underIo = ((output.notExecutedUnderIo ?? []) as Array<{ start: string; end: string }>).map((range) => `${range.start}-${range.end}`);
   return reply(result, {
     hint: joined([
       `Disassemble the code at ${output.pc as string}. Make sure that it is the program and not the unpacker again.`,
       dropped === 0 ? undefined : `The segments do not hold ${dropped} bytes that the stages wrote, because they are in blocks with the entry of a later stage. dropped gives their ranges. Make sure that the program does not use these bytes.`,
+      underIo.length === 0
+        ? undefined
+        : `In the RAM under the I/O area, the program executed no code in ${underIo.join(", ")} after the entry. The memory map cannot show reads of this RAM. Make sure that the program uses these bytes. If it does not, give each of these ranges as --exclude and capture again.`,
       `Then put the capture ${call.string("out")!}/image.json into the project knowledge.`,
     ]),
   });
