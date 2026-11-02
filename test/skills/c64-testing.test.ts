@@ -13,10 +13,10 @@ import { renameSymbol } from "../../src/knowledge/write.ts";
 import type { ViceSessionClient } from "../../src/host-client/vice-session.ts";
 import { changedRanges, diffStates } from "../../skills/c64-testing/scripts/lib/diff.ts";
 import { isRefusal, Refusal } from "../../src/errors.ts";
-import { compare, namesOf, readScenario, resolve, runScenario, scenarioNames } from "../../skills/c64-testing/scripts/lib/scenario.ts";
+import { compare, namesOf, readScenario, resolve, runScenario, scenarioNames, type Step } from "../../skills/c64-testing/scripts/lib/scenario.ts";
 import { diffFiles, snapshotCpuPort, snapshotRam } from "../../skills/c64-testing/scripts/lib/diff-files.ts";
 import { keepRun, runFile } from "../../skills/c64-testing/scripts/lib/runs.ts";
-import { passStartScreen } from "../../skills/c64-testing/scripts/lib/start-screen.ts";
+import { namesStartScreen, passStartScreen } from "../../skills/c64-testing/scripts/lib/start-screen.ts";
 import { readEnvelope } from "../kit.ts";
 
 // No host listens at port 1: a run that got past its checks would fail to connect, not reach a real emulator.
@@ -595,4 +595,52 @@ test("test and run go past a start screen that the symbols show: the program run
   assert.equal(await passStartScreen(client(true), new Map()), "none");
   assert.equal(typeof (await passStartScreen(client(false), symbols)), "object");
   assert.deepEqual(calls.map((call) => (call as unknown[])[0]), ["runUntil"]);
+});
+
+test("a step that names the wait of the start screen or the code after it, by name or by address, keeps the program at its start screen", () => {
+  const symbols = new Map([["loader_start_screen_wait", 0x0900], ["loader_start_screen_continue", 0x0930], ["cold_start", 0x4000]]);
+  const named = (step: unknown, names = symbols) => namesStartScreen([{ frames: 5 }, step] as Step[], (location) => resolve(location, names, "rebuild"), names);
+  const until = (target: Record<string, unknown>) => ({ runUntil: { target: { kind: "address", space: "c64", ...target }, timeoutFrames: 1500 } });
+  for (const step of [
+    until({ address: "loader_start_screen_wait" }),
+    until({ address: "$0900" }),
+    until({ address: "cold_start", condition: { kind: "memory", address: "$0930", operator: "eq", value: 1, space: "c64", view: "cpu" } }),
+    until({ kind: "memory", address: "loader_start_screen_continue", operator: "ne", value: 0, view: "cpu" }),
+    { registers: { pc: "loader_start_screen_continue" } },
+    { write: { address: "$0900", data: "ea", space: "c64", view: "cpu" } },
+    { trace: "t", points: [{ kind: "exec", start: "$0800", end: "loader_start_screen_wait" }], frames: 5 },
+    { expect: "e", registers: { pc: "loader_start_screen_continue" } },
+    { expect: "e", memory: [{ address: "$0930", data: "ea" }] },
+    { observe: "o", memory: ["loader_start_screen_wait"] },
+    { observe: "o", memory: [{ address: "$c000", exclude: [{ address: "$0900", reason: "r" }] }] },
+  ]) {
+    assert.equal(named(step), true, JSON.stringify(step));
+  }
+  for (const step of [until({ address: "cold_start" }), until({ address: "$0901" }), until({ address: "no_such_name" }), { observe: "o", memory: "all", registers: true }, { observe: "o", registers: ["pc"] }, { reset: "hard" }]) {
+    assert.equal(named(step), false, JSON.stringify(step));
+  }
+  assert.equal(named(until({ address: "$0900" }), new Map([...symbols, ["START_SCREEN", 0]])), false, "the build shows no start screen");
+});
+
+test("test goes past the start screen only on a side whose steps do not name it", async () => {
+  writeFileSync(join(project, "start.prg"), Uint8Array.of(0x01, 0x08, 0x00));
+  writeFileSync(join(project, "start-symbols.json"), JSON.stringify({ loader_start_screen_wait: "$0900", loader_start_screen_continue: "$0930" }));
+  const calls: unknown[] = [];
+  const fake = {
+    reset: async () => (calls.push(["reset"]), { state: "stopped" }),
+    joystick: async (state: unknown) => state,
+    status: async () => ({ state: "stopped" }),
+    autostart: async () => ({}),
+    execution: async () => ({ stopReason: "frames" }),
+    keyboard: async () => ({}),
+    memoryRead: async (params: { size: number }) => ({ data: Buffer.alloc(params.size).toString("hex") }),
+    runUntil: async (params: { target: { address: number } }) => (calls.push(["runUntil", params.target.address]), { reached: true, pc: params.target.address }),
+    registersSet: async (_space: string, values: { pc: number }) => (calls.push(["registersSet", values.pc]), {}),
+  };
+  const side = { program: "start.prg", symbols: "start-symbols.json" };
+  const steps = [{ autostart: true }, { runUntil: { target: { kind: "address", address: "loader_start_screen_wait" } }, side: "rebuild" }, { observe: "x", memory: ["$c000"] }];
+  const scenario = readScenario(scenarioFile("start-screen.json", { name: "start screen", reference: side, rebuild: side, steps }));
+  assert.equal((await runScenario(fake as unknown as ViceSessionClient, scenario)).result, "PASS");
+  // RUN runs until BASIC runs a line ($3a). Then the reference goes past the wait, and the rebuild runs to the wait in its own step.
+  assert.deepEqual(calls, [["reset"], ["runUntil", 0x3a], ["runUntil", 0x0900], ["registersSet", 0x0930], ["reset"], ["runUntil", 0x3a], ["runUntil", 0x0900]]);
 });

@@ -46,7 +46,8 @@ To get the command list, run the script with no arguments.
 - The reference program and the rebuild are PRG files in the project. The script refuses a disk, tape or cartridge image. Extract the program file from the image first.
 - The reference gets its names from the project knowledge. Give `"symbols": "knowledge"` for the reference.
 - The rebuild gets its names from the symbol file of its build. Build the rebuild with a symbol file that has all symbols, also the constants that the source does not use.
-- The loader program of a generated source can show a start screen that waits for a key. If the symbols of the program have the labels of that start screen, `test`, `run` and `replay` start the program after the start screen. Do not add a step for the start screen.
+- The loader program of a generated source can show a start screen that waits for a key. If the symbols of the program have the labels of that start screen, `test`, `run` and `replay` start the program after the start screen. Do not add a step that goes past the start screen.
+- To test the start screen itself, put the label `loader_start_screen_wait` (the wait for a key) or `loader_start_screen_continue` (the code after the wait) into a step. The name or the address of the label applies. Then `test` and `run` do not go past the start screen. In `test`, this applies only to the side of the step. For example, make the first step a `runUntil` step to `loader_start_screen_wait`.
 - You write the scenario file, the run file and the record file. Their formats are in the files of the section "Reference".
 - A file in `tests/` is a scenario or a run file with expected values. Give a scenario to `test` and a run file to `run`. `test` refuses a run file.
 - `<recording>` is the `--out` folder of `record`.
