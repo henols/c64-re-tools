@@ -67,7 +67,7 @@ Get the values for the commands from these places:
 
 A group folder holds one project for each version of a program. It also holds the pages that the versions share.
 
-- A group folder is a folder in a git repository. It holds one or more project folders. It is not a project, and it is not in a project.
+- A group folder is a folder in a git repository. It holds two or more project folders. It is not a project, and it is not in a project.
 - Each project folder in the group folder is a project of the group. The label of the project is the name of its folder, for example `v1`. A project folder that holds `.git` is not a project of the group.
 - The shared pages are `README.md` and `docs/` of the group folder.
 - A page in the group folder can link to each file in the group folder. A link out of the group folder is a problem.
