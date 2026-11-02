@@ -130,19 +130,19 @@ export class ViceSessionClient {
 
   /** Loads a project PRG into memory without reset or start; finishes stopped. `root` is the project folder; it stays on this side. */
   async programLoad(params: { path: string; address?: number; root?: string }): Promise<{ state: RunState; loadAddress: number; size: number }> {
-    const file = readProjectFile(params.path, params.root === undefined ? { what: "path" } : { root: params.root, what: "path" });
+    const file = projectFile(params);
     return this.#request("programLoad", params.address === undefined ? {} : { address: params.address }, [file.bytes]);
   }
 
   /** Autostarts a project program or image, as VICE's autostart does. `root` is the project folder; it stays on this side. */
   async autostart(params: { path: string; index: number; run: boolean; root?: string }): Promise<{ state: RunState }> {
-    const file = readProjectFile(params.path, params.root === undefined ? { what: "path" } : { root: params.root, what: "path" });
+    const file = projectFile(params);
     return this.#request("autostart", { type: file.type, index: params.index, run: params.run }, [file.bytes]);
   }
 
   /** Attaches a project disk image to drive 8. `root` is the project folder; it stays on this side. */
   async diskAttach(params: { path: string; root?: string }): Promise<{ attached: boolean }> {
-    const file = readProjectFile(params.path, params.root === undefined ? { what: "path" } : { root: params.root, what: "path" });
+    const file = projectFile(params);
     return this.#request("diskAttach", { type: file.type }, [file.bytes]);
   }
 
@@ -335,12 +335,16 @@ export class ViceSessionClient {
   }
 }
 
+/** The file of a path in the project folder, or in `root` when it is given. */
+function projectFile(params: { path: string; root?: string }) {
+  return readProjectFile(params.path, params.root === undefined ? { what: "path" } : { root: params.root, what: "path" });
+}
 
-/** Reads `size` bytes from `address` of the C64 in reads of at most 4 KiB, in one view: up to all 64 KiB. */
-export async function readMemoryInParts(client: Pick<ViceSessionClient, "memoryRead">, address: number, size: number, view: "cpu" | "ram"): Promise<Buffer> {
+/** Reads `size` bytes from `address` of a space (the C64 when not given) in reads of at most 4 KiB, in one view: up to all 64 KiB. */
+export async function readMemoryInParts(client: Pick<ViceSessionClient, "memoryRead">, address: number, size: number, view: "cpu" | "ram", space: Space = "c64"): Promise<Buffer> {
   const parts: Buffer[] = [];
   for (let at = address; at < address + size; at += MAX_MEMORY_READ) {
-    parts.push(Buffer.from((await client.memoryRead({ address: at, size: Math.min(MAX_MEMORY_READ, address + size - at), space: "c64", view })).data, "hex"));
+    parts.push(Buffer.from((await client.memoryRead({ address: at, size: Math.min(MAX_MEMORY_READ, address + size - at), space, view })).data, "hex"));
   }
   return Buffer.concat(parts);
 }

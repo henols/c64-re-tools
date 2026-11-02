@@ -2,42 +2,42 @@
 // .c64-re-tools/knowledge/; .c64-re-tools/local/knowledge.db is an index
 // that is made again from the text when the text changed.
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { join } from "node:path";
 
 import { Refusal } from "../errors.ts";
-import { ensureLocal, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRoot } from "../project.ts";
+import { ensureLocal, KNOWLEDGE_INDEX_FILE, KNOWLEDGE_TEXT_DIRECTORY, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRoot } from "../project.ts";
 import { ensureSchema } from "./schema.ts";
-import { compareText, loadText, readText, REVISIONS_FILE, revisionsText, sha256, sqlName, TABLES, tableText, writeAtomic } from "./text.ts";
+import { compareText, knowledgeFiles, loadText, readText, REVISIONS_FILE, revisionsText, sha256, sqlName, TABLES, tableText, writeAtomic } from "./text.ts";
 
-export const KNOWLEDGE_DIRECTORY = PROJECT_DIRECTORY;
-/** The folder of the committed knowledge text. */
-export const TEXT_DIRECTORY = "knowledge";
-/** The index file in .c64-re-tools/local/. */
-export const INDEX_FILE = "knowledge.db";
 /** Git keeps the lines of both sides when two computers changed the same knowledge file. */
 // eol=lf: with core.autocrlf (the Windows default) git would check the files out with CRLF, so two computers would hold other bytes.
 export const GIT_ATTRIBUTES = "# The knowledge of c64-re-tools: git keeps the lines of both sides of a merge, with LF line ends on every system.\n*.jsonl merge=union text eol=lf\n.gitattributes text eol=lf\n";
 
 /** The folder of the knowledge text: .c64-re-tools/knowledge/. */
 export function textPath(root: string = projectRoot()): string {
-  return join(root, KNOWLEDGE_DIRECTORY, TEXT_DIRECTORY);
+  return join(root, PROJECT_DIRECTORY, KNOWLEDGE_TEXT_DIRECTORY);
 }
 
 /** The index: .c64-re-tools/local/knowledge.db. */
 export function indexPath(root: string = projectRoot()): string {
-  return join(root, KNOWLEDGE_DIRECTORY, LOCAL_DIRECTORY, INDEX_FILE);
+  return join(root, PROJECT_DIRECTORY, LOCAL_DIRECTORY, KNOWLEDGE_INDEX_FILE);
 }
 
-/** Refuses a project that has only the knowledge.db of an older c64-re-tools. */
-function refuseOldLayout(root: string): void {
-  if (!existsSync(textPath(root)) && existsSync(join(root, KNOWLEDGE_DIRECTORY, INDEX_FILE))) {
-    throw new Refusal(
-      "unsupported-schema",
-      `${KNOWLEDGE_DIRECTORY}/${INDEX_FILE} is the knowledge of an older c64-re-tools. This c64-re-tools keeps the knowledge as text in ${KNOWLEDGE_DIRECTORY}/${TEXT_DIRECTORY}/. Convert it one time with distribution/convert-knowledge.ts of the c64-re-tools source repository.`,
-    );
-  }
+/** The prepared statements of each database by their SQL: a query that runs again is not prepared again. */
+const statements = new WeakMap<DatabaseSync, Map<string, StatementSync>>();
+
+/** The statement of `sql` on `db`, prepared once for each database; undefined without a database. */
+export function prepare(db: DatabaseSync, sql: string): StatementSync;
+export function prepare(db: DatabaseSync | undefined, sql: string): StatementSync | undefined;
+export function prepare(db: DatabaseSync | undefined, sql: string): StatementSync | undefined {
+  if (db === undefined) return undefined;
+  let known = statements.get(db);
+  if (known === undefined) statements.set(db, (known = new Map()));
+  let statement = known.get(sql);
+  if (statement === undefined) known.set(sql, (statement = db.prepare(sql)));
+  return statement;
 }
 
 function configure(db: DatabaseSync): void {
@@ -51,7 +51,7 @@ function open(path: string, readOnly: boolean): DatabaseSync {
     configure(db);
     db.prepare("SELECT count(*) FROM sqlite_master").get();
   } catch (error) {
-    throw new Refusal("invalid-database", `${KNOWLEDGE_DIRECTORY}/${LOCAL_DIRECTORY}/${INDEX_FILE} is not a readable SQLite database: ${(error as Error).message} Delete it: it is made again from the knowledge text.`);
+    throw new Refusal("invalid-database", `${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/${KNOWLEDGE_INDEX_FILE} is not a readable SQLite database: ${(error as Error).message} Delete it: it is made again from the knowledge text.`);
   }
   return db;
 }
@@ -90,6 +90,12 @@ function textHashes(files: ReadonlyMap<string, { sha256: string }>): Record<stri
   return Object.fromEntries([...files].map(([name, file]): [string, string] => [name, file.sha256]).sort(([a], [b]) => compareText(a, b)));
 }
 
+/** The SHA-256 of each knowledge file of the project, by file name: the bytes only, without the text of the rows. */
+function currentHashes(root: string): Record<string, string> {
+  const directory = textPath(root);
+  return Object.fromEntries(knowledgeFiles(directory).map((name) => [name, sha256(readFileSync(join(directory, name)))]));
+}
+
 const sameHashes = (a: Record<string, string>, b: Record<string, string>) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
 
 /**
@@ -98,14 +104,13 @@ const sameHashes = (a: Record<string, string>, b: Record<string, string>) => JSO
  * transaction, so two processes never make the index at the same time.
  */
 function freshen(db: DatabaseSync, root: string): void {
+  if (sameHashes(currentHashes(root), storedHashes(db))) return;
   const files = readText(textPath(root));
-  const hashes = textHashes(files);
-  if (sameHashes(hashes, storedHashes(db))) return;
   db.exec("DELETE FROM evidence");
   for (const spec of TABLES) db.exec(`DELETE FROM ${sqlName(spec.table)}`);
   db.exec("DELETE FROM revisions");
   loadText(db, files);
-  storeHashes(db, hashes);
+  storeHashes(db, textHashes(files));
 }
 
 /** The project of each index opened for a write: its writes go to the text too. */
@@ -117,12 +122,11 @@ const projects = new WeakMap<DatabaseSync, string>();
  * knowledge text: that reads as empty knowledge, and a read creates nothing.
  */
 export function openForRead(root: string = projectRoot()): DatabaseSync | undefined {
-  refuseOldLayout(root);
   if (!existsSync(textPath(root))) return undefined;
   const index = openIndex(root);
   try {
     // The lock is taken only when the text changed: a read does not wait for a long write that keeps the index fresh.
-    if (!sameHashes(textHashes(readText(textPath(root))), storedHashes(index))) transaction(index, () => freshen(index, root));
+    if (!sameHashes(currentHashes(root), storedHashes(index))) transaction(index, () => freshen(index, root));
   } finally {
     index.close();
   }
@@ -146,7 +150,6 @@ export function withRead<T>(work: (db: DatabaseSync | undefined) => T, root: str
  * files.
  */
 export function openForWrite(root: string = projectRoot()): DatabaseSync {
-  refuseOldLayout(root);
   mkdirSync(textPath(root), { recursive: true });
   const attributes = join(textPath(root), ".gitattributes");
   if (!existsSync(attributes)) writeFileSync(attributes, GIT_ATTRIBUTES);
@@ -168,7 +171,6 @@ export function openForWrite(root: string = projectRoot()): DatabaseSync {
  * nothing outside the database it gets.
  */
 export function withWrite<T>(work: (db: DatabaseSync) => T, root: string = projectRoot()): T {
-  refuseOldLayout(root);
   if (!existsSync(textPath(root))) {
     const trial = new DatabaseSync(":memory:");
     try {
@@ -206,7 +208,7 @@ function writeText(db: DatabaseSync, root: string, before: string): void {
   };
   write(REVISIONS_FILE, revisionsText(db));
   for (const spec of TABLES) {
-    const changed = db.prepare(`SELECT 1 FROM ${sqlName(spec.table)} WHERE valid_from_revision > ? OR valid_to_revision > ? LIMIT 1`).get(before, before);
+    const changed = prepare(db, `SELECT 1 FROM ${sqlName(spec.table)} WHERE valid_from_revision > ? OR valid_to_revision > ? LIMIT 1`).get(before, before);
     if (changed !== undefined) write(spec.file, tableText(db, spec));
   }
   storeHashes(db, hashes);

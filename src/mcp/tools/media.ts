@@ -19,7 +19,7 @@ const ProjectPath = z.string().min(1).describe("path relative to the project fol
 
 const list = (types: readonly string[]) => types.map((type) => `.${type}`).join(", ");
 
-export const c64Autostart = defineTool({
+const c64Autostart = defineTool({
   name: "c64_autostart",
   title: "Autostart a program or image",
   description:
@@ -55,7 +55,7 @@ export const c64Autostart = defineTool({
   },
 });
 
-export const c64ProgramLoad = defineTool({
+const c64ProgramLoad = defineTool({
   name: "c64_program_load",
   title: "Load a PRG into memory",
   description:
@@ -80,7 +80,7 @@ export const c64ProgramLoad = defineTool({
   },
 });
 
-export const c64DiskAttach = defineTool({
+const c64DiskAttach = defineTool({
   name: "c64_disk_attach",
   title: "Attach a disk image",
   description:
@@ -95,7 +95,7 @@ export const c64DiskAttach = defineTool({
   },
 });
 
-export const c64Snapshot = defineTool({
+const c64Snapshot = defineTool({
   name: "c64_snapshot",
   title: "Machine snapshots",
   description:

@@ -3,15 +3,14 @@
 // capture and the coverage maps are imported one time; every later step reads
 // them here, so a project needs no image or coverage files to be made again.
 
-import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
-import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte } from "../c64.ts";
-
+import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, formatC64Range, inRanges, prgOf, rangesWhere } from "../c64.ts";
 import { COVERAGE_KINDS, DEFAULT_SPACE, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
 import { coverageRuns } from "./read.ts";
-import { checkSpace, write, type Evidence, type OperandImage, type WriteContext } from "./write.ts";
+import { sha256 } from "./text.ts";
+import { checkAddress, checkSpace, write, type Evidence, type OperandImage, type WriteContext } from "./write.ts";
 
 /** The 64 KiB of one space: offset n is address n. */
 const SIZE = 0x10000;
@@ -60,18 +59,6 @@ export interface CoverageMap {
   bytes: Uint8Array;
 }
 
-/** The address ranges where `has` is true, in address order. */
-function rangesWhere(has: (address: number) => boolean): AddressRange[] {
-  const ranges: AddressRange[] = [];
-  for (let address = 0; address < SIZE; address++) {
-    if (!has(address)) continue;
-    const start = address;
-    while (address + 1 < SIZE && has(address + 1)) address++;
-    ranges.push({ start, end: address });
-  }
-  return ranges;
-}
-
 /** The memory rows of the segments: at most MEMORY_ROW bytes, never across a multiple of MEMORY_ROW. */
 export function memoryRows(segments: readonly AddressRange[], byteAt: (address: number) => number): Map<number, string> {
   const rows = new Map<number, string>();
@@ -90,7 +77,7 @@ function checkSegments(segments: readonly AddressRange[]): void {
   const sorted = [...segments].sort((a, b) => a.start - b.start);
   sorted.forEach((segment, index) => {
     if (!Number.isInteger(segment.start) || !Number.isInteger(segment.end) || segment.start < 0 || segment.end > 0xffff || segment.end < segment.start) {
-      throw new Refusal("invalid-input", `The segment ${formatC64Address(segment.start)}-${formatC64Address(segment.end)} is not a range from $0000 to $ffff.`);
+      throw new Refusal("invalid-input", `The segment ${formatC64Range(segment)} is not a range from $0000 to $ffff.`);
     }
     if (index > 0 && segment.start <= sorted[index - 1]!.end) throw new Refusal("invalid-input", `The segments at ${formatC64Address(sorted[index - 1]!.start)} and ${formatC64Address(segment.start)} overlap.`);
   });
@@ -104,7 +91,7 @@ function checkSegments(segments: readonly AddressRange[]): void {
 export function setImage(db: DatabaseSync, context: WriteContext, request: ImageRequest): { revision: string | null; current: { space: Space; bytes: number; rowsAdded: number; rowsClosed: number; entry: boolean } } {
   checkSpace(request);
   checkSegments(request.segments);
-  if (request.entry !== undefined && (!Number.isInteger(request.entry) || request.entry < 0 || request.entry > 0xffff)) throw new Refusal("invalid-input", "The entry must be from $0000 to $ffff.");
+  if (request.entry !== undefined) checkAddress(request.entry, "The entry");
   if (request.entry === undefined && (request.state !== undefined || request.stages !== undefined)) throw new Refusal("invalid-input", "A machine state or stages need an entry.");
   const space = request.space ?? DEFAULT_SPACE;
   const wanted = memoryRows(request.segments, request.byteAt);
@@ -141,8 +128,7 @@ export function setImage(db: DatabaseSync, context: WriteContext, request: Image
 
 /** Address ranges as the knowledge text keeps them: "$1000-$1002 $1005". */
 function rangesText(ranges: readonly AddressRange[]): string {
-  const at = (address: number) => `$${address.toString(16).padStart(4, "0")}`;
-  return ranges.map((range) => (range.start === range.end ? at(range.start) : `${at(range.start)}-${at(range.end)}`)).join(" ");
+  return ranges.map((range) => (range.start === range.end ? formatC64Address(range.start) : formatC64Range(range))).join(" ");
 }
 
 /** Calls `each` with the start and the end of each range of ranges as text. */
@@ -215,7 +201,7 @@ export function addCoverage(
   }
   // A path given twice is one map: the last one.
   const byName = new Map(request.maps.map((map) => [map.name, map]));
-  const hashed = [...byName.values()].map((map) => ({ ...map, sha256: createHash("sha256").update(map.bytes).digest("hex") }));
+  const hashed = [...byName.values()].map((map) => ({ ...map, sha256: sha256(map.bytes) }));
   // The runs of a name are oldest first: the last one is the latest map of the path.
   const latest = new Map(coverageRuns(db).filter((run) => run.space === space).map((run) => [run.name, run.sha256]));
   const withRows = new Set((db.prepare("SELECT DISTINCT map FROM current_coverage WHERE space = ?").all(space) as Array<{ map: string }>).map((row) => row.map));
@@ -295,11 +281,8 @@ export function coverageAccess(db: DatabaseSync | undefined, space: Space = DEFA
   };
 }
 
-/** The program of a space, or undefined when the knowledge has no bytes for it. */
-export function programImage(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): ProgramImage | undefined {
-  if (db === undefined) return undefined;
-  const rows = db.prepare("SELECT address, bytes FROM current_memory WHERE space = ? ORDER BY address").all(space) as Array<{ address: number; bytes: string }>;
-  if (rows.length === 0) return undefined;
+/** The bytes of memory rows in address order, in 64 KiB, and the ranges that they fill: rows that touch are one range. */
+function rowsImage(rows: ReadonlyArray<{ address: number; bytes: string }>): { segments: AddressRange[]; memory: Uint8Array } {
   const memory = new Uint8Array(SIZE);
   const segments: AddressRange[] = [];
   for (const row of rows) {
@@ -310,6 +293,15 @@ export function programImage(db: DatabaseSync | undefined, space: Space = DEFAUL
     if (last !== undefined && last.end + 1 === row.address) last.end = end;
     else segments.push({ start: row.address, end });
   }
+  return { segments, memory };
+}
+
+/** The program of a space, or undefined when the knowledge has no bytes for it. */
+export function programImage(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): ProgramImage | undefined {
+  if (db === undefined) return undefined;
+  const rows = db.prepare("SELECT address, bytes FROM current_memory WHERE space = ? ORDER BY address").all(space) as Array<{ address: number; bytes: string }>;
+  if (rows.length === 0) return undefined;
+  const { segments, memory } = rowsImage(rows);
   const image: ProgramImage = { space, segments, memory, byteAt: (address) => memory[address]! };
   const entry = db.prepare("SELECT address, state, stages FROM current_entries WHERE space = ?").get(space) as { address: number; state: string | null; stages: string | null } | undefined;
   if (entry !== undefined) {
@@ -337,17 +329,16 @@ const STATE_PAGES = ["$0000", "$0100", "$0200", "$0300"] as const;
  * pages hold code and data that the loader left). $0000 and $0001 are the
  * CPU port, not memory. A segment byte wins over a state byte.
  */
-export function entryMemory(image: ProgramImage): Uint8Array {
+function entryMemory(image: ProgramImage): Uint8Array {
   const memory = new Uint8Array(image.memory);
   const pages = image.state?.pages;
   if (typeof pages !== "object" || pages === null) return memory;
-  const inSegment = (address: number) => image.segments.some((segment) => address >= segment.start && address <= segment.end);
   STATE_PAGES.forEach((page, index) => {
     const hex = (pages as Record<string, unknown>)[page];
     if (typeof hex !== "string" || !/^(?:[0-9a-fA-F]{2}){1,256}$/.test(hex)) return;
     Buffer.from(hex, "hex").forEach((byte, offset) => {
       const address = index * 0x100 + offset;
-      if (address >= 2 && !inSegment(address)) memory[address] = byte;
+      if (address >= 2 && !inRanges(image.segments, address)) memory[address] = byte;
     });
   });
   return memory;
@@ -361,7 +352,7 @@ export function entryMemory(image: ProgramImage): Uint8Array {
 export function analyzedBytes(image: ProgramImage): { bytes: Buffer; kind: "prg" | "flat64k" } {
   if (image.segments.length === 1 && image.state === undefined) {
     const [segment] = image.segments;
-    return { bytes: Buffer.concat([Buffer.from([segment!.start & 0xff, segment!.start >> 8]), Buffer.from(image.memory.subarray(segment!.start, segment!.end + 1))]), kind: "prg" };
+    return { bytes: prgOf(segment!.start, image.memory.subarray(segment!.start, segment!.end + 1)), kind: "prg" };
   }
   return { bytes: Buffer.from(entryMemory(image)), kind: "flat64k" };
 }
@@ -393,8 +384,7 @@ export function operandImages(db: DatabaseSync, platform: ReadonlyMap<string, nu
     const known = images.get(space);
     if (known !== undefined) return known;
     const image = requireProgram(db, space);
-    const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
-    const made: OperandImage = { byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined), platform };
+    const made: OperandImage = { byteAt: (at) => (inRanges(image.segments, at) ? image.byteAt(at) : undefined), platform };
     images.set(space, made);
     return made;
   };
@@ -410,17 +400,7 @@ export function releaseImage(db: DatabaseSync | undefined, label: string, space:
   const release = db.prepare("SELECT base FROM current_releases WHERE space = ? AND label = ?").get(space, label) as { base: number } | undefined;
   if (release === undefined) return undefined;
   if (release.base === 1) return programImage(db, space);
-  const rows = db.prepare("SELECT address, bytes FROM current_release_memory WHERE space = ? AND label = ? ORDER BY address").all(space, label) as Array<{ address: number; bytes: string }>;
-  const memory = new Uint8Array(SIZE);
-  const segments: AddressRange[] = [];
-  for (const row of rows) {
-    const bytes = Buffer.from(row.bytes, "hex");
-    memory.set(bytes, row.address);
-    const end = row.address + bytes.length - 1;
-    const last = segments.at(-1);
-    if (last !== undefined && last.end + 1 === row.address) last.end = end;
-    else segments.push({ start: row.address, end });
-  }
+  const { segments, memory } = rowsImage(db.prepare("SELECT address, bytes FROM current_release_memory WHERE space = ? AND label = ? ORDER BY address").all(space, label) as Array<{ address: number; bytes: string }>);
   return { segments, byteAt: (address) => memory[address]! };
 }
 
@@ -433,14 +413,13 @@ const PATCH_LINE_BYTES = 8;
  * state. A release without a byte at each address of the range is refused.
  */
 export function releaseCode(db: DatabaseSync | undefined, label: string, start: number, end: number, space: Space = DEFAULT_SPACE): string {
-  const range = `${formatC64Address(start)}-${formatC64Address(end)}`;
+  const range = formatC64Range({ start, end });
   const release = db?.prepare("SELECT base FROM current_releases WHERE space = ? AND label = ?").get(space, label) as { base: number } | undefined;
   if (release === undefined) throw new Refusal("not-found", `There is no release ${label}${space === DEFAULT_SPACE ? "" : ` in ${space}`}. Record it first with its file.`);
   if (release.base === 1) throw new Refusal("invalid-input", `${label} is the base release: its bytes are the program, and a patch holds the bytes of the other state. Give the release that has the other bytes in ${range}.`);
   const image = releaseImage(db, label, space)!;
-  const inside = (address: number) => image.segments.some((segment) => address >= segment.start && address <= segment.end);
   for (let address = start; address <= end; address++) {
-    if (!inside(address)) throw new Refusal("invalid-input", `The release ${label} has no byte at ${formatC64Address(address)}, in the range ${range}. Give a range inside the bytes of the release.`);
+    if (!inRanges(image.segments, address)) throw new Refusal("invalid-input", `The release ${label} has no byte at ${formatC64Address(address)}, in the range ${range}. Give a range inside the bytes of the release.`);
   }
   const lines: string[] = [];
   for (let at = start; at <= end; at += PATCH_LINE_BYTES) {

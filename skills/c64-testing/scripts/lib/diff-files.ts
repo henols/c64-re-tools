@@ -6,7 +6,7 @@
 
 import { formatC64Address, formatC64RangeFields, parseC64Address } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
-import { isObject } from "#src/host-client/steps.ts";
+import { isObject } from "#src/host-client/tools.ts";
 import { readProjectFile, readProjectJson, writeReported } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { checkSnapshotFile } from "#src/media.ts";

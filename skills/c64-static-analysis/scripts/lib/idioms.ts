@@ -11,9 +11,9 @@
 // removal holds the bytes, and a table ends where their region ends. A $2c in
 // an instruction that a run executed is an operand, not a BIT.
 
-import { COVERAGE, instructionLength } from "#src/c64.ts";
+import { COVERAGE, instructionLength, type ReferenceKind } from "#src/c64.ts";
 import type { NormalizedFindings } from "#src/knowledge/import.ts";
-import { CODE_REGION_TYPES, type ReferenceKind, type RegionType } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, type RegionType } from "#src/knowledge/schema.ts";
 import type { ImageByte } from "./coverage.ts";
 
 const MAX_TABLE = 64;

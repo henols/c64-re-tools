@@ -10,30 +10,15 @@
 //: where a run executed an instruction start, a code finding replaces
 // the data of another analyzer, never of the user, the LLM or a heuristic.
 
-import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
-import { type AddressRange, formatC64Address, formatC64Range, mergeRanges, subtract } from "../c64.ts";
+import { type AddressRange, formatC64Address, formatC64Range, mergeRanges, rangesOverlap, type ReferenceKind, REFERENCE_KINDS, subtract, SYMBOL_NAME } from "../c64.ts";
 import { Refusal } from "../errors.ts";
 import { transaction } from "./database.ts";
-import {
-  analyzerNamed,
-  REFERENCE_COLUMNS,
-  referenceSuppressed,
-  regionsOverlapping,
-  suppressionsOverlapping,
-  SYMBOL_COLUMNS,
-  symbolAt,
-  toReference,
-  toSymbol,
-  type ReferenceRow,
-  type RegionRow,
-  type SymbolRow,
-} from "./read.ts";
-import { ANALYZERS, CODE_REGION_TYPES, DEFAULT_SPACE, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SEMANTIC_ORIGINS, SYMBOL_KINDS, type Analyzer, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
-import { Change, checkAddress, checkSpace, SYMBOL_NAME, type Evidence } from "./write.ts";
-
-
+import { analyzerNamed, FACTS, referenceSuppressed, regionsOverlapping, suppressionsOverlapping, symbolAt, type ReferenceRow, type RegionRow, type SymbolRow } from "./read.ts";
+import { ANALYZERS, CODE_REGION_TYPES, DEFAULT_SPACE, POINTER_KIND, REGION_TYPES, SEMANTIC_ORIGINS, SYMBOL_KINDS, type Analyzer, type Origin, type RegionType, type Space, type SymbolKind } from "./schema.ts";
+import { sha256 } from "./text.ts";
+import { Change, checkAddress, checkSpace, type Evidence } from "./write.ts";
 
 export interface NormalizedFindings {
   analyzer: Analyzer;
@@ -65,7 +50,7 @@ export interface ImportContext {
 
 /** What a revision records about one analyzer run: the hash of the image bytes and, when the analyzer tells it, its version. */
 export function runProvenance(image: Uint8Array, toolVersion: string | undefined): Pick<ImportContext, "inputHash" | "toolVersion"> {
-  const inputHash = createHash("sha256").update(image).digest("hex");
+  const inputHash = sha256(image);
   return toolVersion === undefined ? { inputHash } : { inputHash, toolVersion };
 }
 
@@ -111,8 +96,6 @@ export interface ImportResult {
   revision: string | null;
   /** The analyzer names. */
   names: ImportCounts;
-  /** The analyzer's own rows from an older version that the run closed in symbols: only `retired` counts. */
-  symbols: ImportCounts;
   regions: ImportCounts;
   references: ImportCounts & {
     /** Findings from an address in a data region of the user, the LLM or a heuristic: false code, not written. */
@@ -134,7 +117,7 @@ function invalid(message: string): never {
  * lies in coverage, names are valid and unique, regions do not overlap.
  * Returns the merged coverage.
  */
-export function validateFindings(findings: NormalizedFindings): AddressRange[] {
+function validateFindings(findings: NormalizedFindings): AddressRange[] {
   if (!(ANALYZERS as readonly string[]).includes(findings.analyzer)) invalid(`the analyzer must be one of ${ANALYZERS.join(", ")}.`);
   checkSpace(findings);
   if (!Array.isArray(findings.coverage) || findings.coverage.length === 0) invalid("the result has no coverage.");
@@ -162,8 +145,8 @@ export function validateFindings(findings: NormalizedFindings): AddressRange[] {
   regions.forEach((region, index) => {
     checkAddress(region.start, "region start");
     checkAddress(region.end, "region end");
-    if (region.end < region.start) invalid(`the region ${formatC64Address(region.start)}-${formatC64Address(region.end)} ends before it starts.`);
-    if (!covering(region.start, region.end)) invalid(`the region ${formatC64Address(region.start)}-${formatC64Address(region.end)} is not inside the coverage.`);
+    if (region.end < region.start) invalid(`the region ${formatC64Range(region)} ends before it starts.`);
+    if (!covering(region.start, region.end)) invalid(`the region ${formatC64Range(region)} is not inside the coverage.`);
     if (!(REGION_TYPES as readonly string[]).includes(region.type)) invalid(`the region type ${region.type} is not known.`);
     const previous = regions[index - 1];
     if (previous !== undefined && region.start <= previous.end) invalid(`the regions at ${formatC64Address(previous.start)} and ${formatC64Address(region.start)} overlap.`);
@@ -178,44 +161,30 @@ export function validateFindings(findings: NormalizedFindings): AddressRange[] {
   return coverage;
 }
 
-function ownSymbols(db: DatabaseSync, analyzer: Analyzer, range: AddressRange, space: Space): SymbolRow[] {
-  return db
-    .prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_symbols WHERE space = ? AND origin = ? AND address BETWEEN ? AND ? ORDER BY address`)
-    .all(space, analyzer, range.start, range.end)
-    .map((row) => toSymbol(row as Record<string, unknown>));
-}
-
 function ownReferences(db: DatabaseSync, analyzer: Analyzer, range: AddressRange, space: Space): ReferenceRow[] {
   return db
-    .prepare(`SELECT ${REFERENCE_COLUMNS} FROM current_references WHERE space = ? AND origin = ? AND from_address BETWEEN ? AND ? ORDER BY from_address`)
+    .prepare(`SELECT ${FACTS.references.columns} FROM current_references WHERE space = ? AND origin = ? AND from_address BETWEEN ? AND ? ORDER BY from_address`)
     .all(space, analyzer, range.start, range.end)
-    .map((row) => toReference(row as Record<string, unknown>));
+    .map((row) => FACTS.references.map(row as Record<string, unknown>));
 }
 
 function ownNames(db: DatabaseSync, analyzer: Analyzer, range: AddressRange, space: Space): SymbolRow[] {
   return db
-    .prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_analyzer_names WHERE space = ? AND origin = ? AND address BETWEEN ? AND ? ORDER BY address`)
+    .prepare(`SELECT ${FACTS.analyzer_names.columns} FROM current_analyzer_names WHERE space = ? AND origin = ? AND address BETWEEN ? AND ? ORDER BY address`)
     .all(space, analyzer, range.start, range.end)
-    .map((row) => toSymbol(row as Record<string, unknown>));
+    .map((row) => FACTS.analyzer_names.map(row as Record<string, unknown>));
 }
 
 /**
  * The names of an analyzer are second names: they go to analyzer_names,
  * one for each analyzer at an address, and never to symbols. A run replaces
- * the analyzer's own names in its coverage, and closes the analyzer's old rows
- * in symbols there (knowledge from an older version). A name that the user or the LLM
+ * the analyzer's own names in its coverage. A name that the user or the LLM
  * gave the address already is not kept twice. A code or data kind that
  * disagrees with the name of the address is a conflict.
  */
 function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
   const space = findings.space ?? DEFAULT_SPACE;
-  for (const range of coverage) {
-    for (const own of ownSymbols(db, analyzer, range, space)) {
-      change.close("symbols", "space = ? AND address = ? AND origin = ?", space, own.address, analyzer);
-      result.symbols.retired++;
-    }
-  }
   const wanted = new Map(findings.symbols.map((symbol) => [symbol.address, symbol]));
   const settled = new Set<number>();
   const replaced = new Set<number>();
@@ -281,14 +250,14 @@ function holdsExecuted(findings: NormalizedFindings, start: number, end: number)
  */
 function contradictedData(db: DatabaseSync, findings: NormalizedFindings, space: Space): Array<ImportConflict & { category: "code-evidence" }> {
   if (!YIELDS_TO_EXECUTED_CODE.has(findings.analyzer)) return [];
-  const names = db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_symbols WHERE space = ? AND origin IN ('user', 'llm') AND kind IN ('label', 'routine') AND address BETWEEN ? AND ? ORDER BY address LIMIT 1`);
+  const names = db.prepare(`SELECT ${FACTS.symbols.columns} FROM current_symbols WHERE space = ? AND origin IN ('user', 'llm') AND kind IN ('label', 'routine') AND address BETWEEN ? AND ? ORDER BY address LIMIT 1`);
   const found: Array<ImportConflict & { category: "code-evidence" }> = [];
   for (const region of findings.regions) {
     if (isCode(region.type) || region.type === "dual-use") continue;
     const executed = firstExecuted(findings, region.start, region.end);
     const raw = names.get(space, region.start, region.end) as Record<string, unknown> | undefined;
     if (executed === undefined && raw === undefined) continue;
-    const symbol = raw === undefined ? undefined : toSymbol(raw);
+    const symbol = raw === undefined ? undefined : FACTS.symbols.map(raw);
     found.push({
       category: "code-evidence",
       start: region.start,
@@ -374,7 +343,7 @@ function importRegions(db: DatabaseSync, change: Change, given: NormalizedFindin
     // What the analyzer may own here: its regions minus protected rows.
     const desired = new Map<string, { start: number; end: number; type: RegionType }>();
     for (const region of findings.regions.filter((candidate) => candidate.start >= range.start && candidate.end <= range.end)) {
-      for (const row of protectedRows) if (row.start <= region.end && row.end >= region.start) conflictWith(row, region);
+      for (const row of protectedRows) if (rangesOverlap(row, region)) conflictWith(row, region);
       const suppressed = suppressionsOverlapping(db, "region", region.start, region.end, space);
       if (suppressed.length > 0) result.regions.suppressed++;
       for (const piece of subtract(region, [...protectedRows, ...suppressed])) desired.set(`${piece.start}-${piece.end}`, { ...piece, type: region.type });
@@ -432,10 +401,13 @@ const DATA_HOLDS_NO_REFERENCES = new Set<Origin>([...SEMANTIC_ORIGINS, "heuristi
 
 /** True for an address in a data region of the user, the LLM or a heuristic, other than the analyzer itself; dual-use bytes are also code. */
 function inDataRegion(db: DatabaseSync, analyzer: Analyzer, coverage: AddressRange[], space: Space): (address: number) => boolean {
-  const data = coverage
-    .flatMap((range) => regionsOverlapping(db, range.start, range.end, space))
-    .filter((row) => row.origin !== analyzer && DATA_HOLDS_NO_REFERENCES.has(row.origin) && !isCode(row.type) && row.type !== "dual-use");
-  return (address) => data.some((row) => row.start <= address && address <= row.end);
+  const data = new Uint8Array(0x10000);
+  for (const range of coverage) {
+    for (const row of regionsOverlapping(db, range.start, range.end, space)) {
+      if (row.origin !== analyzer && DATA_HOLDS_NO_REFERENCES.has(row.origin) && !isCode(row.type) && row.type !== "dual-use") data.fill(1, row.start, row.end + 1);
+    }
+  }
+  return (address) => data[address] === 1;
 }
 
 /**
@@ -456,7 +428,7 @@ function importReferences(db: DatabaseSync, change: Change, findings: Normalized
     for (const own of ownReferences(db, analyzer, range, space)) {
       if (wanted.has(key(own))) continue;
       if (!findings.authoritative.references && !inData(own.from)) continue;
-      change.close('"references"', "space = ? AND from_address = ? AND to_address = ? AND kind = ? AND origin = ?", space, own.from, own.to, own.kind, analyzer);
+      change.close("references", "space = ? AND from_address = ? AND to_address = ? AND kind = ? AND origin = ?", space, own.from, own.to, own.kind, analyzer);
       result.references.retired++;
     }
   }
@@ -478,7 +450,7 @@ export function importFindings(db: DatabaseSync, findings: NormalizedFindings, c
   const coverage = validateFindings(findings);
   return transaction(db, () => {
     const change = new Change(db, { origin: findings.analyzer, ...context }, `import-${findings.analyzer}`);
-    const result: ImportResult = { revision: null, names: counts(), symbols: counts(), regions: counts(), references: { ...counts(), inData: 0 }, conflicts: [] };
+    const result: ImportResult = { revision: null, names: counts(), regions: counts(), references: { ...counts(), inData: 0 }, conflicts: [] };
     importNames(db, change, findings, coverage, result);
     importRegions(db, change, findings, coverage, result);
     importReferences(db, change, findings, coverage, result);

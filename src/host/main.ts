@@ -3,6 +3,7 @@
 import { constants } from "node:os";
 import { parseArgs } from "node:util";
 
+import { describeError } from "../errors.ts";
 import { DEFAULT_HOST_PORT } from "../protocol/messages.ts";
 import { ProcessSupervisor } from "../native/processes.ts";
 import { startTrace, trace } from "../trace.ts";
@@ -53,7 +54,7 @@ async function main(): Promise<number> {
       strict: true,
     }));
   } catch (error) {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n\n${HELP}\n`);
+    process.stderr.write(`${describeError(error)}\n\n${HELP}\n`);
     return 2;
   }
   if (values.help) {

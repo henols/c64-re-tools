@@ -30,6 +30,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import { describeError } from "../../errors.ts";
 import { WireFailure, type VideoStandard } from "../../protocol/messages.ts";
 import { elapsedMs, trace } from "../../trace.ts";
 import { findTool, isOlderThanMinimum, MIN_VICE, VICE, type ViceVersion } from "../../native/discover.ts";
@@ -204,7 +205,7 @@ export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
     } catch (error) {
       lastError = error;
       if (error instanceof WireFailure && error.code === "installation-incomplete") throw error;
-      options.log?.(`VICE launch attempt ${attempt} failed: ${error instanceof Error ? error.message : String(error)}`);
+      options.log?.(`VICE launch attempt ${attempt} failed: ${describeError(error)}`);
     }
   }
   if (lastError instanceof WireFailure) throw lastError;
@@ -247,7 +248,7 @@ export async function checkViceStarts(options: Omit<LaunchOptions, "videoStandar
   } catch (error) {
     throw new WireFailure(
       "installation-incomplete",
-      `VICE (${binary}) starts, but it did not tell its version (${error instanceof Error ? error.message : String(error)}). ` +
+      `VICE (${binary}) starts, but it did not tell its version (${describeError(error)}). ` +
         `c64-re-tools needs VICE ${MIN_VICE.major}.${MIN_VICE.minor} or later. ${VICE.remedy}`,
     );
   } finally {
@@ -333,13 +334,21 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
 
   try {
     const deadline = Date.now() + (options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
-    monitor = await waitForMonitor(port, () => exited, deadline);
-    text = await waitForText(textPort, () => exited, deadline);
+    monitor = await connectWhenReady(
+      () => BinaryMonitor.connect(port),
+      (connection, timeoutMs) => connection.request(Command.ping, undefined, timeoutMs),
+      { probeMs: PING_TIMEOUT_MS, hasExited: () => exited, deadline, late: "The emulator did not become ready in time." },
+    );
+    text = await connectWhenReady(
+      () => TextMonitor.connect(textPort),
+      (connection, timeoutMs) => connection.command("dev c:", timeoutMs),
+      { probeMs: TEXT_PROBE_MS, hasExited: () => exited, deadline, late: "The emulator's monitor did not become ready in time." },
+    );
     await checkSameMachine(monitor, text);
     // Readiness stopped the machine; let it run as a freshly started C64 does.
     await monitor.request(Command.exit);
   } catch (error) {
-    log(`VICE failed to start: ${error instanceof Error ? error.message : String(error)}\n${outputTail()}`);
+    log(`VICE failed to start: ${describeError(error)}\n${outputTail()}`);
     trace().event("vice.launch-failed", { pid: child.pid, ms: elapsedMs(launched), error });
     await stop();
     if (error instanceof WireFailure) throw error;
@@ -351,29 +360,34 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
 }
 
 /**
- * Connects the text monitor and proves it answers. Like the binary one, VICE
- * can accept a connection during startup that it then never serves, so a
- * connection that does not answer a probe is dropped and made again.
+ * Connects a monitor and proves that it answers a probe, until the deadline.
+ * VICE can accept a connection during startup that it then never serves, so a
+ * connection that does not answer the probe is dropped and made again. `late`
+ * is the refusal when the deadline passes.
  */
-async function waitForText(port: number, hasExited: () => boolean, deadline: number): Promise<TextMonitor> {
-  while (Date.now() < deadline) {
-    if (hasExited()) throw new WireFailure("machine-unavailable", "The emulator exited while it was starting.");
-    let text: TextMonitor;
+async function connectWhenReady<T extends { close(): Promise<void> }>(
+  connect: () => Promise<T>,
+  probe: (connection: T, timeoutMs: number) => Promise<unknown>,
+  options: { probeMs: number; hasExited: () => boolean; deadline: number; late: string },
+): Promise<T> {
+  while (Date.now() < options.deadline) {
+    if (options.hasExited()) throw new WireFailure("machine-unavailable", "The emulator exited while it was starting.");
+    let connection: T;
     try {
-      text = await TextMonitor.connect(port);
+      connection = await connect();
     } catch {
       await sleep(RETRY_MS);
       continue;
     }
     try {
-      await text.command("dev c:", Math.min(TEXT_PROBE_MS, Math.max(1, deadline - Date.now())));
-      return text;
+      await probe(connection, Math.min(options.probeMs, Math.max(1, options.deadline - Date.now())));
+      return connection;
     } catch {
-      await text.close();
+      await connection.close();
       await sleep(RETRY_MS);
     }
   }
-  throw new WireFailure("machine-unavailable", "The emulator's monitor did not become ready in time.");
+  throw new WireFailure("machine-unavailable", options.late);
 }
 
 const TEXT_PROBE_MS = 2_000;
@@ -404,27 +418,4 @@ async function checkSameMachine(monitor: BinaryMonitor, text: TextMonitor): Prom
     throw error;
   }
   await write(original);
-}
-
-/** Connects the binary monitor and proves it answers a ping, until `deadline`. */
-async function waitForMonitor(port: number, hasExited: () => boolean, deadline: number): Promise<BinaryMonitor> {
-  while (Date.now() < deadline) {
-    if (hasExited()) throw new WireFailure("machine-unavailable", "The emulator exited while it was starting.");
-    let monitor: BinaryMonitor;
-    try {
-      monitor = await BinaryMonitor.connect(port);
-    } catch {
-      await sleep(RETRY_MS);
-      continue;
-    }
-    try {
-      await monitor.request(Command.ping, undefined, Math.min(PING_TIMEOUT_MS, Math.max(1, deadline - Date.now())));
-      return monitor;
-    } catch {
-      // VICE can drop a connection it accepted during startup; connect again.
-      await monitor.close();
-      await sleep(RETRY_MS);
-    }
-  }
-  throw new WireFailure("machine-unavailable", "The emulator did not become ready in time.");
 }

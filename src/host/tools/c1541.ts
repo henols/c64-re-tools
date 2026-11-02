@@ -20,6 +20,8 @@ import { runToolOrFail, type ToolContext } from "../../native/run.ts";
 
 const TIMEOUT_MS = 30_000;
 const BLOCK_BYTES = 256;
+/** The sector chains of the files that c1541 follows at the same time, each in its own c1541 run. */
+const CHAINS_AT_ONCE = 4;
 /** Block reads in one c1541 call, so that its command line stays far below the Windows limit of 32767 characters. */
 export const READS_PER_CALL = 256;
 
@@ -273,9 +275,13 @@ export async function inspect(params: C1541Params, image: Buffer, context: ToolC
       if (params.action === "bam" || params.unreferenced === true) {
         // Every sector that the header, the directory or a file holds; a file without blocks has no chain.
         const referenced = [...headerChain, ...(RESERVED[info.format] ?? [])];
-        for (const entry of directory.entries) {
-          if (entry.startTrack !== 0) referenced.push(...(await c1541.chain({ track: entry.startTrack, sector: entry.startSector })));
-          if (entry.sideStart !== undefined) referenced.push(...(await c1541.chain(entry.sideStart)));
+        const starts = directory.entries.flatMap((entry) => [...(entry.startTrack === 0 ? [] : [{ track: entry.startTrack, sector: entry.startSector }]), ...(entry.sideStart === undefined ? [] : [entry.sideStart])]);
+        for (let first = 0; first < starts.length; first += CHAINS_AT_ONCE) {
+          // The first damaged chain in directory order is the one that the refusal names.
+          for (const chain of await Promise.allSettled(starts.slice(first, first + CHAINS_AT_ONCE).map((start) => c1541.chain(start)))) {
+            if (chain.status === "rejected") throw chain.reason;
+            referenced.push(...chain.value);
+          }
         }
         unreferenced = unreferencedSectors(tracks, referenced);
       }

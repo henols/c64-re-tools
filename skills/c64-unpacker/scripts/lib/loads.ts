@@ -10,7 +10,8 @@ import { type AddressRange, COVERAGE, formatC64Address, formatC64RangeFields, pr
 import { Refusal } from "#src/errors.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { IO_RAM, markIoRamWrites, readCoverage } from "#src/host-client/coverage.ts";
-import { ACTION_STEP_KINDS, checkActionStep, checkStepNames, isObject, runActionStep, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, checkActionStep, checkStepNames, runActionStep, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
+import { isObject } from "#src/host-client/tools.ts";
 import { knowledgeAt } from "#src/knowledge/names.ts";
 import { readProjectFile, readProjectJson, writeReported } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";

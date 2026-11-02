@@ -169,15 +169,6 @@ test("a bad line in the text is refused with its file and line", () => {
   assert.throws(() => openForRead(root), /notes\.jsonl is not a knowledge file/);
 });
 
-test("a project with only the knowledge.db of an older c64-re-tools is refused", () => {
-  const root = project();
-  mkdirSync(join(root, ".c64-re-tools"));
-  writeFileSync(join(root, ".c64-re-tools", "knowledge.db"), "");
-  assert.throws(() => openForRead(root), failsWith("unsupported-schema"));
-  assert.throws(() => withWrite((db) => renameSymbol(db, { origin: "llm" }, { address: 0x2100, name: "main" }), root), failsWith("unsupported-schema"));
-  assert.equal(existsSync(textPath(root)), false);
-});
-
 test("two writers that create the index at the same time both get the current schema", () => {
   const root = project();
   mkdirSync(join(root, ".c64-re-tools", "local"), { recursive: true });

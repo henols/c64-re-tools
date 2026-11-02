@@ -16,7 +16,7 @@ export const PROJECT_DIRECTORY = ".c64-re-tools";
 export const LOCAL_DIRECTORY = "local";
 
 /** The folder in LOCAL_DIRECTORY for the reports of a generated source: its source map and the code that no run executed. */
-export const GENERATED_DIRECTORY = "generated";
+const GENERATED_DIRECTORY = "generated";
 
 /**
  * The folder of the reports of the source that was generated into `out`, relative
@@ -292,11 +292,14 @@ export function resolveProjectPath(path: string, root = projectRoot()): string {
   throw new Refusal("invalid-input", `${path} leads out of the project folder: give a path that stays inside it.`);
 }
 
-/** The folder of the committed knowledge text in PROJECT_DIRECTORY. The knowledge (src/knowledge/database.ts) has the same name. */
+/** The folder of the committed knowledge text in PROJECT_DIRECTORY. */
 export const KNOWLEDGE_TEXT_DIRECTORY = "knowledge";
 
-/** The index of the knowledge in LOCAL_DIRECTORY, and the files that SQLite keeps beside it. The knowledge has the same name. */
-const KNOWLEDGE_INDEX = /^knowledge\.db(?:-wal|-shm|-journal)?$/;
+/** The index of the knowledge in LOCAL_DIRECTORY. */
+export const KNOWLEDGE_INDEX_FILE = "knowledge.db";
+
+/** The index and the files that SQLite keeps beside it. */
+const KNOWLEDGE_INDEX_FILES = ["", "-wal", "-shm", "-journal"].map((suffix) => `${KNOWLEDGE_INDEX_FILE}${suffix}`);
 
 /**
  * The part of the knowledge that a path relative to the project folder is in:
@@ -308,7 +311,7 @@ export function knowledgePart(fromRoot: string): string | undefined {
   const parts = fromRoot.split(/[\\/]+/).filter((part) => part !== "" && part !== ".").map((part) => part.toLowerCase());
   if (parts[0] !== PROJECT_DIRECTORY) return undefined;
   if (parts[1] === KNOWLEDGE_TEXT_DIRECTORY) return `${PROJECT_DIRECTORY}/${KNOWLEDGE_TEXT_DIRECTORY}/`;
-  if (parts[1] === LOCAL_DIRECTORY && parts.length === 3 && KNOWLEDGE_INDEX.test(parts[2]!)) return `${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/${parts[2]}`;
+  if (parts[1] === LOCAL_DIRECTORY && parts.length === 3 && KNOWLEDGE_INDEX_FILES.includes(parts[2]!)) return `${PROJECT_DIRECTORY}/${LOCAL_DIRECTORY}/${parts[2]}`;
   return undefined;
 }
 

@@ -5,7 +5,7 @@ import { textToPetscii } from "../c64.ts";
 import type { ViceSessionClient } from "./vice-session.ts";
 
 /** How often, and for how long, a load is checked. */
-export const LOAD_POLL_FRAMES = 25;
+const LOAD_POLL_FRAMES = 25;
 export const LOAD_LIMIT_FRAMES = 1500;
 
 /**

@@ -84,8 +84,8 @@ export async function decodeBasic(request: { program: string }, options: ToolCal
   return (await callTool("petcat.decode", {}, [bytes], options)).result;
 }
 
-/** Skill scripts see failures and wire limits through the host-client, never the private protocol module. */
-export { WireFailure } from "../protocol/messages.ts";
-export { DISK_ACTIONS, DISK_BLOCK_BYTES, DISK_IMAGE_TYPES, MAX_DISK_SECTORS } from "../protocol/tools.ts";
-export { JOYSTICK_DIRECTIONS, MAX_BASELINES, MAX_EXECUTION_COUNT, MAX_KEYBOARD_BYTES, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, MAX_MEMORY_WRITE, MAX_TIMEOUT_FRAMES, maskCoversFrame } from "../protocol/vice.ts";
+/** Skill scripts see failures, value guards and wire limits through the host-client, never the private protocol module. */
+export { isInteger, isObject, WireFailure } from "../protocol/messages.ts";
+export { DISK_BLOCK_BYTES, DISK_IMAGE_TYPES, MAX_DISK_SECTORS } from "../protocol/tools.ts";
+export { MAX_BASELINES, MAX_EXECUTION_COUNT, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, MAX_MEMORY_WRITE, maskCoversFrame } from "../protocol/vice.ts";
 export { MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, type TraceHit, type TraceKind } from "../protocol/vice.ts";

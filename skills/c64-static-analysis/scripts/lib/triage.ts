@@ -2,9 +2,9 @@
 // runs did there, the references into it, and whether static flow from code
 // that a run executed reaches it, also through branches that no run took.
 
-import { COVERAGE, instructionLength } from "#src/c64.ts";
+import { COVERAGE, instructionLength, type ReferenceKind } from "#src/c64.ts";
 import { computedFlows, NO_FALL_THROUGH } from "#src/knowledge/separate.ts";
-import { isSemantic, type ReferenceKind } from "#src/knowledge/schema.ts";
+import { isSemantic } from "#src/knowledge/schema.ts";
 import { OPCODES } from "#src/opcodes.ts";
 
 export interface FlowInput {

@@ -68,8 +68,6 @@ An address in a step can be a name. The script refuses an unknown name before th
 
 A program that reads the keyboard matrix does not see the keys of a `type` step. Use a `press` step for that program. A wait for any key that reads all keyboard columns can end without a key.
 
-The script refuses a step in an old form. The message gives the step to write.
-
 ### Paths and the project folder
 
 - Give each path relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.

@@ -6,7 +6,7 @@ import { formatC64Address } from "../../c64.ts";
 import { RESET_MODES, RUN_STATES, WINDOW_ACTIONS } from "../../protocol/vice.ts";
 import { AddressOutput, defineTool } from "../server.ts";
 
-export const c64Window = defineTool({
+const c64Window = defineTool({
   name: "c64_window",
   title: "Emulator window",
   description:
@@ -27,7 +27,7 @@ export const c64Window = defineTool({
   },
 });
 
-export const c64Reset = defineTool({
+const c64Reset = defineTool({
   name: "c64_reset",
   title: "Reset the C64",
   description:
@@ -51,7 +51,7 @@ export const c64Reset = defineTool({
   },
 });
 
-export const c64Warp = defineTool({
+const c64Warp = defineTool({
   name: "c64_warp",
   title: "Warp mode",
   description:

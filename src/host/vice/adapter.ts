@@ -2,8 +2,8 @@
 // and register/bank id lookups live here; callers never see monitor details.
 
 import { WireFailure, type VideoStandard } from "../../protocol/messages.ts";
-import { type Comparison, type Condition, type BacktraceFrame, type HistoryEntry, type Instruction, type MemmapRange, type ProfileEntry, type JoystickState, type MemoryView, type RegisterValues, type Registers, type Space } from "../../protocol/vice.ts";
-import { COVERAGE, formatC64Address, formatC64Byte } from "../../c64.ts";
+import { type Comparison, type Condition, type BacktraceFrame, FLAG_BITS, type HistoryEntry, type Instruction, type MemmapRange, type ProfileEntry, type JoystickState, type MemoryView, type RegisterValues, type Registers, type Space } from "../../protocol/vice.ts";
+import { COVERAGE, formatC64Address, formatC64Byte, hexByte, hexWord } from "../../c64.ts";
 import type { IndexedFrame } from "../../graphics.ts";
 import { decodeDisplay, decodePalette, visibleFrame } from "./screen.ts";
 import type { TextMonitor } from "./text-monitor.ts";
@@ -105,9 +105,6 @@ export function inRasterWindow(position: { line: number; cycle: number }, line: 
   return ahead > 0 && ahead < RASTER_WINDOW_LINES;
 }
 
-/** The 12 opcodes that jam an NMOS 6502/6510. */
-export const JAM_OPCODES = new Set([0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xb2, 0xd2, 0xf2]);
-
 const DIRECTION_BITS: Record<JoystickState["direction"], number> = {
   center: 0,
   up: 0x01,
@@ -123,10 +120,6 @@ const DIRECTION_BITS: Record<JoystickState["direction"], number> = {
 /** Control-port line levels as the CIA reads them: a pressed line is 0. */
 export function joystickLines(state: JoystickState): number {
   return 0x1f & ~(DIRECTION_BITS[state.direction] | (state.fire ? 0x10 : 0));
-}
-
-function hex4(value: number): string {
-  return value.toString(16).padStart(4, "0");
 }
 
 /**
@@ -335,6 +328,11 @@ function expectQuiet(what: string, answer: string, known?: RegExp): void {
   if (other.length > 0) throw unknownForm(what, other);
 }
 
+/** Refuses view ram for the drive: the view is the C64's RAM under its ROMs. */
+function checkView(space: Space, view: MemoryView): void {
+  if (space === "drive8" && view === "ram") throw new WireFailure("unsupported-in-space", "view ram is available only in space c64; use view cpu for drive8.");
+}
+
 /** Quotes a host file path for a text-monitor command. Session scratch paths never contain quotes. */
 function quoted(path: string): string {
   if (/["\r\n]/.test(path)) throw new Error(`a monitor file path cannot contain quotes or line breaks: ${path}`);
@@ -342,28 +340,13 @@ function quoted(path: string): string {
 }
 
 export function statusRegisterFromFlags(flags: Registers["flags"]): number {
-  return (
-    (flags.n ? 0x80 : 0) |
-    (flags.v ? 0x40 : 0) |
-    0x20 | // bit 5 always reads as 1 on the 6502
-    (flags.b ? 0x10 : 0) |
-    (flags.d ? 0x08 : 0) |
-    (flags.i ? 0x04 : 0) |
-    (flags.z ? 0x02 : 0) |
-    (flags.c ? 0x01 : 0)
-  );
+  // Bit 5 always reads as 1 on the 6502.
+  return (Object.keys(FLAG_BITS) as Array<keyof Registers["flags"]>).reduce((value, flag) => (flags[flag] ? value | FLAG_BITS[flag] : value), 0x20);
 }
 
 export function flagsFromStatusRegister(value: number): Registers["flags"] {
-  return {
-    n: (value & 0x80) !== 0,
-    v: (value & 0x40) !== 0,
-    b: (value & 0x10) !== 0,
-    d: (value & 0x08) !== 0,
-    i: (value & 0x04) !== 0,
-    z: (value & 0x02) !== 0,
-    c: (value & 0x01) !== 0,
-  };
+  const set = (flag: keyof Registers["flags"]) => (value & FLAG_BITS[flag]) !== 0;
+  return { n: set("n"), v: set("v"), b: set("b"), d: set("d"), i: set("i"), z: set("z"), c: set("c") };
 }
 
 /** Generous bound for commands that run the machine (step/next): they answer only once it stops again. */
@@ -419,9 +402,7 @@ export class ViceAdapter {
 
   /** Reads memory as the selected CPU (view cpu) or as plain RAM (view ram, c64 only). Returns lowercase hex. */
   async readMemory(options: { address: number; size: number; space: Space; view: MemoryView }): Promise<string> {
-    if (options.space === "drive8" && options.view === "ram") {
-      throw new WireFailure("unsupported-in-space", "view ram is available only in space c64; use view cpu for drive8.");
-    }
+    checkView(options.space, options.view);
     const response = await this.#monitor.request(
       Command.memoryGet,
       memoryGetBody({
@@ -441,7 +422,7 @@ export class ViceAdapter {
    * text-monitor dump: no register read gives them.
    */
   async ciaHidden(base: 0xdc00 | 0xdd00): Promise<CiaHidden> {
-    const answer = await this.#computerText(`io ${hex4(base)}`);
+    const answer = await this.#computerText(`io ${hexWord(base)}`);
     const mask = /\(mask: ([0-9a-f]{2})\)/i.exec(answer);
     const latchA = /Timer A: [0-9a-f]{4} \(latched ([0-9a-f]{4})\)/i.exec(answer);
     const latchB = /Timer B: [0-9a-f]{4} \(latched ([0-9a-f]{4})\)/i.exec(answer);
@@ -460,9 +441,7 @@ export class ViceAdapter {
 
   /** Writes memory as the selected CPU (view cpu) or into plain RAM (view ram, c64 only). */
   async writeMemory(options: { address: number; data: string; space: Space; view: MemoryView }): Promise<number> {
-    if (options.space === "drive8" && options.view === "ram") {
-      throw new WireFailure("unsupported-in-space", "view ram is available only in space c64; use view cpu for drive8.");
-    }
+    checkView(options.space, options.view);
     const bytes = Buffer.from(options.data, "hex");
     const header = Buffer.alloc(8);
     header[0] = 0; // no side effects
@@ -639,7 +618,7 @@ export class ViceAdapter {
    * load address is skipped. Returns where it went.
    */
   async loadProgram(file: string, address?: number): Promise<{ loadAddress: number; size: number }> {
-    const target = address === undefined ? "" : ` $${address.toString(16).padStart(4, "0")}`;
+    const target = address === undefined ? "" : ` ${formatC64Address(address)}`;
     const answer = await this.#computerText(`load ${quoted(file)} 0${target}`);
     const match = /from ([0-9A-Fa-f]{4}) to ([0-9A-Fa-f]{4}) \(([0-9A-Fa-f]+) bytes\)/.exec(answer);
     if (match === null) throw new WireFailure("media-error", "The emulator could not load the program.");
@@ -704,9 +683,7 @@ export class ViceAdapter {
    * a space and view, then restores the defaults (device c:, bank cpu).
    */
   async #inTextContext<T>(space: Space, view: MemoryView, work: () => Promise<T>): Promise<T> {
-    if (space === "drive8" && view === "ram") {
-      throw new WireFailure("unsupported-in-space", "view ram is available only in space c64; use view cpu for drive8.");
-    }
+    checkView(space, view);
     if (space === "drive8") await this.#text.command("dev 8:");
     else await this.#computerText(`bank ${view}`);
     try {
@@ -719,9 +696,9 @@ export class ViceAdapter {
 
   /** Finds a byte pattern (null = any byte) with the monitor's hunt. Returns match addresses, at most `limit`. */
   async search(options: { start: number; end: number; pattern: Array<number | null>; space: Space; view: MemoryView; limit: number }): Promise<number[]> {
-    const tokens = options.pattern.map((token) => (token === null ? "xx" : token.toString(16).padStart(2, "0"))).join(" ");
+    const tokens = options.pattern.map((token) => (token === null ? "xx" : hexByte(token))).join(" ");
     const answer = await this.#inTextContext(options.space, options.view, () =>
-      this.#text.command(`hunt ${hex4(options.start)} ${hex4(options.end)} ${tokens}`, 30_000),
+      this.#text.command(`hunt ${hexWord(options.start)} ${hexWord(options.end)} ${tokens}`, 30_000),
     );
     return parseHunt(answer, options.limit);
   }
@@ -730,7 +707,7 @@ export class ViceAdapter {
   async disassemble(options: { address: number; count: number; space: Space; view: MemoryView }): Promise<Instruction[]> {
     const end = Math.min(0xffff, options.address + options.count * 3 - 1);
     const answer = await this.#inTextContext(options.space, options.view, () =>
-      this.#text.command(`d ${hex4(options.address)} ${hex4(end)}`),
+      this.#text.command(`d ${hexWord(options.address)} ${hexWord(end)}`),
     );
     return parseDisassembly(answer, options.address).slice(0, options.count);
   }
@@ -788,7 +765,7 @@ export class ViceAdapter {
   /** How the C64 CPU accessed [start, end] since the memmap was last cleared, as merged ranges. */
   async memmap(start: number, end: number, maxRanges: number): Promise<{ ranges: MemmapRange[]; next?: number }> {
     // The first argument is the access mask ("ioRWXrwx"); ff shows every kind of access.
-    return parseMemmap(await this.#computerText(`mmsh ff ${hex4(start)} ${hex4(end)}`, 60_000), maxRanges);
+    return parseMemmap(await this.#computerText(`mmsh ff ${hexWord(start)} ${hexWord(end)}`, 60_000), maxRanges);
   }
 
   async clearMemmap(): Promise<void> {

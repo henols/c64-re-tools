@@ -12,9 +12,9 @@ import { screenText } from "#src/graphics.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
-import { ACTION_STEP_KINDS, aStep, checkActionStep, checkLocation, checkStepNames, isInteger, isObject, refuseOldStep, renamedField, runActionStep, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
+import { ACTION_STEP_KINDS, aStep, checkActionStep, checkLocation, checkStepNames, runActionStep, type ActionStep, type ActionStepKind } from "#src/host-client/steps.ts";
 import { readPrg } from "#src/host-client/image.ts";
-import { MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, type TraceHit, type TraceKind } from "#src/host-client/tools.ts";
+import { isInteger, isObject, MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, type TraceHit, type TraceKind } from "#src/host-client/tools.ts";
 import { readProjectFile, readProjectJson, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { checkSnapshotFile } from "#src/media.ts";
@@ -137,7 +137,6 @@ function readRun(path: string): Run {
     if (kinds.length > 1) return fail(`${at} has ${kinds.length} step kinds: ${kinds.join(", ")}. Give each one its own step`);
     if (kinds.length !== 1) return fail(`${at} must have exactly one of ${[...ACTION_STEP_KINDS, ...OWN_KINDS].join(", ")}`);
     const kind = kinds[0]!;
-    refuseOldStep(kind, step, at, fail);
     const allowed = kind === "observe" ? OBSERVE_KEYS : kind === "expect" ? EXPECT_KEYS : kind === "trace" ? TRACE_KEYS : [kind];
     for (const key of Object.keys(step)) if (!allowed.includes(key)) fail(`${at} has the key ${key}, which ${aStep(kind)} of a run does not have${scenarioKeyFix(key, step)}`);
     if ((ACTION_STEP_KINDS as readonly string[]).includes(kind)) {
@@ -158,7 +157,7 @@ function readRun(path: string): Run {
       if (!Array.isArray(points) || points.length === 0 || points.length > MAX_TRACE_POINTS) return fail(`${at}: points is a list of 1 to ${MAX_TRACE_POINTS} objects with kind and start`);
       for (const point of points as unknown[]) {
         if (!isObject(point)) return fail(`${at}: a point is an object with kind, start and end`);
-        for (const key of Object.keys(point)) if (!["kind", "start", "end"].includes(key)) fail(`${at}: a point has the field ${key}. ${renamedField(key, ["kind", "start", "end"]) ?? "A point has kind, start and end, and nothing else"}`);
+        for (const key of Object.keys(point)) if (!["kind", "start", "end"].includes(key)) fail(`${at}: a point has the field ${key}. A point has kind, start and end, and nothing else`);
         if (!(TRACE_KINDS as readonly unknown[]).includes(point.kind)) fail(`${at}: a point kind is exec, read or write`);
         if (typeof point.start !== "string" || (point.end !== undefined && typeof point.end !== "string")) fail(`${at}: a point needs start, and end when it is a range, as names or $ addresses`);
       }
@@ -196,16 +195,6 @@ function readRun(path: string): Run {
     if (kind !== "observe") return;
     if (labels.has(name as string)) fail(`${at} needs a new observation name`);
     labels.add(name as string);
-    const itemFields = ["address", "size", "view"];
-    if (Array.isArray(step.memory)) {
-      for (const item of step.memory as unknown[]) {
-        if (!isObject(item)) continue;
-        for (const key of Object.keys(item)) {
-          const renamed = renamedField(key, itemFields);
-          if (renamed !== undefined && !itemFields.includes(key)) fail(`${at}: a memory object has the field ${key}. ${renamed}`);
-        }
-      }
-    }
     const memoryItem = (item: unknown) =>
       typeof item === "string" ||
       (isObject(item) &&

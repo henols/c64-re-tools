@@ -7,7 +7,7 @@
 // bytes. It never decides which bytes the publisher shipped: that needs evidence
 // beyond one comparison.
 
-import { type AddressRange, formatC64Address, formatC64Range } from "#src/c64.ts";
+import { type AddressRange, formatC64Range } from "#src/c64.ts";
 
 export interface Release {
   name: string;

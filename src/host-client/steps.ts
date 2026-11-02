@@ -13,9 +13,10 @@
 // The scripts install without packages, so this checker has no zod: the MCP
 // tools keep their zod schemas, and a test checks that both take the same inputs.
 
-import { c64AddressOf, SYMBOL_NAME, textToPetscii } from "../c64.ts";
+import { isAddressText, textToPetscii } from "../c64.ts";
 import { keyTaps, MAX_PRESS_FRAMES, PRESS_FRAMES, type KeyTap } from "../c64-keys.ts";
 import { isRefusal, Refusal } from "../errors.ts";
+import { isInteger, isObject, isOneOf } from "../protocol/messages.ts";
 import {
   COMPARISONS,
   CONDITION_REGISTERS,
@@ -82,18 +83,18 @@ export const STEP_FIELDS = {
   flags: ["n", "v", "b", "d", "i", "z", "c"],
 } as const;
 
+/** Hex bytes: two digits per byte, either case, at least one byte. The MCP tools take the same. */
+export const HEX_BYTES = /^(?:[0-9a-fA-F]{2})+$/;
+export const HEX_BYTES_RULE = "must be hex bytes, two digits per byte, no separators, for example a9008d20d0";
+
 /** The highest raster line of a PAL frame; an NTSC frame has fewer, which the emulator checks. */
 export const MAX_RASTER_LINE = 311;
 /** The wait of a runUntil step without timeoutFrames, as c64_run_until has it. */
 export const DEFAULT_TIMEOUT_FRAMES = 3000;
 
-export const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
-export const isInteger = (value: unknown, min: number, max: number): value is number => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
-const isOneOf = <T extends string>(values: readonly T[], value: unknown): value is T => (values as readonly unknown[]).includes(value);
-
 /** True for an address of a step or a file: $ and 1 to 4 hex digits, or a name. */
-export function isLocation(value: unknown): value is Location {
-  return typeof value === "string" && (c64AddressOf(value) !== undefined || SYMBOL_NAME.test(value));
+function isLocation(value: unknown): value is Location {
+  return typeof value === "string" && isAddressText(value);
 }
 
 /** Checks an address in a file: $ and 1 to 4 hex digits, or a name. */
@@ -112,32 +113,6 @@ export function keyboardBytes(input: { mode: "text" | "petscii"; text?: string |
   }
 }
 
-/**
- * One line of JSON with a space after each colon and comma: the form that a
- * refusal tells the caller to write.
- */
-export function jsonLine(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(jsonLine).join(", ")}]`;
-  if (isObject(value)) return `{${Object.entries(value).filter(([, item]) => item !== undefined).map(([key, item]) => `${JSON.stringify(key)}: ${jsonLine(item)}`).join(", ")}}`;
-  return JSON.stringify(value) ?? "null";
-}
-
-/** Field names of the 2.0 files and what a 2.1 object has in their place, when it has that field. */
-const RENAMED: Record<string, Array<{ field: string; write: string }>> = {
-  at: [
-    { field: "address", write: "address" },
-    { field: "start", write: "start" },
-  ],
-  bytes: [{ field: "data", write: 'data, the bytes as hex text, for example "data": "a900",' }],
-  equals: [{ field: "operator", write: '"operator": "eq" and "value"' }],
-};
-
-/** What to write in place of a field of the 2.0 files, for an object with these fields; undefined when the field has no 2.1 name there. */
-export function renamedField(key: string, fields: readonly string[]): string | undefined {
-  const renamed = RENAMED[key]?.find((item) => fields.includes(item.field));
-  return renamed === undefined ? undefined : `${key} is a 2.0 field. Write ${renamed.write} in place of ${key}`;
-}
-
 /** The checks of one input: `fail` names the field of the problem. */
 class Fields {
   readonly #value: Record<string, unknown>;
@@ -149,11 +124,7 @@ class Fields {
     this.#fail = fail;
     if (!isObject(value)) fail(`${where} must be an object with ${fields.join(", ")}`);
     this.#value = value as Record<string, unknown>;
-    for (const key of Object.keys(this.#value)) {
-      if (fields.includes(key)) continue;
-      const renamed = renamedField(key, fields);
-      fail(`${where} has the field ${key}, which it does not take. ${renamed === undefined ? "" : `${renamed}. `}Its fields are ${fields.join(", ")}`);
-    }
+    for (const key of Object.keys(this.#value)) if (!fields.includes(key)) fail(`${where} has the field ${key}, which it does not take. Its fields are ${fields.join(", ")}`);
   }
 
   fail(field: string, message: string): never {
@@ -235,7 +206,7 @@ function checkInput(kind: ActionStepKind, value: unknown, at: string, fail: (mes
     case "write": {
       const fields = new Fields(value, where, STEP_FIELDS.write, fail);
       const data = fields.get("data");
-      if (typeof data !== "string" || !/^(?:[0-9a-fA-F]{2})+$/.test(data)) fields.fail("data", "must be hex bytes, two digits per byte, no separators, for example a9008d20d0");
+      if (typeof data !== "string" || !HEX_BYTES.test(data)) fields.fail("data", HEX_BYTES_RULE);
       if ((data as string).length / 2 > MAX_MEMORY_WRITE) fields.fail("data", `has at most ${MAX_MEMORY_WRITE} bytes`);
       return { write: { address: fields.location("address"), data: (data as string).toLowerCase(), space: fields.oneOf("space", SPACES, "c64"), view: fields.oneOf("view", MEMORY_VIEWS, "cpu") } };
     }
@@ -290,78 +261,14 @@ function checkInput(kind: ActionStepKind, value: unknown, at: string, fail: (mes
   }
 }
 
-/** A "$xxxx" text of a number, or the value as it is. */
-const asAddress = (value: unknown) => (isInteger(value, 0, 0xffff) ? `$${value.toString(16).padStart(4, "0")}` : value);
-
-/** The hex text of a list of bytes, or the value as it is. */
-const asHex = (value: unknown) => (Array.isArray(value) && value.every((byte) => isInteger(byte, 0, 0xff)) ? Buffer.from(value as number[]).toString("hex") : value);
-
-/** A runUntil target from the 2.0 input: at (with raster), raster, or memory with at and equals. */
-function targetOf(input: Record<string, unknown>): unknown {
-  if ("target" in input) return input.target;
-  if (isObject(input.memory)) return { kind: "memory", address: input.memory.at ?? input.memory.address, operator: "eq", value: input.memory.equals };
-  if ("at" in input) return { kind: "address", address: input.at, ...(input.raster === undefined ? {} : { condition: { kind: "raster", line: input.raster } }) };
-  return { kind: "raster", line: input.raster };
-}
-
-/**
- * The 2.1 form of a step that has a form of the 2.0 files: the 2.0 fields
- * that it has and the step to write. Undefined when the step has no 2.0 form.
- * Keys of the step other than its kind (for example side) stay.
- */
-export function newStepForm(kind: string, step: Record<string, unknown>): { fields: string[]; step: Record<string, unknown> } | undefined {
-  const input = step[kind];
-  const { [kind]: _input, ...rest } = step;
-  const form = (fields: string[], value: unknown, others = rest) => ({ fields, step: { [kind]: value, ...others } });
-  switch (kind) {
-    case "runUntil": {
-      const { timeoutFrames: beside, ...others } = rest;
-      const old = isObject(input) && !("target" in input) && ("at" in input || "raster" in input || "memory" in input);
-      if (!isObject(input) || (!old && beside === undefined)) return undefined;
-      const fields = [...(old ? ["at", "raster", "memory"].filter((key) => key in input).map((key) => `runUntil.${key}`) : []), ...(beside === undefined ? [] : ["timeoutFrames beside runUntil"])];
-      const timeoutFrames = beside ?? input.timeoutFrames;
-      return form(fields, { target: targetOf(input), ...(timeoutFrames === undefined ? {} : { timeoutFrames }) }, others);
-    }
-    case "type":
-      return typeof input === "string" ? form(["type as text"], { mode: "text", text: input }) : undefined;
-    case "write": {
-      if (!isObject(input) || !("at" in input || "bytes" in input || Array.isArray(input.data))) return undefined;
-      const { at: old, bytes, address, data, ...others } = input;
-      return form(
-        ["at", "bytes"].filter((key) => key in input).map((key) => `write.${key}`).concat(Array.isArray(data) ? ["write.data as a list"] : []),
-        { address: address ?? old, data: asHex(data ?? bytes), ...others },
-      );
-    }
-    case "registers": {
-      if (!isObject(input)) return undefined;
-      const fields = Object.entries(input).flatMap(([name, value]) => ((name === "pc" && typeof value === "number") || (name !== "pc" && name !== "flags" && typeof value === "string" && c64AddressOf(value) !== undefined) ? [`registers.${name} as ${typeof value === "number" ? "a number" : "text"}`] : []));
-      if (fields.length === 0) return undefined;
-      const values = Object.fromEntries(Object.entries(input).map(([name, value]) => [name, name === "pc" ? asAddress(value) : typeof value === "string" ? (c64AddressOf(value) ?? value) : value]));
-      return form(fields, values);
-    }
-    default:
-      return undefined;
-  }
-}
-
 /** "a write step", "an observe step": the step kind with its article, for a refusal. */
 export const aStep = (kind: string): string => `${/^[aeiou]/.test(kind) ? "an" : "a"} ${kind} step`;
 
-/** Refuses a step in a form of the 2.0 files: the message names its 2.0 fields and gives the step to write. */
-export function refuseOldStep(kind: string, step: Record<string, unknown>, at: string, fail: (message: string) => never): void {
-  const found = newStepForm(kind, step);
-  if (found === undefined) return;
-  const petscii = kind === "type" ? ', or {"type": {"mode": "petscii", "bytes": [...]}} for PETSCII codes' : "";
-  fail(`${at} has the 2.0 form (${found.fields.join(", ")}). Write ${jsonLine(found.step)}${petscii}`);
-}
-
 /**
  * Checks one action step of the given kind and returns it with the defaults
- * filled in. The step has no other key. A step in a form of the 2.0 files is
- * refused with the step to write.
+ * filled in. The step has no other key.
  */
 export function checkActionStep(kind: ActionStepKind, step: Record<string, unknown>, at: string, fail: (message: string) => never): ActionStep {
-  refuseOldStep(kind, step, at, fail);
   for (const key of Object.keys(step)) if (key !== kind) fail(`${at} has the key ${key}, which ${aStep(kind)} does not have`);
   return checkInput(kind, step[kind], at, fail);
 }
@@ -388,7 +295,7 @@ export function checkActionSteps(value: unknown, fail: (message: string) => neve
 }
 
 /** The names and addresses of an action step: each location that the step resolves when it runs. */
-export function stepLocations(step: ActionStep): Location[] {
+function stepLocations(step: ActionStep): Location[] {
   if ("write" in step) return [step.write.address];
   if ("registers" in step) return step.registers.pc === undefined ? [] : [step.registers.pc];
   if (!("runUntil" in step)) return [];
