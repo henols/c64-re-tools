@@ -8,7 +8,7 @@
 // to the stage, is the stage's own code too: a packer hands off by JMP,
 // RTS or RTI and never runs its own code again.
 
-import { type AddressRange, COVERAGE, inRanges, subtract } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, inRanges, rangesOverlap, subtract } from "#src/c64.ts";
 import { IO_RAM, writtenBlocks } from "#src/host-client/coverage.ts";
 
 const contains = (range: AddressRange, address: number) => address >= range.start && address <= range.end;
@@ -107,40 +107,67 @@ export function usedAfterEntry(map: Uint8Array): (address: number) => boolean {
   };
 }
 
+type Stages = ReadonlyArray<{ entry: number; wrote: readonly AddressRange[] }>;
+type WrittenBlock = AddressRange & { writtenBy: number };
+type DroppedRange = WrittenBlock & { stageEntry: number };
+
+/** A range cut at the bounds of the I/O area: the RAM there that a stage changed never joins the blocks on its two sides. */
+function cutAtIoArea(range: AddressRange): AddressRange[] {
+  if (!rangesOverlap(range, IO_RAM)) return [range];
+  const inside = { start: Math.max(range.start, IO_RAM.start), end: Math.min(range.end, IO_RAM.end) };
+  return [...subtract(range, [IO_RAM]), inside].sort((a, b) => a.start - b.start);
+}
+
+/**
+ * The blocks that the stages wrote, each cut at the bounds of the I/O area,
+ * with the leftover rule. A block is a leftover when it holds the entry of an
+ * intermediate stage that started after the block's writer, and no write from
+ * that stage on replaced the code at that entry. Code that a stage ran before
+ * a later stage wrote over it never drops a block, and the block that holds
+ * the capture entry is never a leftover. A block that an intermediate stage
+ * wrote inside a leftover, for example a variable of the loader, is a leftover
+ * too. `stageEntry` of a leftover is the entry of the later stage that makes
+ * it one.
+ */
+function stageBlocks(stages: Stages, entry: number): Array<WrittenBlock & { stageEntry?: number }> {
+  const last = stages.length - 1;
+  const replaced = (from: number, address: number) => stages.slice(from).some((stage) => inRanges(stage.wrote, address));
+  const laterEntry = (block: WrittenBlock) =>
+    contains(block, entry) ? undefined : stages.find((stage, index) => index > block.writtenBy && index < last && contains(block, stage.entry) && !replaced(index, stage.entry))?.entry;
+  const written = stages.flatMap((stage, index) => stage.wrote.flatMap(cutAtIoArea).map((range) => ({ start: range.start, end: range.end, writtenBy: index })));
+  const leftovers = written.flatMap((block) => {
+    const at = laterEntry(block);
+    return at === undefined ? [] : [{ ...block, at }];
+  });
+  const inLeftover = (block: WrittenBlock) =>
+    block.writtenBy < last && !contains(block, entry) ? leftovers.find((left) => block.start >= left.start && block.end <= left.end)?.at : undefined;
+  return written.map((block) => {
+    const at = laterEntry(block) ?? inLeftover(block);
+    return at === undefined ? block : { ...block, stageEntry: at };
+  });
+}
+
 /**
  * The segments of a capture: the blocks that the stages wrote, without loader
- * leftovers and without blocks that are all in pages 0-3 (the entry state
- * holds them), joined into ranges that do not overlap or touch. A block
- * is a leftover when it holds the entry of an intermediate stage that started
- * after the block's writer, and no write from that stage on replaced the code
- * at that entry. Code that a stage ran before a later stage wrote over
- * it never drops a block, and the block that holds the capture entry is always
- * a segment. A block that an intermediate stage wrote inside a leftover, for
- * example a variable of the loader, is a leftover too. The filter comes before
- * the join: a join first would drop the program with a leftover. `used` tells
- * the addresses that the program used after its entry: a part of a leftover
- * that no later stage wrote is a segment when the program used an address in
- * it, as a stage can copy code of the program into a leftover. `writtenBy` is
- * the last stage that wrote into the range. When no written block holds the
- * entry, the code there is as the program loaded it: `loaded`, the range of
- * the PRG, is then a segment too (`loaded: true`), joined with the blocks that
- * it overlaps or touches.
+ * leftovers (stageBlocks) and without blocks that are all in pages 0-3
+ * (the entry state holds them), joined into ranges that do not overlap or
+ * touch. The filter comes before the join: a join first would drop the
+ * program with a leftover. `used` tells the addresses that the program used
+ * after its entry: a part of a leftover that no later stage wrote is a segment
+ * when the program used an address in it, as a stage can copy code of the
+ * program into a leftover. `writtenBy` is the last stage that wrote into the
+ * range. When no written block holds the entry, the code there is as the
+ * program loaded it: `loaded`, the range of the PRG, is then a segment too
+ * (`loaded: true`), joined with the blocks that it overlaps or touches.
  */
 export function captureSegments(
-  stages: ReadonlyArray<{ entry: number; wrote: readonly AddressRange[] }>,
+  stages: Stages,
   entry: number,
   options: { loaded?: AddressRange; used?: (address: number) => boolean } = {},
 ): Array<AddressRange & ({ writtenBy: number } | { loaded: true })> {
   const { loaded, used } = options;
-  const last = stages.length - 1;
-  const replaced = (from: number, address: number) => stages.slice(from).some((stage) => inRanges(stage.wrote, address));
-  const leftover = (block: AddressRange, writer: number) =>
-    !contains(block, entry) && stages.some((stage, index) => index > writer && index < last && contains(block, stage.entry) && !replaced(index, stage.entry));
-  const written = stages.flatMap((stage, index) => stage.wrote.map((range) => ({ start: range.start, end: range.end, writtenBy: index })));
-  const leftovers = written.filter((block) => leftover(block, block.writtenBy));
-  const inLeftover = (block: AddressRange & { writtenBy: number }) =>
-    block.writtenBy < last && !contains(block, entry) && leftovers.some((left) => block.start >= left.start && block.end <= left.end);
-  const dropped = (block: AddressRange & { writtenBy: number }) => leftover(block, block.writtenBy) || inLeftover(block);
+  const written = stageBlocks(stages, entry);
+  const dropped = (block: { stageEntry?: number }) => block.stageEntry !== undefined;
   const usedLeftovers = used === undefined ? [] : usedParts(written.filter(dropped), lastWriters(stages), used);
   const blocks = [...written.filter((block) => !dropped(block)), ...usedLeftovers]
     .filter((block) => block.end >= FIRST_SEGMENT_ADDRESS || contains(block, entry))
@@ -162,6 +189,26 @@ export function captureSegments(
     return false;
   });
   return [...apart, joined].sort((a, b) => a.start - b.start);
+}
+
+/**
+ * What a capture drops: the parts from FIRST_SEGMENT_ADDRESS on of the
+ * leftover blocks (stageBlocks) that no range of `kept`, the segments and
+ * the excluded ranges, holds. `writtenBy` is the stage that wrote the block,
+ * and `stageEntry` the entry of the later stage that makes it a leftover. A
+ * byte in the blocks of more than one stage is given once, with the first
+ * stage that wrote it.
+ */
+export function droppedRanges(stages: Stages, entry: number, kept: readonly AddressRange[]): DroppedRange[] {
+  const parts: DroppedRange[] = [];
+  const given: AddressRange[] = [];
+  for (const block of stageBlocks(stages, entry)) {
+    if (block.stageEntry === undefined || block.end < FIRST_SEGMENT_ADDRESS) continue;
+    const range = { start: Math.max(block.start, FIRST_SEGMENT_ADDRESS), end: block.end };
+    for (const piece of subtract(range, [...kept, ...given])) parts.push({ ...piece, writtenBy: block.writtenBy, stageEntry: block.stageEntry });
+    given.push(range);
+  }
+  return parts.sort((a, b) => a.start - b.start);
 }
 
 /** For each address, the last stage that wrote it, or -1. */
