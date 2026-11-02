@@ -5,7 +5,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import { COVERAGE, coverageEntries, coverageSeedKinds, executedStarts, formatC64Address, formatC64Byte, formatC64RangeFields, inRanges, prgRange, rangesOverlap, romOnlyRanges } from "#src/c64.ts";
+import { COVERAGE, coverageEntries, coverageSeedKinds, dxaFallThrough, executedStarts, formatC64Address, formatC64Byte, formatC64RangeFields, inRanges, prgRange, rangesOverlap, romOnlyRanges } from "#src/c64.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { writeReported } from "#src/host-client/transfer.ts";
@@ -43,10 +43,19 @@ const ALL_REGIONS = "a larger --max-listed. The project knowledge has all of the
  */
 function withHint(
   body: Record<string, unknown>,
-  facts: { conflicts: number; coverageConflicts: number; macros: { candidates: number; applied: boolean; revision: string | null | undefined }; version: { now: string | undefined; last: string | undefined; revision: string | null }; retiredReferences: number; guards: { refused: number; writtenNotExecuted: number } },
+  facts: {
+    conflicts: number;
+    coverageConflicts: number;
+    macros: { candidates: number; applied: boolean; revision: string | null | undefined };
+    version: { now: string | undefined; last: string | undefined; revision: string | null };
+    retiredReferences: number;
+    guards: { refused: number; writtenNotExecuted: number };
+    cut: Cut;
+  },
 ) {
-  const { conflicts, coverageConflicts, macros, version, retiredReferences, guards } = facts;
+  const { conflicts, coverageConflicts, macros, version, retiredReferences, guards, cut } = facts;
   const hints: string[] = [];
+  if (cut.entryPoints.length + cut.codeStarts.length + cut.dataRanges.length > 0) hints.push(overLimitHint(cut));
   if (guards.refused > 0) hints.push(`The analysis did not decode ${guards.refused} seeds in the program or of --entry: seeds.refused gives each refused seed with its reason. A seed inside an instruction or in data is often a wrong routine or region in the project knowledge. Examine it in the listing, and correct the project knowledge.`);
   if (guards.writtenNotExecuted > 0) hints.push("Each range in writtenNotExecuted is code of the analyzer on bytes that the runs wrote and never executed. Its from gives the instructions that reach it. Examine the routine that holds them: a wrong entry point leads the analyzer into data. Correct the project knowledge, and run the analysis again.");
   if (version.revision !== null && version.now !== undefined && version.last !== undefined && version.now !== version.last) {
@@ -60,6 +69,28 @@ function withHint(
   else if (!macros.applied && macros.candidates > 0) hints.push("Examine idioms.candidates.macros. To write them to the project knowledge, run the analysis again with --apply-macros.");
   if (hints.length === 0) return body;
   return reply(body, { hint: hints.join(" ") });
+}
+
+/** The seeds over the limits of the analyzer. */
+interface Cut {
+  analyzer: Analyzer;
+  entryPoints: readonly number[];
+  codeStarts: readonly number[];
+  dataRanges: ReadonlyArray<{ start: number; end: number }>;
+}
+
+/**
+ * What the analyzer did not get because of its limits, and why its findings
+ * there are not facts about the program. A routine in the knowledge or an
+ * --entry does not help: it is a seed too, and it puts another seed over the limit.
+ */
+function overLimitHint(cut: Cut): string {
+  const span = (kind: string, ranges: ReadonlyArray<{ start: number; end: number }>) =>
+    ranges.length === 0 ? [] : [`${ranges.length} ${kind} from ${formatC64Address(Math.min(...ranges.map((range) => range.start)))} to ${formatC64Address(Math.max(...ranges.map((range) => range.end)))}`];
+  const at = (addresses: readonly number[]) => addresses.map((address) => ({ start: address, end: address }));
+  const parts = [...span("entry points", at(cut.entryPoints)), ...span("code starts", at(cut.codeStarts)), ...span("data ranges", cut.dataRanges)];
+  const decompiler = cut.analyzer === "dxa" && cut.entryPoints.length > 0 ? ` The decompiler takes the coverage starts as code starts, at most ${DECOMPILER_LIMITS.codeStarts}: use its findings at these addresses.` : "";
+  return `The analyzer did not get all seeds: they are over its limits (seeds.overLimit). It did not get ${parts.join(", ")}. Thus a finding or a conflict at these addresses can come from this cut, and not from the program. Do not correct the project knowledge for such a finding.${decompiler}`;
 }
 
 /**
@@ -275,27 +306,33 @@ async function analyze(call: Call): Promise<unknown> {
 
   const revision = currentRevision(reader);
   const seeds = seedsFromKnowledge(reader, entries, space, executed.executed);
-  // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound:
-  // at most DECOMPILER_LIMITS.entryPoints (1024) entry points for both analyzers, and for the decompiler at most
-  // DECOMPILER_LIMITS.codeStarts (8192) coverage flow starts that are code in a routine. coverageSeeds gives what was used.
   const fromCoverage = coverage === undefined ? [] : coverageEntries(coverage, inProgram);
   const known = [...seeds.entryPoints, ...codeEntries(reader, byteAt, space)];
-  // The decompiler takes the coverage as code starts without a function; DXA has one list.
-  const kinds = analyzer === "dxa" || coverage === undefined ? { routines: fromCoverage, codeStarts: [] } : coverageSeedKinds(coverage, inProgram);
-  const ordered = [...new Set([...known, ...idioms.entryPoints, ...kinds.routines])];
-  seeds.entryPoints = ordered.slice(0, DECOMPILER_LIMITS.entryPoints).sort((a, b) => a - b);
-  const allCodeStarts = kinds.codeStarts.filter((entry) => !seeds.entryPoints.includes(entry));
-  const codeStarts = allCodeStarts.slice(0, DECOMPILER_LIMITS.codeStarts);
   // Idiom tables and the RAM under ROM that the runs never used are data for this run too; semantic data ranges come first.
   // A range with an entry point of the knowledge or --entry in it is left out: that code stays code.
   const fromRom = coverage === undefined ? [] : romOnlyRanges(coverage, byteAt).filter((range) => !known.some((entry) => entry >= range.start && entry <= range.end));
   const dataRanges = [...seeds.dataRanges];
   for (const range of [...idioms.dataRanges, ...fromRom]) if (!dataRanges.some((seed) => range.start <= seed.end && range.end >= seed.start)) dataRanges.push(range);
   seeds.dataRanges = dataRanges.slice(0, DECOMPILER_LIMITS.dataRanges);
+  // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound:
+  // at most DECOMPILER_LIMITS.entryPoints (1024) entry points for both analyzers, and for the decompiler at most
+  // DECOMPILER_LIMITS.codeStarts (8192) coverage flow starts that are code in a routine. coverageSeeds gives what was used.
+  // The decompiler takes the coverage as code starts without a function. DXA has one list, without the coverage starts
+  // that it reaches by fall-through from another seed, for example the instruction after a JSR.
+  const fallThrough = (from: readonly number[]) => (coverage === undefined ? new Set<number>() : dxaFallThrough(from, coverage, inProgram, seeds.dataRanges));
+  const reached = analyzer === "dxa" ? fallThrough([...known, ...idioms.entryPoints, ...fromCoverage]) : new Set<number>();
+  const kinds = analyzer === "dxa" || coverage === undefined ? { routines: fromCoverage.filter((entry) => !reached.has(entry)), codeStarts: [] } : coverageSeedKinds(coverage, inProgram);
+  const ordered = [...new Set([...known, ...idioms.entryPoints, ...kinds.routines])];
+  seeds.entryPoints = ordered.slice(0, DECOMPILER_LIMITS.entryPoints).sort((a, b) => a - b);
+  const allCodeStarts = kinds.codeStarts.filter((entry) => !seeds.entryPoints.includes(entry));
+  const codeStarts = allCodeStarts.slice(0, DECOMPILER_LIMITS.codeStarts);
   // The seeds over the limits of the analyzer: it never sees them.
-  const overLimit = { entryPoints: Math.max(0, ordered.length - DECOMPILER_LIMITS.entryPoints), codeStarts: allCodeStarts.length - codeStarts.length, dataRanges: Math.max(0, dataRanges.length - DECOMPILER_LIMITS.dataRanges) };
+  const cut = { analyzer, entryPoints: ordered.slice(DECOMPILER_LIMITS.entryPoints), codeStarts: allCodeStarts.slice(DECOMPILER_LIMITS.codeStarts), dataRanges: dataRanges.slice(DECOMPILER_LIMITS.dataRanges) };
+  const overLimit = { entryPoints: cut.entryPoints.length, codeStarts: cut.codeStarts.length, dataRanges: cut.dataRanges.length };
   const romUsed = fromRom.filter((range) => seeds.dataRanges.includes(range)).length;
-  const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry) || codeStarts.includes(entry)).length;
+  // DXA also decodes a coverage start that it did not get, when a seed that it got reaches the start by fall-through.
+  const followed = analyzer === "dxa" ? fallThrough(seeds.entryPoints) : new Set<number>();
+  const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry) || codeStarts.includes(entry) || followed.has(entry)).length;
   // Platform names are C64 names: drive code and banks get none.
   const platform = space === DEFAULT_SPACE ? platformNames() : [];
   /** The analyzer version of the last analysis of these bytes: a new version can change the findings by itself. */
@@ -389,6 +426,7 @@ async function analyze(call: Call): Promise<unknown> {
       version: { now: run.toolVersion, last: lastVersion, revision: run.imported.revision },
       retiredReferences: run.imported.changes.references.retired,
       guards: { refused: toCorrect(run.report.refused, entries), writtenNotExecuted: runOnWritten.length },
+      cut,
     });
   };
   if (analyzer === "dxa") {

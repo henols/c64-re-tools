@@ -113,6 +113,7 @@ test("a usage error gives the fix as hint and the help command as nextAction", (
   assert.equal(error.error, "give one file");
   assert.equal(error.hint, "To get the usage, run demo.ts usage --help.");
   assert.match(error.nextAction!, /^node \/\S+\/demo usage --help( --project \S+)?$/);
+  assert.match(refused(["nothing"], "invalid-input").nextAction!, /^node \/\S+\/demo --help( --project \S+)?$/, "an unknown command gives the help of the script");
 });
 
 test("a result can give a hint and a next command line that runs from any directory", () => {

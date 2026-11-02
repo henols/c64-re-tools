@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
-import { COVERAGE, coverageEntries, coverageSeedKinds, executedStarts, romOnlyRanges } from "../../src/c64.ts";
+import { COVERAGE, coverageEntries, coverageSeedKinds, dxaFallThrough, executedStarts, romOnlyRanges } from "../../src/c64.ts";
 import { openForRead, openForWrite, withWrite } from "../../src/knowledge/database.ts";
 import { importFindings } from "../../src/knowledge/import.ts";
 import { regionsOverlapping } from "../../src/knowledge/read.ts";
@@ -80,6 +80,41 @@ test("after an executed JSR the next instruction starts a flow, and a branch tar
   assert.deepEqual(coverageEntries(map, byteAt), [0xc000, 0xc003, 0xc007, 0xc100, 0xc200]);
   assert.deepEqual(coverageSeedKinds(map, byteAt), { routines: [0xc000, 0xc100, 0xc200], codeStarts: [0xc003, 0xc007] });
   assert.deepEqual(executedStarts(map, byteAt), [0xc000, 0xc003, 0xc007, 0xc100, 0xc200]);
+});
+
+test("DXA gets only the coverage starts that no other seed reaches by fall-through, as the instruction after a JSR", () => {
+  // The Bruce Lee run: 1187 coverage starts, most of them after a JSR, went over the limit of 1024 entry points.
+  const image = new Uint8Array(0x10000);
+  // $c000 JSR $c100 / $c003 JSR $c100 / $c006 RTS; $c100 RTS; $c200 LDA #1 / RTS is reached only through a vector.
+  image.set([0x20, 0x00, 0xc1, 0x20, 0x00, 0xc1, 0x60], 0xc000);
+  image[0xc100] = 0x60;
+  image.set([0xa9, 0x01, 0x60], 0xc200);
+  const map = mapWith([0xc000, 0xc003, 0xc006, 0xc100, 0xc200, 0xc202]);
+  const byteAt = imageReader(image, "flat64k");
+  const starts = coverageEntries(map, byteAt);
+  const reached = dxaFallThrough(starts, map, byteAt, []);
+  assert.deepEqual(starts.filter((start) => !reached.has(start)), [0xc000, 0xc100, 0xc200]);
+  assert.deepEqual([...dxaFallThrough([0xc003], map, byteAt, [])], [0xc006], "a seed is not in the set unless another seed reaches it");
+});
+
+test("the fall-through for DXA stops where DXA does not follow the next instruction", () => {
+  const image = new Uint8Array(0x10000);
+  image[0xc100] = 0x60;
+  // A JSR into a data range: $c300 JSR $c400 / $c303 LDA #1 / RTS.
+  image.set([0x20, 0x00, 0xc4, 0xa9, 0x01, 0x60], 0xc300);
+  // An instruction that no run executed: $c320 JSR $c100 / $c323 NOP / $c324 RTS.
+  image.set([0x20, 0x00, 0xc1, 0xea, 0x60], 0xc320);
+  // An executed instruction in a data range: $c330 JSR $c100 / $c333 LDA #1 / RTS.
+  image.set([0x20, 0x00, 0xc1, 0xa9, 0x01, 0x60], 0xc330);
+  // An operand that holds another executed start: $c340 JSR $c100 / $c343 BIT $ea60, where $c344 RTS also runs / $c346 JSR $c100 / RTS.
+  image.set([0x20, 0x00, 0xc1, 0x2c, 0x60, 0xea, 0x20, 0x00, 0xc1, 0x60], 0xc340);
+  // A branch into a data range: $c380 BEQ $c3f0 / $c382 JSR $c100 / RTS.
+  image.set([0xf0, 0x6e, 0x20, 0x00, 0xc1, 0x60], 0xc380);
+  const map = mapWith([0xc100, 0xc300, 0xc303, 0xc305, 0xc320, 0xc324, 0xc330, 0xc333, 0xc335, 0xc340, 0xc343, 0xc344, 0xc346, 0xc349, 0xc380, 0xc382, 0xc385]);
+  const byteAt = imageReader(image, "flat64k");
+  const starts = coverageEntries(map, byteAt);
+  const reached = dxaFallThrough(starts, map, byteAt, [{ start: 0xc333, end: 0xc334 }, { start: 0xc3f0, end: 0xc40f }]);
+  assert.deepEqual(starts.filter((start) => !reached.has(start)), [0xc100, 0xc300, 0xc303, 0xc320, 0xc324, 0xc330, 0xc333, 0xc340, 0xc344, 0xc346, 0xc380, 0xc385]);
 });
 
 test("code regions and JMP tables are entry points, and analyzer data over executed code is a conflict", () => {

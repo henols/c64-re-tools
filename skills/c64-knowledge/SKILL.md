@@ -121,7 +121,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--seed <n>` | `sample` | A whole number from 0 to 999999 that selects the sample. Without it, the script selects one. |
 | `--placement <line\|side>` | `verdict` | The placement of the comment. Give it when the sample has a line and a side comment at the address. |
 | `--class <class>` | `verdict` | With `wrong`: the class of the error: `callers`, `bits`, `registers`, `bounds`, `units`, `paths`, `tables`, `hardware`, `place` or `scope`. |
-| `--why <text>` | `verdict` | With `wrong`: the evidence, with the addresses and the instructions. With `unsure`: the run that can show the claim. |
+| `--why <text>` | `verdict` | With `wrong`: the evidence, with the addresses and the instructions. With `unsure`: the run that can show the claim. With `correct`: the evidence. It is optional. |
 | `--text <text>` | `verdict` | With `wrong`: the correct comment. |
 | `--name <name>` | `verdict` | With `wrong`: the correct name at the address. |
 | `--max-listed <n>` | `search`, `symbols`, `regions`, `comments`, `references`, `suppressions`, `modules`, `operands`, `patches`, `switches`, `releases`, `macros`, `uses`, `spaces`, `history`, `revisions`, `revision`, `listing`, `join`, `checks` | The most items in each list of the body. The default is 50. The counts are always complete. |
@@ -268,6 +268,8 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 - Example: `$09bc  ad 11 d0  x  draw_room: lda SCROLY  ; refs in 3 out 1 | also FUN_09bc`.
 - A line comment is a line of its own before its line, for example `; Draws the room.`.
 - The ACME line is the instruction with the names of its target. An operand expression of the knowledge replaces the operand. A table of addresses or words shows its values as `!word` lines, with the name of each target. A split table and the other bytes show as `!byte` lines.
+- The names are the names of the generated source. A platform name of a ROM shows only when the program uses that ROM. A line in the I/O area (`$D000-$DFFF`) gets no platform name, because that name is the name of the register and not of the RAM. A target inside a data region shows as `<name>+<offset>` only when a symbol is at the start of the region.
+- A range outside the program has no lines. Then the `hint` gives the ranges where the program has bytes.
 - With `--code`, `lines` has only the instructions of the code regions and their line comments.
 - With `--out`, the text file has the lines, one on each line. `body.lines` is the number of lines, and the body has `out`, `bytes` and `sha256` of the text file.
 - Use `listing` in place of your own disassembler. To find the targets of a table, classify the table with its type. Then read its listing. Do not decode the bytes of a table yourself.

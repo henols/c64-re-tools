@@ -3,15 +3,19 @@
 // the bytes from coverage files, and the references in and out. Nothing here
 // reads files: knowledge.ts gives the lookups.
 
-import { COVERAGE, formatC64Address, formatC64Byte, hexByte, POINTER_TABLE_TYPES, pointerEntryText, pointerTableEntries, type PointerTableType, splitEntryByte } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, hexByte, inRanges, POINTER_TABLE_TYPES, pointerEntryText, pointerTableEntries, type PointerTableType, splitEntryByte } from "#src/c64.ts";
 import { CODE_REGION_TYPES, INSTRUCTION_REGION_TYPES } from "#src/knowledge/schema.ts";
 import { instructionWith, MODE_LENGTH, OPCODES, type Mode } from "#src/opcodes.ts";
 
 export interface ListingSource {
   /** The image byte at an address, or undefined outside the image. */
   byteAt: (address: number) => number | undefined;
-  /** The name of an address: a symbol, else a platform name. */
-  nameOf: (address: number) => string | undefined;
+  /** The symbol of an address in the knowledge, without platform names. */
+  symbolOf: (address: number) => string | undefined;
+  /** The platform name of an address, of a ROM that the program uses. None without it. */
+  platformOf?: (address: number) => string | undefined;
+  /** The I/O area: inside the image, its platform names name the registers, not the RAM of the program, so they are no labels. */
+  io?: AddressRange;
   /** The start of the platform entry of more bytes that holds an address outside the image (NMINV for its high byte), or undefined. */
   entryStart?: (address: number) => number | undefined;
   /** The analyzer names of an address, for reference. */
@@ -59,17 +63,31 @@ function accessOf(coverage: Uint8Array | undefined, start: number, length: numbe
   return text === "" ? "-" : text;
 }
 
+/** The name of an address: its symbol, else its platform name. */
+function nameOf(address: number, source: ListingSource): string | undefined {
+  return source.symbolOf(address) ?? source.platformOf?.(address);
+}
+
+/** The label of a line of the image, as c64-source writes it: a platform name in the I/O area names the register, not the RAM there. */
+function labelOf(address: number, source: ListingSource): string | undefined {
+  return source.io !== undefined && inRanges([source.io], address) ? source.symbolOf(address) : nameOf(address, source);
+}
+
 /**
  * The name of an operand target, as c64-source writes it: its own name, else
- * name+offset inside a named data region, or inside a platform entry of more bytes.
+ * name+offset inside a data region with a symbol at its start, or inside a
+ * platform entry of more bytes. A platform name at the start of a region is
+ * no name of the region: colour RAM in a region from $D000 is not SP0X+2048.
  */
 function targetName(target: number, source: ListingSource): string | undefined {
-  const own = source.nameOf(target);
+  const own = nameOf(target, source);
   if (own !== undefined) return own;
   const region = source.regions.find((row) => target > row.start && target <= row.end && !INSTRUCTIONS.has(row.type));
-  const start = region?.start ?? source.entryStart?.(target);
-  const name = start === undefined ? undefined : source.nameOf(start);
-  return name === undefined ? undefined : `${name}+${target - start!}`;
+  const table = region === undefined ? undefined : source.symbolOf(region.start);
+  if (table !== undefined) return `${table}+${target - region!.start}`;
+  const entry = source.entryStart?.(target);
+  const name = entry === undefined ? undefined : nameOf(entry, source);
+  return name === undefined ? undefined : `${name}+${target - entry!}`;
 }
 
 /** The operand value of an instruction as an expression: the name of its target where one exists, else the number. Empty for no operand. */
@@ -121,7 +139,7 @@ export function listing(source: ListingSource, start: number, end: number, optio
   const data = options.code !== true;
   const line = (address: number, length: number, text: string): ListingLine => {
     const bytes = Array.from({ length }, (_, offset) => hexByte(source.byteAt(address + offset)!)).join(" ");
-    const label = source.nameOf(address);
+    const label = labelOf(address, source);
     const second = source.secondNames(address).filter((name) => name !== label);
     const { line: lineComments, side: own } = source.comments(address);
     // A comment inside the line (knowledge of an older version) shows with its address, as in the source of c64-source.
@@ -186,7 +204,7 @@ export function listing(source: ListingSource, start: number, end: number, optio
       let at = address;
       while (size !== undefined && at <= end && texts.length * size < DATA_PER_LINE) {
         const value = table.get(at);
-        if (value?.length !== size || (at !== address && source.nameOf(at) !== undefined) || (size === 2 && source.nameOf(at + 1) !== undefined)) break;
+        if (value?.length !== size || (at !== address && labelOf(at, source) !== undefined) || (size === 2 && labelOf(at + 1, source) !== undefined)) break;
         texts.push(value.text);
         at += size;
       }
@@ -199,7 +217,7 @@ export function listing(source: ListingSource, start: number, end: number, optio
     // Bytes up to the next label, table value, region edge or end of the line.
     const values: number[] = [];
     let at = address;
-    while (at <= end && values.length < DATA_PER_LINE && source.byteAt(at) !== undefined && (at === address || (source.nameOf(at) === undefined && regionAt(at) === region && table?.has(at) !== true))) {
+    while (at <= end && values.length < DATA_PER_LINE && source.byteAt(at) !== undefined && (at === address || (labelOf(at, source) === undefined && regionAt(at) === region && table?.has(at) !== true))) {
       values.push(source.byteAt(at)!);
       at++;
     }

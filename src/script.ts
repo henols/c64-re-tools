@@ -747,7 +747,7 @@ async function envelope(script: Envelope): Promise<void> {
       if (error instanceof UsageError) {
         const help = `To get the usage, run ${script.name}.ts${commandName === undefined ? "" : ` ${commandName}`} --help.`;
         shown = { error: shown.error, hint: shown.hint === undefined ? help : `${sentence(shown.hint)} ${help}` };
-        nextAction = commandLine(commandName === undefined ? [] : [commandName, "--help"]);
+        nextAction = commandLine(commandName === undefined ? ["--help"] : [commandName, "--help"]);
       }
     } else {
       code = "operation-failed";

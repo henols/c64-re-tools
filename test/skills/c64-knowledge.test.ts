@@ -409,7 +409,7 @@ test("listing writes an operand expression in the syntax of the addressing mode,
   ]);
   const source: ListingSource = {
     byteAt: (address) => bytes.get(address),
-    nameOf: () => undefined,
+    symbolOf: () => undefined,
     secondNames: () => [],
     regions: [{ start: 0x047e, end: 0x048a, type: "code" }],
     comments: () => ({ line: [] }),
@@ -426,10 +426,11 @@ test("listing names an address inside a named data region or a platform entry as
   // $4000 LDA $432F, $4003 STA $0319, $4006 LDA $4100: a two-byte table at $432E, the high byte of NMINV, and a code region.
   const bytes = new Map([0xad, 0x2f, 0x43, 0x8d, 0x19, 0x03, 0xad, 0x00, 0x41, 0x00, 0x00].map((value, offset) => [0x4000 + offset, value]));
   for (const address of [0x432e, 0x432f, 0x4100, 0x4101]) bytes.set(address, 0);
-  const names = new Map([[0x432e, "fireball_active"], [0x0318, "NMINV"], [0x4100, "main"]]);
+  const names = new Map([[0x432e, "fireball_active"], [0x4100, "main"]]);
   const source: ListingSource = {
     byteAt: (address) => bytes.get(address),
-    nameOf: (address) => names.get(address),
+    symbolOf: (address) => names.get(address),
+    platformOf: (address) => (address === 0x0318 ? "NMINV" : undefined),
     entryStart: (address) => (address === 0x0319 ? 0x0318 : undefined),
     secondNames: () => [],
     regions: [{ start: 0x4000, end: 0x4008, type: "code" }, { start: 0x4100, end: 0x4101, type: "code" }, { start: 0x432e, end: 0x432f, type: "bytes" }],
@@ -440,6 +441,47 @@ test("listing names an address inside a named data region or a platform entry as
   assert.deepEqual(listing(source, 0x4000, 0x4008).map((line) => line.text), ["lda fireball_active+1", "sta NMINV+1", "lda main"]);
 });
 
+test("listing gives no platform label to RAM in the I/O area of the image, and no platform name to a data region, as c64-source does", () => {
+  // $c000 STA $d020 / STA $d900 / RTS; the image holds RAM at $d000-$d001 and $d900 in one region from $d000.
+  const bytes = new Map([0x8d, 0x20, 0xd0, 0x8d, 0x00, 0xd9, 0x60].map((value, offset) => [0xc000 + offset, value]));
+  for (const [address, value] of [[0xd000, 1], [0xd001, 2], [0xd900, 3]] as const) bytes.set(address, value);
+  const platform = new Map([[0xd000, "SP0X"], [0xd001, "SP0Y"], [0xd020, "EXTCOL"]]);
+  const source: ListingSource = {
+    byteAt: (address) => bytes.get(address),
+    symbolOf: () => undefined,
+    platformOf: (address) => platform.get(address),
+    io: { start: 0xd000, end: 0xdfff },
+    secondNames: () => [],
+    regions: [{ start: 0xc000, end: 0xc006, type: "code" }, { start: 0xd000, end: 0xdbff, type: "bytes" }],
+    comments: () => ({ line: [] }),
+    operand: () => undefined,
+    references: () => ({ in: 0, out: 0 }),
+  };
+  assert.deepEqual(listing(source, 0xc000, 0xc006).map((line) => line.text), ["sta EXTCOL", "sta $d900", "rts"], "an access names the register; colour RAM is no SP0X+2304");
+  assert.deepEqual(listing(source, 0xd000, 0xd001).map((line) => [line.label, line.text]), [[undefined, "!byte $01,$02"]]);
+});
+
+test("listing names only the platform of the ROMs that the program uses, and a range outside the program gets a hint with its segments", () => {
+  const root = project();
+  // $1000 JSR $ffd2 / STA $d020 / RTS.
+  writeFileSync(join(root, "game.prg"), Buffer.from([0x00, 0x10, 0x20, 0xd2, 0xff, 0x8d, 0x20, 0xd0, 0x60]));
+  assert.equal(knowledge(root, "image", "game.prg").status, 0);
+  assert.equal(knowledge(root, "classify", "$1000-$1006", "code").status, 0);
+  const texts = () => items<string>(knowledge(root, "listing", "$1000-$1006").json.lines);
+  assert.deepEqual(texts(), ["$1000  20 d2 ff  jsr CHROUT", "$1003  8d 20 d0  sta EXTCOL", "$1006  60  rts"], "without coverage or entry state, the program uses both ROMs");
+  // A run that executed no ROM code: the KERNAL names are gone, the I/O registers stay.
+  const coverage = new Uint8Array(0x10000);
+  coverage[0x1000] = COVERAGE.ramExecute;
+  writeFileSync(join(root, "run.bin"), coverage);
+  assert.equal(knowledge(root, "coverage", "run.bin").status, 0);
+  assert.deepEqual(texts().map((line) => line.split("  ").at(-1)), ["jsr $ffd2", "sta EXTCOL", "rts"]);
+  const outside = knowledge(root, "listing", "$2000-$20ff");
+  assert.equal(outside.status, 0);
+  assert.equal((outside.json.lines as { count: number }).count, 0);
+  assert.match(outside.envelope.hint ?? "", /\$1000-\$1006/);
+  assert.equal(knowledge(root, "listing", "$1000-$1006").envelope.hint, undefined);
+});
+
 test("listing writes a table of words or addresses as its values with the names of the targets, as c64-source does", () => {
   // $2000: addresses of $3000 (room_a) and $3010; $2004: an RTS table, split, of $3100 (handler) and $3200; $2008: words with an odd last byte.
   const table = [0x00, 0x30, 0x10, 0x30, 0xff, 0xff, 0x30, 0x31, 0x34, 0x12, 0x56];
@@ -447,7 +489,7 @@ test("listing writes a table of words or addresses as its values with the names 
   const names = new Map([[0x3000, "room_a"], [0x3100, "handler"]]);
   const source: ListingSource = {
     byteAt: (address) => bytes.get(address),
-    nameOf: (address) => names.get(address),
+    symbolOf: (address) => names.get(address),
     secondNames: () => [],
     regions: [{ start: 0x2000, end: 0x2003, type: "addresses" }, { start: 0x2004, end: 0x2007, type: "rts-addresses-split" }, { start: 0x2008, end: 0x200a, type: "words" }],
     comments: () => ({ line: [] }),
@@ -473,7 +515,7 @@ test("listing shows a comment at an operand byte (knowledge of an older version)
   const comments = new Map<number, { line: string[]; side?: string }>([[0x1bc9, { line: [], side: "the mode" }], [0x1bca, { line: [], side: "mid-instruction comment" }]]);
   const source: ListingSource = {
     byteAt: (address) => bytes.get(address),
-    nameOf: () => undefined,
+    symbolOf: () => undefined,
     secondNames: () => [],
     regions: [{ start: 0x1bc9, end: 0x1bcc, type: "code" }],
     comments: (address) => comments.get(address) ?? { line: [] },
@@ -491,7 +533,7 @@ test("listing with code only gives the instructions of the code regions and no d
   const bytes = new Map([0xa9, 0x01, 0x60, 0x07, 0x08, 0x00, 0x60].map((value, offset) => [0x1000 + offset, value]));
   const source: ListingSource = {
     byteAt: (address) => bytes.get(address),
-    nameOf: () => undefined,
+    symbolOf: () => undefined,
     secondNames: () => [],
     regions: [{ start: 0x1000, end: 0x1002, type: "code" }, { start: 0x1003, end: 0x1004, type: "bytes" }, { start: 0x1006, end: 0x1006, type: "jumps" }],
     comments: () => ({ line: [] }),
@@ -584,6 +626,7 @@ test("withVerdict refuses a comment outside the sample and a verdict without the
   const one = withVerdict(sample, undefined, { address: "$2100", verdict: "unsure", why: "a run of room 2" });
   const two = withVerdict(sample, one, { address: "$2000", placement: "side", verdict: "wrong", class: "bits", why: "AND #$7f", text: "Clears bit 7." });
   const again = withVerdict(sample, two, { address: "$2100", verdict: "correct" });
+  assert.equal(withVerdict(sample, undefined, { address: "$2100", verdict: "correct", why: "a run of room 2" }).items[0]!.why, "a run of room 2", "a correct verdict can have --why");
   assert.deepEqual(again.items.map((item) => [item.address, item.placement, item.verdict]), [["$2000", "side", "wrong"], ["$2100", "line", "correct"]], "a new verdict replaces the earlier one, in the order of the sample");
   const result = checkResult(sample, again);
   assert.deepEqual([result.sampled, result.checked, result.correct, result.wrong, result.unsure], [3, 2, 1, 1, 0]);
