@@ -3,31 +3,17 @@
 // copies, and code that nothing reaches and nothing ran.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
 import { withWrite } from "../../src/knowledge/database.ts";
 import { applyBatch } from "../../src/knowledge/write.ts";
 import { findBasic, findCopies, findFills, findLeftovers, findText } from "../../skills/c64-provenance/scripts/lib/leftovers.ts";
 import { separate } from "../../src/knowledge/separate.ts";
-import { readEnvelope, seededBytes } from "../kit.ts";
+import { runScriptSync, scratchDir, seededBytes, skillScript } from "../kit.ts";
 import { importCoverage, importImage } from "../fixtures/program.ts";
-
-const roots: string[] = [];
-after(() => {
-  for (const root of roots) rmSync(root, { recursive: true, force: true });
-});
-
-const provenance = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
-/** Runs a script in `cwd`: the exit status, the envelope, and json (the body, or { error: { code, message } }). */
-const script = (path: string, args: string[], cwd: string) => {
-  const spawned = spawnSync(process.execPath, [...process.execArgv, path, ...args], { cwd, encoding: "utf8" });
-  return { status: spawned.status, stdout: spawned.stdout, stderr: spawned.stderr, ...readEnvelope(spawned.stdout, spawned.status) };
-};
 
 /** PETSCII bytes of upper-case text, as the C64 shows them after a reset. */
 const petscii = (text: string) => [...text].map((character) => character.charCodeAt(0));
@@ -166,8 +152,7 @@ test("code that nothing reaches is unknown, not dead code, while the program has
 });
 
 test("the leftovers command lists each kind of finding with --max-listed, and --out gets the fields of the body with all findings", () => {
-  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-leftovers-"));
-  roots.push(root);
+  const root = scratchDir("leftovers");
   const memory = new Uint8Array(0x10000);
   memory.set(seededBytes(9, 0x0f), 0x2000); // zeros around the texts, as strings usually have
   memory.set(petscii("CRACKED BY THE GANG"), 0x2010);
@@ -184,9 +169,9 @@ test("the leftovers command lists each kind of finding with --max-listed, and --
   coverage[0x2000] = COVERAGE.ramExecute;
   importCoverage(root, { "cov.bin": coverage });
 
-  const run = script(provenance, ["leftovers", "--out", ".c64-re-tools/local/leftovers.json", "--max-listed", "1"], root);
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const result = run.json as Record<string, any>;
+  const run = runScriptSync(skillScript("c64-provenance", "provenance.ts"), ["leftovers", "--out", ".c64-re-tools/local/leftovers.json", "--max-listed", "1"], { cwd: root });
+  assert.equal(run.status, 0, run.stdout);
+  const result = run.json;
   assert.match(run.envelope.hint ?? "", /cut: count gives its full size\. To get the rest, give a larger --max-listed, or read \.c64-re-tools\/local\/leftovers\.json\./);
   assert.equal(result.entry, "$2000");
   assert.equal(result.stages, 2);

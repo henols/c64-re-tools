@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
+import { failsWith } from "../errors.testkit.ts";
 import { WireFailure } from "../protocol/messages.ts";
 import { acmeArguments, assemble, parseDiagnostics, parseSymbols } from "./acme.ts";
-import { ProcessSupervisor } from "./processes.ts";
+import { toolContext } from "./context.testkit.ts";
+import { shellStandIn } from "./standin.testkit.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-acme-test-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -84,10 +86,8 @@ test("the symbol list gives addresses inside the program and constants outside",
 });
 
 test("an ACME failure without a usual error message quotes the last output of ACME", { skip: process.platform === "win32" ? "the stand-in ACME is a shell script" : false }, async () => {
-  const acme = join(scratch, "acme");
-  writeFileSync(acme, '#!/bin/sh\necho "acme: out of memory in $PWD/main.a" >&2\nexit 1\n');
-  chmodSync(acme, 0o755);
-  const context = { supervisor: new ProcessSupervisor(), signal: new AbortController().signal, env: { ...process.env, C64RT_ACME: acme } };
+  const acme = shellStandIn(scratch, "acme", ['echo "acme: out of memory in $PWD/main.a" >&2', "exit 1"]);
+  const context = toolContext({ ...process.env, C64RT_ACME: acme });
   const { result } = await assemble({ files: [{ path: "main.a", size: 1 }], entrySource: "main.a", includeDirs: [], defines: {} }, [Buffer.from("x")], context);
   assert.equal(result.assembled, false);
   assert.deepEqual(result.diagnostics, [
@@ -99,7 +99,7 @@ test("an ACME failure without a usual error message quotes the last output of AC
 });
 
 test("an entry source or include directory outside the source root is refused by name before ACME runs", async () => {
-  const context = { supervisor: new ProcessSupervisor(), signal: new AbortController().signal, env: { PATH: "" } };
+  const context = toolContext({ PATH: "" });
   const params = { files: [{ path: "main.a", size: 1 }], entrySource: "main.a", includeDirs: [] as string[], defines: {} };
   const refused = (name: string) => (error: unknown) => error instanceof WireFailure && error.code === "invalid-input" && error.message.includes(name);
   for (const directory of ["/usr/share/acme", "../..", "lib/../../x", "C:/acme", "lib\\x"]) {
@@ -118,6 +118,6 @@ test("an entry source or include directory outside the source root is refused by
   }
   // An include folder beside the source root passes the checks: the stand-in PATH has no ACME, so the run stops there.
   for (const directory of ["../build", "..", "../build/gen"]) {
-    await assert.rejects(assemble({ ...nested, includeDirs: [directory] }, [Buffer.from("x")], context), (error: unknown) => error instanceof WireFailure && error.code === "installation-incomplete");
+    await assert.rejects(assemble({ ...nested, includeDirs: [directory] }, [Buffer.from("x")], context), failsWith("installation-incomplete"));
   }
 });

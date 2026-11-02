@@ -20,20 +20,9 @@ import {
   ResponseDecoder,
   type MonitorResponse,
 } from "./binary-monitor.ts";
+import { commandSplitter, responseFrame } from "./monitor-wire.testkit.ts";
 
 const hex = (text: string) => Buffer.from(text.replace(/[^0-9a-f]/gi, ""), "hex");
-
-/** Builds a response frame the way VICE does. */
-function response(type: number, requestId: number, body: Buffer = Buffer.alloc(0), error = 0): Buffer {
-  const header = Buffer.alloc(12);
-  header[0] = 0x02;
-  header[1] = 0x02;
-  header.writeUInt32LE(body.length, 2);
-  header[6] = type;
-  header[7] = error;
-  header.writeUInt32LE(requestId, 8);
-  return Buffer.concat([header, body]);
-}
 
 test("commands are framed as in the manual's checkpoint example", () => {
   const frame = encodeCommand(0x1234dead, Command.checkpointSet, hex("e2fc e3fc 01 01 04 01"));
@@ -62,7 +51,7 @@ test("the manual's register event and stopped event decode", () => {
 });
 
 test("the decoder reassembles responses split at every byte and handles empty bodies", () => {
-  const stream = Buffer.concat([response(0x81, 7), response(0x01, 8, hex("0300 a9008d"))]);
+  const stream = Buffer.concat([responseFrame(0x81, 7), responseFrame(0x01, 8, hex("0300 a9008d"))]);
   for (let split = 0; split <= stream.length; split++) {
     const decoder = new ResponseDecoder();
     const all = [...decoder.push(stream.subarray(0, split)), ...decoder.push(stream.subarray(split))];
@@ -78,7 +67,7 @@ test("the decoder reassembles responses split at every byte and handles empty bo
 
 test("the decoder refuses a stream that is not the binary monitor protocol", () => {
   assert.throws(() => new ResponseDecoder().push(Buffer.from("READY.\r\nxxxxxxxx")), MonitorConnectionError);
-  const wrongApi = response(0x81, 1);
+  const wrongApi = responseFrame(0x81, 1);
   wrongApi[1] = 0x01;
   assert.throws(() => new ResponseDecoder().push(wrongApi), /API version/);
 });
@@ -109,16 +98,7 @@ after(() => {
 
 async function fakeMonitor(onCommand: (socket: Socket, requestId: number, command: number, body: Buffer) => void) {
   const server = createServer((socket) => {
-    let pending = Buffer.alloc(0);
-    socket.on("data", (chunk) => {
-      pending = Buffer.concat([pending, chunk]);
-      while (pending.length >= 11) {
-        const length = pending.readUInt32LE(2);
-        if (pending.length < 11 + length) break;
-        onCommand(socket, pending.readUInt32LE(6), pending[10]!, pending.subarray(11, 11 + length));
-        pending = pending.subarray(11 + length);
-      }
-    });
+    socket.on("data", commandSplitter((requestId, command, body) => onCommand(socket, requestId, command, body)));
   });
   servers.push(server);
   server.listen(0, "127.0.0.1");
@@ -131,7 +111,7 @@ async function fakeMonitor(onCommand: (socket: Socket, requestId: number, comman
 test("responses are matched by request id and events go to listeners", async () => {
   const monitor = await fakeMonitor((socket, id, command) => {
     // Like VICE entering the monitor: register event, stopped event, then the answer.
-    socket.write(Buffer.concat([response(0x31, EVENT_REQUEST_ID, hex("0000")), response(0x62, EVENT_REQUEST_ID, hex("cfe5")), response(command, id)]));
+    socket.write(Buffer.concat([responseFrame(0x31, EVENT_REQUEST_ID, hex("0000")), responseFrame(0x62, EVENT_REQUEST_ID, hex("cfe5")), responseFrame(command, id)]));
   });
   const events: MonitorResponse[] = [];
   monitor.onEvent((event) => events.push(event));
@@ -149,7 +129,7 @@ test("concurrent requests resolve with their own responses even out of order", a
   const monitor = await fakeMonitor((socket, id, command) => {
     held.push([socket, id, command]);
     if (held.length === 2) {
-      for (const [s, i, c] of held.reverse()) s.write(response(c, i, Buffer.from([i])));
+      for (const [s, i, c] of held.reverse()) s.write(responseFrame(c, i, Buffer.from([i])));
     }
   });
   const [first, second] = await Promise.all([monitor.request(Command.ping), monitor.request(Command.viceInfo)]);
@@ -161,7 +141,7 @@ test("concurrent requests resolve with their own responses even out of order", a
 
 test("checkpoint-list style answers collect the earlier same-id responses", async () => {
   const monitor = await fakeMonitor((socket, id) => {
-    socket.write(Buffer.concat([response(0x11, id, hex("01")), response(0x11, id, hex("02")), response(0x14, id, hex("02000000"))]));
+    socket.write(Buffer.concat([responseFrame(0x11, id, hex("01")), responseFrame(0x11, id, hex("02")), responseFrame(0x14, id, hex("02000000"))]));
   });
   const reply = await monitor.request(Command.checkpointList);
   assert.equal(reply.type, 0x14);
@@ -173,7 +153,7 @@ test("checkpoint-list style answers collect the earlier same-id responses", asyn
 });
 
 test("a response of another type for a request rejects it at once", async () => {
-  const monitor = await fakeMonitor((socket, id) => socket.write(response(0x11, id, Buffer.alloc(23))));
+  const monitor = await fakeMonitor((socket, id) => socket.write(responseFrame(0x11, id, Buffer.alloc(23))));
   const started = Date.now();
   await assert.rejects(monitor.request(Command.memoryGet, Buffer.alloc(8), 5000), (error: unknown) => error instanceof MonitorConnectionError && /type 0x11/.test((error as Error).message));
   assert.ok(Date.now() - started < 1000);
@@ -181,13 +161,13 @@ test("a response of another type for a request rejects it at once", async () => 
 });
 
 test("checkpoint set resolves on its checkpoint-info answer", async () => {
-  const monitor = await fakeMonitor((socket, id) => socket.write(response(0x11, id, Buffer.alloc(23))));
+  const monitor = await fakeMonitor((socket, id) => socket.write(responseFrame(0x11, id, Buffer.alloc(23))));
   assert.equal((await monitor.request(Command.checkpointSet, Buffer.alloc(8))).type, 0x11);
   await monitor.close();
 });
 
 test("a VICE error code rejects with MonitorError", async () => {
-  const monitor = await fakeMonitor((socket, id, command) => socket.write(response(command, id, Buffer.alloc(0), 0x01)));
+  const monitor = await fakeMonitor((socket, id, command) => socket.write(responseFrame(command, id, Buffer.alloc(0), 0x01)));
   await assert.rejects(monitor.request(Command.resourceGet), (error: unknown) => error instanceof MonitorError && error.errorCode === 0x01);
   await monitor.close();
 });
@@ -195,7 +175,7 @@ test("a VICE error code rejects with MonitorError", async () => {
 test("a request without an answer times out and a late answer is ignored", async () => {
   let late: (() => void) | undefined;
   const monitor = await fakeMonitor((socket, id, command) => {
-    late = () => socket.write(response(command, id));
+    late = () => socket.write(responseFrame(command, id));
   });
   await assert.rejects(monitor.request(Command.ping, undefined, 30), /no response/);
   late?.();
@@ -210,7 +190,7 @@ test("while a request is overdue, later ones wait briefly; its late answer ends 
   const held: Array<() => void> = [];
   let holding = true;
   const monitor = await fakeMonitor((socket, id, command) => {
-    const answer = () => socket.write(response(command, id));
+    const answer = () => socket.write(responseFrame(command, id));
     if (holding) held.push(answer);
     else answer();
   });
@@ -237,7 +217,7 @@ test("an overdue request whose answer never comes ends when a later request is a
   let first = true;
   const monitor = await fakeMonitor((socket, id, command) => {
     if (first) first = false;
-    else setTimeout(() => socket.write(response(command, id)), 120);
+    else setTimeout(() => socket.write(responseFrame(command, id)), 120);
   });
   monitor.overdueTimeoutMs = 50;
   await assert.rejects(monitor.request(Command.ping, undefined, 30), MonitorTimeoutError);

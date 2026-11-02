@@ -1,38 +1,28 @@
 // Real-VICE checks for program load, disk attach and autostart.
 
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
+import { test } from "node:test";
 
-import { textToPetscii } from "../../../src/c64.ts";
+import { formatC64Address, textToPetscii } from "../../../src/c64.ts";
+import { failsWith } from "../../../src/errors.testkit.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import type { ViceSessionHandle } from "../../../src/host/server.ts";
 import { createToolDispatcher } from "../../../src/host/tools/index.ts";
-import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { WireFailure } from "../../../src/protocol/messages.ts";
 import { buildD64, offsetOf } from "../../fixtures/d64.ts";
 import { BORDER_LOOP_END, BORDER_LOOP_START, borderLoopPrg } from "../../fixtures/prg/border-loop.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { waitFor } from "../../kit.ts";
+import { fileSession, liveEnv, liveLog, liveSkip } from "./live.ts";
 
-let session: ViceSessionHandle;
 const supervisor = new ProcessSupervisor();
-before(async () => {
-  if (liveSkip !== false) return;
-  supervisor.installExitGuard();
-  session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard: "pal" });
-});
-after(async () => {
-  await session?.close();
-});
+const session = fileSession({ supervisor });
 
 /** Polls (no fixed sleep) until the C64 CPU runs inside [start, end]. */
-async function waitForPcIn(start: number, end: number, timeoutMs = 30_000): Promise<number> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
+async function waitForPcIn(start: number, end: number, timeoutMs = 30_000): Promise<void> {
+  const inRange = async () => {
     const { pc } = await session.handle("registersGet", { space: "c64" });
-    if (pc >= start && pc <= end) return pc;
-    if (Date.now() > deadline) throw new Error(`pc stayed outside $${start.toString(16)}-$${end.toString(16)} (last $${pc.toString(16)})`);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
+    return pc >= start && pc <= end;
+  };
+  await waitFor(inRange, `the pc in ${formatC64Address(start)}-${formatC64Address(end)}`, timeoutMs, 100);
 }
 
 test("a program load puts the bytes in memory, stopped, at either address", { skip: liveSkip, timeout: 60_000 }, async () => {
@@ -48,10 +38,7 @@ test("a disk image attaches; a broken one is a media error", { skip: liveSkip, t
   await session.handle("execution", { action: "resume", space: "c64" });
   assert.deepEqual(await session.handle("diskAttach", { type: "d64" }, [buildD64([{ name: "LOOP", bytes: borderLoopPrg }])]), { attached: true });
   assert.equal((await session.handle("status", {})).state, "running");
-  await assert.rejects(
-    session.handle("diskAttach", { type: "d64" }, [Buffer.alloc(100)]),
-    (error: unknown) => error instanceof WireFailure && error.code === "media-error",
-  );
+  await assert.rejects(session.handle("diskAttach", { type: "d64" }, [Buffer.alloc(100)]), failsWith("media-error"));
 });
 
 test("autostart of a PRG runs it", { skip: liveSkip, timeout: 90_000 }, async () => {
@@ -108,10 +95,7 @@ test("a snapshot restore stops an autostart that still loads, and a broken cartr
   await session.handle("execution", { action: "advance-frames", count: 300, space: "c64" });
   assert.equal((await session.handle("memoryRead", { address: 0x0801, size: 3, space: "c64", view: "ram" })).data, "c0ffee", "the autostart did not load the program over the restored memory");
 
-  await assert.rejects(
-    session.handle("autostart", { type: "crt", index: 0, run: true }, [Buffer.alloc(16, 0x55)]),
-    (error: unknown) => error instanceof WireFailure && error.code === "media-error",
-  );
+  await assert.rejects(session.handle("autostart", { type: "crt", index: 0, run: true }, [Buffer.alloc(16, 0x55)]), failsWith("media-error"));
   assert.equal((await session.handle("status", {})).cartridge, false);
 });
 
@@ -140,14 +124,12 @@ test("the bytes that a sectors request gives for a sector that no file holds are
   assert.deepEqual(await session.handle("diskAttach", { type: "d64" }, [image]), { attached: true });
   const ready = [0x12, 0x05, 0x01, 0x04, 0x19, 0x2e];
   const screenHas = async (pattern: number[]) => (await session.handle("memorySearch", { start: 0x0400, end: 0x07e7, pattern, space: "c64", view: "cpu", maxResults: 2 })).matches.length;
-  for (let wait = 0; wait < 100 && (await screenHas(ready)) === 0; wait++) await new Promise((resolve) => setTimeout(resolve, 100));
+  await waitFor(async () => (await screenHas(ready)) > 0, "the READY prompt", 30_000, 100);
   const line = textToPetscii('open15,8,15:open2,8,2,"#":print#15,"u1 2 0 20 5"\n');
   await session.handle("keyboard", { data: Buffer.from(line).toString("hex") });
   let found: number[] = [];
-  for (let wait = 0; wait < 200 && found.length === 0; wait++) {
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    found = (await session.handle("memorySearch", { start: 0x0300, end: 0x07ff, pattern: [...marker.subarray(0, 16)], space: "drive8", view: "cpu", maxResults: 2 })).matches;
-  }
+  const search = async () => (await session.handle("memorySearch", { start: 0x0300, end: 0x07ff, pattern: [...marker.subarray(0, 16)], space: "drive8", view: "cpu", maxResults: 2 })).matches;
+  await waitFor(async () => (found = await search()).length > 0, "the sector in a drive buffer", 40_000, 100);
   assert.equal(found.length, 1, "the drive buffer holds the sector");
   const read = await session.handle("memoryRead", { address: found[0]!, size: 256, space: "drive8", view: "cpu" });
   assert.equal(read.data, marker.toString("hex"));

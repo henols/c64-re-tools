@@ -2,30 +2,24 @@
 // Skipped (never passed) when ACME is not installed on this machine.
 
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
 import { readProjectTree } from "../../../src/host-client/transfer.ts";
 import { assemble } from "../../../src/native/acme.ts";
-import { ACME, findTool } from "../../../src/native/discover.ts";
+import { ACME } from "../../../src/native/discover.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import type { AcmeParams } from "../../../src/native/types.ts";
+import { scratchDir, toolSkip } from "../../kit.ts";
 
-let acmeSkip: string | false = false;
-try {
-  findTool(ACME);
-} catch {
-  acmeSkip = "ACME is not installed: install acme or set C64RT_ACME to run these tests";
-}
+const acmeSkip = toolSkip(ACME);
 
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-acme-"));
+const project = scratchDir("acme");
 cpSync(resolve(import.meta.dirname, "../../fixtures/asm/counter"), join(project, "src"), { recursive: true });
 writeFileSync(join(project, "src", "bad.a"), "* = $c000\n        lda #$123\n        jmp nowhere\n");
 const supervisor = new ProcessSupervisor();
 supervisor.installExitGuard();
-after(() => rmSync(project, { recursive: true, force: true }));
 
 /** Stages src, or with a sourceDir the whole project, so that src is a folder of the staged tree. */
 async function run(params: Omit<AcmeParams, "files" | "includeDirs" | "defines"> & Partial<AcmeParams>) {

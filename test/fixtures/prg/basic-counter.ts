@@ -2,10 +2,6 @@
 // at $080d, a routine that counts $C100 to ten, sets the border to green and
 // loops at "done". test/fixtures/asm/reconstructed/game.a rebuilds it.
 
-export const MAIN = 0x080d;
-export const DONE = 0x0821;
-export const COUNTER = 0xc100;
-
 export const basicCounterPrg = Uint8Array.from([
   0x01, 0x08, // load address $0801
   0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00, // 10 SYS2061

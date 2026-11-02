@@ -115,17 +115,14 @@ test("a usage error gives the fix as hint and the help command as nextAction", (
   assert.match(error.nextAction!, /^node \/\S+\/demo usage --help( --project \S+)?$/);
 });
 
-test("a result can give a hint and a next command line that runs from any directory", () => {
+test("a result can give a hint and a next command line that runs from any directory", (t) => {
   const sandbox = mkdtempSync(join(tmpdir(), "c64-re-tools-script-"));
-  try {
-    mkdirSync(join(sandbox, "game", ".c64-re-tools"), { recursive: true });
-    const result = run(["next", "--project", "game"], sandbox);
-    assert.equal(result.status, 0, result.stdout);
-    assert.equal(result.envelope.hint, "Run where next.");
-    assert.equal(result.envelope.nextAction, `node ${join(realpathSync(sandbox), "demo")} where '$c000' --project ${join(realpathSync(sandbox), "game")}`);
-  } finally {
-    rmSync(sandbox, { recursive: true, force: true });
-  }
+  t.after(() => rmSync(sandbox, { recursive: true, force: true }));
+  mkdirSync(join(sandbox, "game", ".c64-re-tools"), { recursive: true });
+  const result = run(["next", "--project", "game"], sandbox);
+  assert.equal(result.status, 0, result.stdout);
+  assert.equal(result.envelope.hint, "Run where next.");
+  assert.equal(result.envelope.nextAction, `node ${join(realpathSync(sandbox), "demo")} where '$c000' --project ${join(realpathSync(sandbox), "game")}`);
   assert.match(run(["cut"]).envelope.hint, /^A list in the body is cut: count gives its full size\. To get the rest, give a larger --max-listed\.$/);
   assert.equal(shellWord("$c000"), "'$c000'");
   assert.equal(shellWord("src/main.asm"), "src/main.asm");
@@ -258,58 +255,52 @@ test("--fields prints only those parts of the body, and a path that the body lac
   assert.match(run(["cut", "--fields", "items.count"]).envelope.hint, /^A list in the body is cut/);
 });
 
-test("--project sets the project of the script", () => {
+test("--project sets the project of the script", (t) => {
   const sandbox = mkdtempSync(join(tmpdir(), "c64-re-tools-script-"));
-  try {
-    mkdirSync(join(sandbox, "game", ".c64-re-tools"), { recursive: true });
-    const chosen = run(["where", "--project", "game"], sandbox);
-    assert.equal(chosen.status, 0, chosen.stderr);
-    assert.deepEqual(chosen.json, { root: join(realpathSync(sandbox), "game") });
+  t.after(() => rmSync(sandbox, { recursive: true, force: true }));
+  mkdirSync(join(sandbox, "game", ".c64-re-tools"), { recursive: true });
+  const chosen = run(["where", "--project", "game"], sandbox);
+  assert.equal(chosen.status, 0, chosen.stderr);
+  assert.deepEqual(chosen.json, { root: join(realpathSync(sandbox), "game") });
 
-    const below = run(["where"], sandbox);
-    assert.equal(below.status, 2, below.stderr);
-    assert.equal(below.envelope.code, "invalid-input");
-    assert.match(`${below.envelope.error} ${below.envelope.hint}`, /These folders below it are projects: game\. Give --project <folder>/);
+  const below = run(["where"], sandbox);
+  assert.equal(below.status, 2, below.stderr);
+  assert.equal(below.envelope.code, "invalid-input");
+  assert.match(`${below.envelope.error} ${below.envelope.hint}`, /These folders below it are projects: game\. Give --project <folder>/);
 
-    const missing = run(["where", "--project", "nothing"], sandbox);
-    assert.equal(missing.status, 2, missing.stderr);
-    assert.equal(missing.envelope.code, "not-found");
-  } finally {
-    rmSync(sandbox, { recursive: true, force: true });
-  }
+  const missing = run(["where", "--project", "nothing"], sandbox);
+  assert.equal(missing.status, 2, missing.stderr);
+  assert.equal(missing.envelope.code, "not-found");
 });
 
-test("an output path is refused before the command runs: in the knowledge, a folder for a file, a file for a folder", () => {
+test("an output path is refused before the command runs: in the knowledge, a folder for a file, a file for a folder", (t) => {
   const sandbox = mkdtempSync(join(tmpdir(), "c64-re-tools-script-"));
-  try {
-    mkdirSync(join(sandbox, ".c64-re-tools", "knowledge"), { recursive: true });
-    mkdirSync(join(sandbox, ".c64-re-tools", "local"), { recursive: true });
-    mkdirSync(join(sandbox, "results"));
-    writeFileSync(join(sandbox, ".c64-re-tools", "knowledge", "symbols.jsonl"), "keep\n");
-    writeFileSync(join(sandbox, "README.md"), "x");
-    useProject(sandbox);
-    const error = wrong;
-    assert.match(error(["echo", "a", "--out", ".c64-re-tools/knowledge/symbols.jsonl"]), /^--out: \.c64-re-tools\/knowledge\/symbols\.jsonl is in \.c64-re-tools\/knowledge\/, the knowledge of the project\. Only the commands that change the project knowledge write it/);
-    assert.match(error(["echo", "a", "--out", "./.C64-RE-TOOLS/Knowledge/new.jsonl"]), /is in \.c64-re-tools\/knowledge\//);
-    assert.equal(
-      error(["echo", "a", "--out", ".c64-re-tools/local/knowledge.db"]),
-      "--out: .c64-re-tools/local/knowledge.db is the index of the knowledge. Only the commands that change the project knowledge write it: a write there destroys the index. Give another file name, for example .c64-re-tools/local/<other name>.",
-    );
-    assert.match(error(["need", "--out", ".c64-re-tools/knowledge/pages"]), /, for example \.c64-re-tools\/local\/<folder>\.$/);
-    assert.match(error(["need", "--out", ".c64-re-tools/knowledge"]), /is in \.c64-re-tools\/knowledge\//);
-    assert.equal(error(["echo", "a", "--out", "results"]), "--out: results is a folder. Give the path of a file.");
-    assert.equal(error(["need", "--out", "README.md"]), "--out: README.md is a file, but --out needs a folder. Give the path of a folder, or a new path for the folder.");
-    assert.equal(error(["echo", "a", "--out", "README.md/page.md"]), "--out: README.md/page.md has a file where a folder must be. Give a path whose folders are folders.");
-    if (process.platform !== "win32") {
-      symlinkSync(join(sandbox, ".c64-re-tools", "knowledge"), join(sandbox, "linked"));
-      assert.match(error(["echo", "a", "--out", "linked/symbols.jsonl"]), /is in \.c64-re-tools\/knowledge\//);
-    }
-    assert.equal(readFileSync(join(sandbox, ".c64-re-tools", "knowledge", "symbols.jsonl"), "utf8"), "keep\n");
-    assert.deepEqual(parsed(["echo", "a", "--out", ".c64-re-tools/local/scratch.json"]).out, ".c64-re-tools/local/scratch.json");
-    assert.deepEqual(parsed(["need", "--out", "results/new/deeper"]).out, "results/new/deeper");
-  } finally {
-    rmSync(sandbox, { recursive: true, force: true });
+  t.after(() => rmSync(sandbox, { recursive: true, force: true }));
+  mkdirSync(join(sandbox, ".c64-re-tools", "knowledge"), { recursive: true });
+  mkdirSync(join(sandbox, ".c64-re-tools", "local"), { recursive: true });
+  mkdirSync(join(sandbox, "results"));
+  writeFileSync(join(sandbox, ".c64-re-tools", "knowledge", "symbols.jsonl"), "keep\n");
+  writeFileSync(join(sandbox, "README.md"), "x");
+  useProject(sandbox);
+  const error = wrong;
+  assert.match(error(["echo", "a", "--out", ".c64-re-tools/knowledge/symbols.jsonl"]), /^--out: \.c64-re-tools\/knowledge\/symbols\.jsonl is in \.c64-re-tools\/knowledge\/, the knowledge of the project\. Only the commands that change the project knowledge write it/);
+  assert.match(error(["echo", "a", "--out", "./.C64-RE-TOOLS/Knowledge/new.jsonl"]), /is in \.c64-re-tools\/knowledge\//);
+  assert.equal(
+    error(["echo", "a", "--out", ".c64-re-tools/local/knowledge.db"]),
+    "--out: .c64-re-tools/local/knowledge.db is the index of the knowledge. Only the commands that change the project knowledge write it: a write there destroys the index. Give another file name, for example .c64-re-tools/local/<other name>.",
+  );
+  assert.match(error(["need", "--out", ".c64-re-tools/knowledge/pages"]), /, for example \.c64-re-tools\/local\/<folder>\.$/);
+  assert.match(error(["need", "--out", ".c64-re-tools/knowledge"]), /is in \.c64-re-tools\/knowledge\//);
+  assert.equal(error(["echo", "a", "--out", "results"]), "--out: results is a folder. Give the path of a file.");
+  assert.equal(error(["need", "--out", "README.md"]), "--out: README.md is a file, but --out needs a folder. Give the path of a folder, or a new path for the folder.");
+  assert.equal(error(["echo", "a", "--out", "README.md/page.md"]), "--out: README.md/page.md has a file where a folder must be. Give a path whose folders are folders.");
+  if (process.platform !== "win32") {
+    symlinkSync(join(sandbox, ".c64-re-tools", "knowledge"), join(sandbox, "linked"));
+    assert.match(error(["echo", "a", "--out", "linked/symbols.jsonl"]), /is in \.c64-re-tools\/knowledge\//);
   }
+  assert.equal(readFileSync(join(sandbox, ".c64-re-tools", "knowledge", "symbols.jsonl"), "utf8"), "keep\n");
+  assert.deepEqual(parsed(["echo", "a", "--out", ".c64-re-tools/local/scratch.json"]).out, ".c64-re-tools/local/scratch.json");
+  assert.deepEqual(parsed(["need", "--out", "results/new/deeper"]).out, "results/new/deeper");
 });
 
 test("a list in a result has its count, its first items, and where to get the rest", () => {

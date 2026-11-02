@@ -1,5 +1,5 @@
-// The loader of c64-source: generated from the program in the knowledge
-//, put in from an image.json and an entry_state.json, simulated, then
+// The loader of c64-source: generated from the program in the knowledge,
+// put in from the image and the entry state of a capture, simulated, then
 // run in the emulator to the entry, where memory, $00/$01, the registers,
 // the VIC-II display registers, the VIC bank and the raster line must
 // equal the entry state. The segments
@@ -10,45 +10,20 @@
 // sets the entry state, and waits for a key or a fire button.
 
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
-import { once } from "node:events";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { test } from "node:test";
 
-import { ACME, EXOMIZER, findTool } from "../../../src/native/discover.ts";
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
-import { viceSessionFactory } from "../../../src/host/vice/session.ts";
-import { readEnvelope, seededBytes } from "../../kit.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { formatC64Address } from "../../../src/c64.ts";
+import { ACME, EXOMIZER } from "../../../src/native/discover.ts";
+import { importCoverage, importImage } from "../../fixtures/program.ts";
+import { runScript, runScriptSync, scratchDir, seededBytes, skillScript, toolSkip } from "../../kit.ts";
+import { hostServer, liveSkip } from "./live.ts";
 
-let skip: string | false = liveSkip;
-if (skip === false) {
-  try {
-    findTool(ACME);
-  } catch {
-    skip = "ACME is necessary: install acme to run this test";
-  }
-}
+const skip = liveSkip || toolSkip(ACME);
+const packedSkip = skip || toolSkip(EXOMIZER);
 
-let packedSkip: string | false = skip;
-if (packedSkip === false) {
-  try {
-    findTool(EXOMIZER);
-  } catch {
-    packedSkip = "Exomizer is necessary for the packed loader: install exomizer or set C64RT_EXOMIZER to run this test";
-  }
-}
-
-const script = resolve(import.meta.dirname, "../../../skills/c64-source/scripts/source.ts");
-const projects: string[] = [];
-let server: HostServer | undefined;
-after(async () => {
-  await server?.close();
-  for (const project of projects) rmSync(project, { recursive: true, force: true });
-});
+const host = hostServer();
 
 const ENTRY = 0x0810;
 
@@ -57,7 +32,6 @@ const ENTRY = 0x0810;
  * bitmap at $e000: image.json, image.bin and entry_state.json with the VIC-II, CIA 2 and the colour RAM.
  */
 function stageCapture(memory: Uint8Array, segments: ReadonlyArray<{ start: number; end: number }>, colours: Uint8Array): Record<string, Uint8Array | string> {
-  const hex = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
   const vic = new Uint8Array(0x2f);
   vic.set([0x3b], 0x11);
   vic.set([0x18], 0x16);
@@ -65,27 +39,17 @@ function stageCapture(memory: Uint8Array, segments: ReadonlyArray<{ start: numbe
   vic.set([0x00, 0x06], 0x20);
   return {
     "stage/image.bin": memory,
-    "stage/image.json": JSON.stringify({ entry: hex(segments[0]!.start), image: "image.bin", segments: segments.map((segment) => ({ start: hex(segment.start), end: hex(segment.end) })) }),
+    "stage/image.json": JSON.stringify({ entry: formatC64Address(segments[0]!.start), image: "image.bin", segments: segments.map((segment) => ({ start: formatC64Address(segment.start), end: formatC64Address(segment.end) })) }),
     "stage/entry_state.json": JSON.stringify({
-      registers: { pc: hex(segments[0]!.start), a: 0, x: 0, y: 0, sp: 0xf6, flags: { n: false, v: false, b: false, d: false, i: false, z: false, c: false } },
+      registers: { pc: formatC64Address(segments[0]!.start), a: 0, x: 0, y: 0, sp: 0xf6, flags: { n: false, v: false, b: false, d: false, i: false, z: false, c: false } },
       cpuPort: { $00: 0x2f, $01: 0x37 },
-      pages: Object.fromEntries([0, 1, 2, 3].map((page) => [hex(page << 8), "00".repeat(256)])),
+      pages: Object.fromEntries([0, 1, 2, 3].map((page) => [formatC64Address(page << 8), "00".repeat(256)])),
       io: { vic: { from: "$d000", bytes: Buffer.from(vic).toString("hex") }, cia2: { from: "$dd00", bytes: "fc3f3f00" }, colour: { from: "$d800", bytes: Buffer.from(colours).toString("hex") } },
     }),
   };
 }
 
-/** The Host Runtime of the tests, started once. */
-async function host(): Promise<HostServer> {
-  if (server !== undefined) return server;
-  const supervisor = new ProcessSupervisor();
-  supervisor.installExitGuard();
-  server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
-  return server;
-}
-
 interface Generated {
-  status: number | null;
   json: {
     check: { identical: boolean };
     loader: { verified: boolean; differences: string[]; copier: string; stackByte: string; copies: Array<{ what: string }>; packed?: { packedBytes: number; unpackedBytes: number }; startScreen?: { shown: boolean; waits: boolean } };
@@ -97,12 +61,11 @@ interface Generated {
 /**
  * Puts the image and the entry state of a capture into the knowledge of a new
  * project, with the start screen, the commands and the coverage that a test
- * gives, and generates the source with --loader.
+ * gives, and generates the source with --loader. The source must check
+ * identical, and the loader must get to the entry with the entry state.
  */
 async function generate(memory: Uint8Array, segments: ReadonlyArray<{ start: number; end: number }>, startScreen: string[] = [], more: { commands?: string[][]; coverage?: Uint8Array; files?: Record<string, Uint8Array | string> } = {}): Promise<Generated> {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-loader-"));
-  projects.push(project);
-  const { host: address, port } = await host();
+  const project = scratchDir("source-loader");
   memory.set([0x4c, ENTRY & 0xff, ENTRY >> 8], ENTRY); // JMP to itself
   const pages = Uint8Array.from({ length: 0x400 }, (_, index) => (index * 13 + 5) & 0xff);
   const vic = new Uint8Array(0x2f);
@@ -110,16 +73,14 @@ async function generate(memory: Uint8Array, segments: ReadonlyArray<{ start: num
   vic.set([0x01, 0xc8, 0x00, 0x39], 0x15);
   vic.set([0xf5, 0xf6, 0xf1, 0xf2, 0xf3], 0x20);
   vic[0x00] = 0x60;
-  mkdirSync(join(project, "unpacked"));
-  writeFileSync(join(project, "unpacked", "image.bin"), memory);
-  const hex = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
-  writeFileSync(join(project, "unpacked", "image.json"), JSON.stringify({ entry: hex(ENTRY), image: "image.bin", segments: segments.map((segment) => ({ start: hex(segment.start), end: hex(segment.end) })) }));
-  writeFileSync(
-    join(project, "unpacked", "entry_state.json"),
-    JSON.stringify({
-      registers: { pc: hex(ENTRY), a: 1, x: 2, y: 3, sp: 0xf0, flags: { n: true, v: false, b: false, d: false, i: true, z: false, c: true } },
+  // The capture goes into the knowledge, and the loader is generated from there.
+  importImage(project, memory, {
+    segments: [...segments],
+    entry: ENTRY,
+    state: {
+      registers: { pc: formatC64Address(ENTRY), a: 1, x: 2, y: 3, sp: 0xf0, flags: { n: true, v: false, b: false, d: false, i: true, z: false, c: true } },
       cpuPort: { $00: 0x2f, $01: 0x35 },
-      pages: Object.fromEntries([0, 1, 2, 3].map((page) => [hex(page << 8), Buffer.from(pages.subarray(page << 8, (page + 1) << 8)).toString("hex")])),
+      pages: Object.fromEntries([0, 1, 2, 3].map((page) => [formatC64Address(page << 8), Buffer.from(pages.subarray(page << 8, (page + 1) << 8)).toString("hex")])),
       // The VIC-II at the entry: raster line $123, screen at $0c00 with bitmap mode, VIC bank 2, other colours.
       // The CIAs: CIA 1 timer A runs with TOD at 50 Hz and its own latch, timer B counts its underflows;
       // CIA 2 timer A runs one-shot, timer B is as the KERNAL leaves it. CIA 1 has timers A and B as interrupt sources.
@@ -131,34 +92,24 @@ async function generate(memory: Uint8Array, segments: ReadonlyArray<{ start: num
         colour: { from: "$d800", bytes: Buffer.from(Array.from({ length: 1000 }, (_, index) => 0xf0 | ((index * 5 + 2) & 0x0f))).toString("hex") },
       },
       cia: { cia1: { latchA: 0x2345, latchB: 0x0100, interruptMask: 0x03 }, cia2: { latchA: 0x3000, latchB: 0xffff, interruptMask: 0x00 } },
-    }),
-  );
-
-  // The capture goes into the knowledge, and the loader is generated from there.
-  const knowledgeScript = resolve(import.meta.dirname, "../../../skills/c64-knowledge/scripts/knowledge.ts");
-  const imported = spawnSync(process.execPath, [...process.execArgv, knowledgeScript, "image", "unpacked/image.json"], { cwd: project, encoding: "utf8" });
-  assert.equal(imported.status, 0, imported.stdout + imported.stderr);
-  readEnvelope(imported.stdout, imported.status);
-  if (more.coverage !== undefined) writeFileSync(join(project, "run.bin"), more.coverage);
+    },
+  });
   for (const [name, data] of Object.entries(more.files ?? {})) {
     mkdirSync(dirname(join(project, name)), { recursive: true });
     writeFileSync(join(project, name), data);
   }
-  const commands = [...(more.commands ?? []), ...(startScreen.length > 0 ? [["start-screen", ...startScreen]] : []), ...(more.coverage === undefined ? [] : [["coverage", "run.bin"]])];
-  for (const command of commands) {
-    const recorded = spawnSync(process.execPath, [...process.execArgv, knowledgeScript, ...command], { cwd: project, encoding: "utf8" });
-    assert.equal(recorded.status, 0, recorded.stdout + recorded.stderr);
+  for (const command of [...(more.commands ?? []), ...(startScreen.length > 0 ? [["start-screen", ...startScreen]] : [])]) {
+    const recorded = runScriptSync(skillScript("c64-knowledge", "knowledge.ts"), command, { cwd: project });
+    assert.equal(recorded.status, 0, recorded.stdout);
   }
-  const child = spawn(process.execPath, [...process.execArgv, script, "generate", "--out", "src", "--loader"], {
-    cwd: project,
-    env: { ...process.env, C64RT_HOST: `${address}:${port}` },
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  let stdout = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  const [status] = (await once(child, "exit")) as [number | null];
-  assert.equal(status, 0, stdout);
-  return { status, json: readEnvelope(stdout, status).json as Generated["json"], project };
+  if (more.coverage !== undefined) importCoverage(project, { "run.bin": more.coverage });
+  const generated = await runScript(skillScript("c64-source", "source.ts"), ["generate", "--out", "src", "--loader"], { cwd: project, host: await host() });
+  assert.equal(generated.status, 0, generated.stdout);
+  const json = generated.json as Generated["json"];
+  assert.equal(json.check.identical, true);
+  assert.deepEqual(json.loader.differences, []);
+  assert.equal(json.loader.verified, true);
+  return { json, project };
 }
 
 test("the loader puts every segment and pages 0-3 in place and gets to the entry with the entry state", { skip, timeout: 600_000 }, async () => {
@@ -170,9 +121,6 @@ test("the loader puts every segment and pages 0-3 in place and gets to the entry
   const memory = new Uint8Array(0x10000);
   for (const segment of segments) for (let address = segment.start; address <= segment.end; address++) memory[address] = (address * 7 + 3) & 0xff;
   const { json, project } = await generate(memory, segments);
-  assert.equal(json.check.identical, true);
-  assert.deepEqual(json.loader.differences, []);
-  assert.equal(json.loader.verified, true);
   assert.equal(json.loader.stackByte, "$01f0");
   assert.notEqual(json.loader.copier, "$c000", "the copier stays out of the segment at $c000");
   assert.equal(json.loader.copies.length, 5, "three segments, pages $0002-$03ff and the colours of the colour RAM");
@@ -193,9 +141,6 @@ test("a 62 KiB image with RAM at $d000-$dfff gets the packed loader, which gets 
   memory.set(seededBytes(3, 0x6000 - 0x0801), 0x0801);
   memory.set(seededBytes(4, 0x1000), 0xd000);
   const { json, project } = await generate(memory, segments);
-  assert.equal(json.check.identical, true);
-  assert.deepEqual(json.loader.differences, []);
-  assert.equal(json.loader.verified, true);
   assert.equal(json.loader.copier, "$c000");
   // The segments, the copier at $c000 and the colours of the colour RAM at $0400, as the rest of the gap $c000-$c7ff is too small for them.
   assert.ok(json.loader.packed!.unpackedBytes > 0xc000 - 0x0801 + 0x10000 - 0xc800 + 1000 && json.loader.packed!.unpackedBytes < 0x10000 - 0x0400, JSON.stringify(json.loader.packed));
@@ -214,9 +159,6 @@ test("a start screen shows after the copies with its VIC-II values, waits withou
   const memory = new Uint8Array(0x10000);
   for (const segment of segments) for (let address = segment.start; address <= segment.end; address++) memory[address] = (address * 7 + 3) & 0xff;
   const { json, project } = await generate(memory, segments, ["--mode", "multicolour", "--screen", "$5c00", "--bitmap", "$6000", "--colours", "$7f40", "--border", "0", "--background", "6"]);
-  assert.equal(json.check.identical, true);
-  assert.deepEqual(json.loader.differences, []);
-  assert.equal(json.loader.verified, true);
   assert.deepEqual(json.loader.startScreen && { shown: json.loader.startScreen.shown, waits: json.loader.startScreen.waits }, { shown: true, waits: true });
   assert.equal(json.loader.copier, "$c000", "three free pages");
   assert.match(readFileSync(join(project, "src", "config.asm"), "utf8"), /\nSTART_SCREEN = 1 ; /);
@@ -235,9 +177,6 @@ test("the loader does not load the leftovers: a range that nothing uses is not i
   const coverage = new Uint8Array(0x10000);
   coverage[ENTRY] = 1 << 2;
   const { json, project } = await generate(memory, segments, [], { commands: [["classify", "$0813-$087f", "bytes"], ["classify", "$0880-$08ff", "unused"]], coverage });
-  assert.equal(json.check.identical, true);
-  assert.deepEqual(json.loader.differences, []);
-  assert.equal(json.loader.verified, true);
   assert.deepEqual(json.leftovers?.listed.map((range) => [range.start, range.end]), [["$0813", "$08ff"]]);
   assert.equal(json.loader.copies.length, 5, "the segment parts without the leftovers, pages $0002-$03ff and the colours of the colour RAM");
   const loader = readFileSync(join(project, "build", "clean_loader.prg"));
@@ -274,9 +213,6 @@ test("a start screen of a captured stage shows before the loader: the stage call
       ["patch", "$cc00-$cc03", "CRACK_TEXT", "--code", "!byte $11,$22,$33,$44", "--space", "loading"],
     ],
   });
-  assert.equal(json.check.identical, true);
-  assert.deepEqual(json.loader.differences, []);
-  assert.equal(json.loader.verified, true);
   assert.deepEqual(json.loader.startScreen && { shown: json.loader.startScreen.shown, waits: json.loader.startScreen.waits, stage: json.loader.startScreen.stage }, { shown: true, waits: true, stage: "loading" });
   // The routine, the screen and the bitmap: the table at $3000 stays out. The colour RAM is in the show code.
   assert.equal(json.loader.stage?.bytes, 0x20 + 1000 + 8000);
@@ -315,9 +251,6 @@ test("a large program stays packed while the start screen of a stage shows, so a
     files: { ...stageCapture(stage, stageSegments, colours), "stage-run.bin": coverage },
     commands: [["image", "stage/image.json", "--space", "loading"], ["coverage", "stage-run.bin", "--space", "loading"]],
   });
-  assert.equal(json.check.identical, true);
-  assert.deepEqual(json.loader.differences, []);
-  assert.equal(json.loader.verified, true);
   assert.deepEqual(json.loader.startScreen && { shown: json.loader.startScreen.shown, waits: json.loader.startScreen.waits }, { shown: true, waits: true });
   assert.equal(json.loader.stage?.bytes, 0x1600 + 1000 + 8000);
   assert.ok(json.loader.packed!.packedBytes < 0x4000, JSON.stringify(json.loader.packed));

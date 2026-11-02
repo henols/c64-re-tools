@@ -2,18 +2,15 @@
 // host; each CRT bank becomes a PRG for its knowledge space.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
 import { parseCrt, parseT64 } from "../../skills/c64-disk/scripts/lib/containers.ts";
-import { readEnvelope } from "../kit.ts";
+import { runScriptSync, scratchDir, skillScript } from "../kit.ts";
 
-const script = resolve(import.meta.dirname, "../../skills/c64-disk/scripts/disk.ts");
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-containers-"));
-after(() => rmSync(project, { recursive: true, force: true }));
+const script = skillScript("c64-disk", "disk.ts");
+const project = scratchDir("containers");
 
 function crt(type: number, exrom: number, game: number, chips: Array<{ bank: number; address: number; data: number[] }>): Buffer {
   const header = Buffer.alloc(0x40);
@@ -61,10 +58,7 @@ function t64(files: Array<{ name: string; start: number; data: number[]; end?: n
   return Buffer.concat([header, ...bodies]);
 }
 
-const disk = (...args: string[]) => {
-  const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-  return { status: run.status, ...readEnvelope(run.stdout, run.status) };
-};
+const disk = (...args: string[]) => runScriptSync(script, args, { cwd: project });
 
 test("a CRT gives its type, its mode and each bank; unknown types are refused by name", () => {
   const normal = parseCrt(crt(0, 0, 1, [{ bank: 0, address: 0x8000, data: [0x09, 0x80] }]));

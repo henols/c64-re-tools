@@ -3,28 +3,18 @@
 // the same rules is in src/mcp/server.test.ts.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
-import { readEnvelope } from "../kit.ts";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
-const skills = resolve(import.meta.dirname, "../../skills");
-const workspace = realpathSync(mkdtempSync(join(tmpdir(), "c64-re-tools-workspace-")));
-after(() => rmSync(workspace, { recursive: true, force: true }));
+import { runScriptSync, scratchDir, skillScript } from "../kit.ts";
+
+const workspace = scratchDir("workspace");
 for (const name of ["hover-bovver", "boulder-dash"]) mkdirSync(join(workspace, name));
 
-/** Runs a skill script in `cwd` (the workspace root by default) and gives its exit status and its one JSON line. */
-function script(skill: string, file: string, args: readonly string[], options: { cwd?: string; input?: string } = {}): { status: number | null; json: Record<string, unknown> } {
-  const run = spawnSync(process.execPath, [...process.execArgv, join(skills, skill, "scripts", file), ...args], {
-    cwd: options.cwd ?? workspace,
-    encoding: "utf8",
-    ...(options.input === undefined ? {} : { input: options.input }),
-  });
-  assert.equal(run.stderr, "", run.stderr);
-  return { status: run.status, json: readEnvelope(run.stdout, run.status).json as Record<string, unknown> };
-}
+/** Runs a skill script in `cwd` (the workspace root by default). */
+const script = (skill: string, file: string, args: readonly string[], options: { cwd?: string; input?: string } = {}) =>
+  runScriptSync(skillScript(skill, file), args, { ...options, cwd: options.cwd ?? workspace });
 
 const knowledge = (args: readonly string[], options: { cwd?: string; input?: string } = {}) => script("c64-knowledge", "knowledge.ts", args, options);
 
@@ -52,6 +42,6 @@ test("from a project folder, a --project inside it is refused, and the message n
   mkdirSync(join(workspace, "hover-bovver", "src"), { recursive: true });
   const fromProject = knowledge(["symbols", "--project", "src"], { cwd: join(workspace, "hover-bovver") });
   assert.equal(fromProject.status, 2);
-  assert.ok((fromProject.json.error as { message: string }).message.startsWith(`src is inside the project ${join(workspace, "hover-bovver")}. Give that project folder.`), JSON.stringify(fromProject.json));
+  assert.ok(fromProject.json.error.message.startsWith(`src is inside the project ${join(workspace, "hover-bovver")}. Give that project folder.`), JSON.stringify(fromProject.json));
   assert.ok(!existsSync(join(workspace, "hover-bovver", "src", ".c64-re-tools")));
 });

@@ -2,13 +2,11 @@
 // symbol resolution per side, comparison rules and the playtest checklist.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve as resolvePath } from "node:path";
-import { after, afterEach, beforeEach, test } from "node:test";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
-import { openForWrite } from "../../src/knowledge/database.ts";
+import { withWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
 import type { ViceSessionClient } from "../../src/host-client/vice-session.ts";
 import { changedRanges, diffStates } from "../../skills/c64-testing/scripts/lib/diff.ts";
@@ -17,16 +15,13 @@ import { compare, namesOf, readScenario, resolve, runScenario, scenarioNames } f
 import { diffFiles, snapshotCpuPort, snapshotRam } from "../../skills/c64-testing/scripts/lib/diff-files.ts";
 import { keepRun, runFile } from "../../skills/c64-testing/scripts/lib/runs.ts";
 import { passStartScreen } from "../../skills/c64-testing/scripts/lib/start-screen.ts";
-import { readEnvelope } from "../kit.ts";
+import { runScriptSync, skillScript } from "../kit.ts";
+import { testingProject } from "./testing-project.ts";
 
 // No host listens at port 1: a run that got past its checks would fail to connect, not reach a real emulator.
 process.env.C64RT_HOST = "127.0.0.1:1";
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-testing-"));
-const home = process.cwd();
-// Scenario paths are relative to the working directory: each test runs in the project.
-beforeEach(() => process.chdir(project));
-afterEach(() => process.chdir(home));
-after(() => rmSync(project, { recursive: true, force: true }));
+const project = testingProject("testing");
+const script = skillScript("c64-testing", "testing.ts");
 
 const valid = {
   name: "moves left",
@@ -54,6 +49,22 @@ async function refusal(call: () => unknown): Promise<{ code: string; message: st
 /** The refusal of a run file with this value, as the run command gives it. */
 const runRefusal = (name: string, value: unknown) => refusal(() => runFile(scenarioFile(name, value), "out"));
 
+/** A client of a machine that resets, takes the joystick and runs, and logs these calls in `calls`; `more` adds or replaces methods. */
+function fakeClient(more: object = {}, calls?: Array<[string, unknown]>): ViceSessionClient {
+  const log = (name: string, value: unknown) => calls?.push([name, value]);
+  return {
+    reset: async (params: unknown) => (log("reset", params), { state: "stopped" }),
+    joystick: async (state: unknown) => (log("joystick", state), state),
+    status: async () => ({ state: "stopped" }),
+    execution: async (params: unknown) => (log("execution", params), {}),
+    ...more,
+  } as unknown as ViceSessionClient;
+}
+
+/** The scenario `name` of reference.prg and rebuild.prg without symbols, written to `file` and read. */
+const programScenario = (file: string, name: string, steps: unknown[]) =>
+  readScenario(scenarioFile(file, { name, reference: { program: "reference.prg", symbols: "none" }, rebuild: { program: "rebuild.prg", symbols: "none" }, steps }));
+
 test("a scenario needs a name, both subjects, known steps and at least one checkpoint", () => {
   assert.equal(readScenario(scenarioFile("ok.json", valid)).steps.length, 3);
   for (const [name, bad] of Object.entries({
@@ -71,9 +82,7 @@ test("a scenario needs a name, both subjects, known steps and at least one check
 });
 
 test("each side resolves names from its own symbols", () => {
-  const db = openForWrite(project);
-  renameSymbol(db, { origin: "llm" }, { address: 0xc100, name: "player_x", kind: "variable" });
-  db.close();
+  withWrite((db) => renameSymbol(db, { origin: "llm" }, { address: 0xc100, name: "player_x", kind: "variable" }), project);
   writeFileSync(
     join(project, "assembled.json"),
     JSON.stringify({ assembled: true, symbols: [{ name: "draw", kind: "address", address: "$0900" }, { name: "player_x", kind: "constant", value: "$c200" }, { name: "BIG", kind: "constant", value: "$11170" }] }),
@@ -134,10 +143,9 @@ test("an excluded byte does not count, and steps for one side and the new step k
 });
 
 test("the checklist lists each checkpoint and what only a person can judge", () => {
-  const checklist = resolvePath(home, "skills/c64-testing/scripts/testing.ts");
-  const run = spawnSync(process.execPath, [...process.execArgv, checklist, "checklist", "ok.json", "--item", "FIRE starts the game."], { cwd: project, encoding: "utf8" });
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const { text } = readEnvelope(run.stdout, run.status).json as { text: string };
+  const run = runScriptSync(script, ["checklist", "ok.json", "--item", "FIRE starts the game."], { cwd: project });
+  assert.equal(run.status, 0, run.stdout);
+  const { text } = run.json;
   assert.match(text, /^# Playtest checklist/);
   assert.match(text, /- \[ \] At "moved", the rebuild looks and behaves as the reference\./);
   assert.match(text, /- \[ \] FIRE starts the game\./);
@@ -211,11 +219,7 @@ test("each side starts from a hard reset, each checkpoint has its own baseline, 
   const calls: Array<[string, unknown]> = [];
   const baselines = new Set<string>();
   let raster = 0;
-  const fake = {
-    reset: async (params: unknown) => (calls.push(["reset", params]), { state: "stopped" }),
-    joystick: async (state: unknown) => (calls.push(["joystick", state]), state),
-    status: async () => ({ state: "stopped" }),
-    execution: async (params: unknown) => (calls.push(["execution", params]), {}),
+  const fake = fakeClient({
     registersGet: async () => ({ pc: 0x0810, a: 1, x: 2, y: 3, sp: 0xf6, flags: { n: false, v: false, b: true, d: false, i: true, z: false, c: true } }),
     vicii: async () => ({ rasterLine: raster++, mode: "text", screenAddress: 0x0400, graphicsAddress: 0x1000, scrollX: 0, scrollY: 3, borderColor: 14, backgroundColors: [6, 0, 0, 0] }),
     screenCapture: async (name: string) => {
@@ -228,16 +232,9 @@ test("each side starts from a hard reset, each checkpoint has its own baseline, 
       return { match: true, mismatchingPixels: 0, comparedPixels: 104448, mismatchRatio: 0 };
     },
     screenDiscard: async (name: string) => (baselines.delete(name), {}),
-  };
-  const scenario = readScenario(
-    scenarioFile("checkpoints.json", {
-      name: "two checkpoints",
-      reference: { program: "reference.prg", symbols: "none" },
-      rebuild: { program: "rebuild.prg", symbols: "none" },
-      steps: [{ frames: 10 }, { observe: "after move", screen: {}, vicii: true, registers: ["pc", "flags"] }, { observe: "after_move", screen: {} }],
-    }),
-  );
-  const result = await runScenario(fake as unknown as ViceSessionClient, scenario);
+  }, calls);
+  const scenario = programScenario("checkpoints.json", "two checkpoints", [{ frames: 10 }, { observe: "after move", screen: {}, vicii: true, registers: ["pc", "flags"] }, { observe: "after_move", screen: {} }]);
+  const result = await runScenario(fake, scenario);
   assert.deepEqual(result, { result: "PASS", scenario: "two checkpoints", checkpoints: ["after move", "after_move"], differences: [] });
   const resets = calls.flatMap(([name, params], index) => (name === "reset" ? [[index, params]] : []));
   assert.deepEqual(resets.map(([, params]) => params), [{ mode: "hard", run: false }, { mode: "hard", run: false }]);
@@ -259,18 +256,11 @@ test("a run file and a scenario name a missing field with its form, and refuse a
   assert.equal(await run([]), `run fields.json: is not a JSON object. ${fields}`);
   assert.match(await run({ ...good, start: { program: "game.prg", snapshot: "s.vsf" } }), /^run fields\.json: start/);
   assert.match(await run({ ...good, steps: [{ screen: "../escape" }] }), /^run fields\.json: step 1/);
-  const message = (value: unknown) => {
-    try {
-      readScenario(scenarioFile("fields.json", value));
-    } catch (error) {
-      return (error as Error).message;
-    }
-    return assert.fail("not refused");
-  };
-  assert.equal(message({ ...valid, symbols: "knowledge" }), "scenario fields.json: has the key symbols. A scenario file has name, reference, rebuild and steps, and optionally videoStandard");
-  assert.equal(message({ ...valid, rebuild: { program: "build/game.prg" } }), 'scenario fields.json: rebuild must be { "program": "<file.prg>", "symbols": "knowledge" }. symbols can also be "none" or a JSON file');
-  assert.equal(message({ ...valid, reference: { ...valid.reference, load: true } }), 'scenario fields.json: reference has the key load. reference must be { "program": "<file.prg>", "symbols": "knowledge" }. symbols can also be "none" or a JSON file');
-  assert.equal(message({ ...valid, steps: [] }), "scenario fields.json: steps must be a list with at least one step");
+  const scenario = (value: unknown) => () => readScenario(scenarioFile("fields.json", value));
+  assert.throws(scenario({ ...valid, symbols: "knowledge" }), { message: "scenario fields.json: has the key symbols. A scenario file has name, reference, rebuild and steps, and optionally videoStandard" });
+  assert.throws(scenario({ ...valid, rebuild: { program: "build/game.prg" } }), { message: 'scenario fields.json: rebuild must be { "program": "<file.prg>", "symbols": "knowledge" }. symbols can also be "none" or a JSON file' });
+  assert.throws(scenario({ ...valid, reference: { ...valid.reference, load: true } }), { message: 'scenario fields.json: reference has the key load. reference must be { "program": "<file.prg>", "symbols": "knowledge" }. symbols can also be "none" or a JSON file' });
+  assert.throws(scenario({ ...valid, steps: [] }), { message: "scenario fields.json: steps must be a list with at least one step" });
 });
 
 test("a screen in the form of the other file is refused with the step to write: its own step in a run, an observe key in a scenario", async () => {
@@ -326,10 +316,9 @@ test("diff gives the changed ranges of two memory files and the changed items of
 test("diff compares the CPU flags, shows the pc as $xxxx, and --out names the changed registers as the result does", () => {
   const flags = (c: boolean) => ({ n: false, v: false, b: true, d: false, i: true, z: false, c });
   writeFileSync(join(project, "flags.json"), JSON.stringify({ observations: { before: { registers: { pc: "$c000", a: 1, flags: flags(false) } }, after: { registers: { pc: "$c010", a: 1, flags: flags(true) } } } }));
-  const script = resolvePath(import.meta.dirname, "../../skills/c64-testing/scripts/testing.ts");
-  const run = spawnSync(process.execPath, [...process.execArgv, script, "diff", "flags.json:before", "flags.json:after", "--out", "flags-diff.json"], { cwd: project, encoding: "utf8" });
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const result = readEnvelope(run.stdout, run.status).json as { registers: unknown; out: string };
+  const run = runScriptSync(script, ["diff", "flags.json:before", "flags.json:after", "--out", "flags-diff.json"], { cwd: project });
+  assert.equal(run.status, 0, run.stdout);
+  const result = run.json;
   const changed = [
     { name: "cpu.pc", a: "$c000", b: "$c010" },
     { name: "cpu.flags.c", a: false, b: true },
@@ -358,7 +347,6 @@ test("a snapshot file gives its RAM from the C64MEM module, and a file without i
 });
 
 test("a run refuses two steps that write one file, across step kinds, and names both steps", async () => {
-  writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
   const refused = async (steps: unknown[]) => {
     const error = await runRefusal("collide.json", { name: "collide", start: { program: "game.prg" }, steps });
     assert.equal(error.code, "invalid-input");
@@ -372,7 +360,6 @@ test("a run refuses two steps that write one file, across step kinds, and names 
 });
 
 test("a run refuses a wrong expect step before it opens an emulator, and names the step", async () => {
-  writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
   const refused = async (steps: unknown[]) => {
     const error = await runRefusal("expect.json", { name: "expect", start: { program: "game.prg" }, steps });
     assert.equal(error.code, "invalid-input");
@@ -391,23 +378,14 @@ test("a run refuses a wrong expect step before it opens an emulator, and names t
 });
 
 test("a run and a scenario refuse a step with no step kind or with two", async () => {
-  writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
   const run = async (steps: unknown[]) => (await runRefusal("old-run.json", { name: "old", start: { program: "game.prg" }, steps })).message.split("\n")[0]!;
   assert.equal(await run([{ wait: 5 }]), "run old-run.json: step 1 must have exactly one of write, registers, joystick, type, press, frames, runUntil, snapshot, save, screen, coverage, observe, expect, trace");
-  const scenario = (steps: unknown[]) => {
-    try {
-      readScenario(scenarioFile("old-scenario.json", { ...valid, steps }));
-    } catch (error) {
-      return (error as Error).message.split("\n")[0]!;
-    }
-    return assert.fail("not refused");
-  };
-  assert.equal(scenario([{ frames: 5, type: { mode: "text", text: " " } }, valid.steps[2]]), "scenario old-scenario.json: step 1 has 2 step kinds: frames, type. Give each one its own step");
-  assert.equal(scenario([{ sleep: 5 }, valid.steps[2]]), "scenario old-scenario.json: step 1 must have exactly one of reset, load, autostart, snapshot, normalize, write, registers, joystick, type, press, frames, runUntil, observe");
+  const scenario = (steps: unknown[]) => () => readScenario(scenarioFile("old-scenario.json", { ...valid, steps }));
+  assert.throws(scenario([{ frames: 5, type: { mode: "text", text: " " } }, valid.steps[2]]), { message: "scenario old-scenario.json: step 1 has 2 step kinds: frames, type. Give each one its own step" });
+  assert.throws(scenario([{ sleep: 5 }, valid.steps[2]]), { message: "scenario old-scenario.json: step 1 must have exactly one of reset, load, autostart, snapshot, normalize, write, registers, joystick, type, press, frames, runUntil, observe" });
 });
 
 test("test and run check every file before the emulator: a missing file is not-found, a disk image is no PRG", async () => {
-  writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
   writeFileSync(join(project, "game.d64"), Buffer.alloc(174848));
   // test reads the scenario and checks its files before it opens the emulator.
   const test = (name: string, sides: Record<string, unknown>, steps: unknown[] = [{ autostart: true }, { observe: "x", memory: ["$0400"] }]) => {
@@ -449,23 +427,12 @@ test("a memory difference lists the differing bytes, at most --max-listed, and m
 test("a FAIL with --out writes memory.json with all bytes of the item and each differing byte", async () => {
   // The rebuild side writes $01 to the observed bytes; the reference side reads zeros.
   let writes = 0;
-  const fake = {
-    reset: async () => ({ state: "stopped" }),
-    joystick: async (state: unknown) => state,
-    status: async () => ({ state: "stopped" }),
-    execution: async () => ({}),
+  const fake = fakeClient({
     memoryRead: async (params: { address: number; size: number }) => ({ data: Buffer.alloc(params.size, writes > 0 ? 1 : 0).toString("hex") }),
     memoryWrite: async () => (writes++, {}),
-  };
-  const scenario = readScenario(
-    scenarioFile("fail.json", {
-      name: "fail",
-      reference: { program: "reference.prg", symbols: "none" },
-      rebuild: { program: "rebuild.prg", symbols: "none" },
-      steps: [{ write: { address: "$c000", data: "01" }, side: "rebuild" }, { observe: "x", memory: [{ address: "$c000", size: 3 }] }],
-    }),
-  );
-  const result = await runScenario(fake as unknown as ViceSessionClient, scenario, { out: "fail-out", max: 1 });
+  });
+  const scenario = programScenario("fail.json", "fail", [{ write: { address: "$c000", data: "01" }, side: "rebuild" }, { observe: "x", memory: [{ address: "$c000", size: 3 }] }]);
+  const result = await runScenario(fake, scenario, { out: "fail-out", max: 1 });
   assert.equal(result.result, "FAIL");
   assert.deepEqual(result.differences, [{ checkpoint: "x", what: "memory $c000 (3 bytes)", bytes: { count: 3, listed: [{ address: "$c000", reference: "00", rebuild: "01" }], rest: "fail-out/memory.json" } }]);
   const memory = JSON.parse(readFileSync(join(project, "fail-out", "memory.json"), "utf8")) as unknown;
@@ -486,27 +453,13 @@ test("a FAIL with --out writes memory.json with all bytes of the item and each d
 });
 
 test("an unknown name in a scenario step gives INCONCLUSIVE with the step", async () => {
-  const fake = {
-    reset: async () => ({ state: "stopped" }),
-    joystick: async (state: unknown) => state,
-    status: async () => ({ state: "stopped" }),
-    execution: async () => ({}),
-  };
-  const scenario = readScenario(
-    scenarioFile("unknown-name.json", {
-      name: "unknown name",
-      reference: { program: "reference.prg", symbols: "none" },
-      rebuild: { program: "rebuild.prg", symbols: "none" },
-      steps: [{ frames: 10 }, { runUntil: { target: { kind: "address", address: "no_such_name" }, timeoutFrames: 30 } }, { observe: "x", memory: ["$c000"] }],
-    }),
-  );
-  const result = await runScenario(fake as unknown as ViceSessionClient, scenario);
+  const scenario = programScenario("unknown-name.json", "unknown name", [{ frames: 10 }, { runUntil: { target: { kind: "address", address: "no_such_name" }, timeoutFrames: 30 } }, { observe: "x", memory: ["$c000"] }]);
+  const result = await runScenario(fakeClient(), scenario);
   assert.equal(result.result, "INCONCLUSIVE");
   assert.equal(result.reason, "step 2 (runUntil): the reference side has no symbol no_such_name");
 });
 
 test("test, run and diff refuse a snapshot file that is no VICE snapshot file before the emulator, with the file and the step", async () => {
-  writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
   writeFileSync(join(project, "notes.txt"), "not a snapshot\n");
   writeFileSync(join(project, "notes.vsf"), "not a snapshot\n");
   const why = 'is not a VICE snapshot file (.vsf): it does not start with "VICE Snapshot File". Give a file that c64_snapshot save or a save step of a run wrote.';
@@ -518,7 +471,6 @@ test("test, run and diff refuse a snapshot file that is no VICE snapshot file be
 });
 
 test("a name in a run file without symbols says how to give symbols, and a name in an observe or trace step is checked before the run", async () => {
-  writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
   const run = async (value: unknown) => (await runRefusal("names.json", value)).message.split("\n")[0];
   const noSymbols = 'cold_start is a name, and the run file has no symbols. A run file has no symbols unless it gives "symbols": "knowledge" for the names of the knowledge, or "symbols": "<file>" for a JSON file of names. Give one of them, or a $ address';
   assert.equal(await run({ name: "x", start: { program: "game.prg" }, steps: [{ frames: 5 }, { runUntil: { target: { kind: "address", address: "cold_start" }, timeoutFrames: 10 } }] }), `run names.json: step 2: ${noSymbols}`);

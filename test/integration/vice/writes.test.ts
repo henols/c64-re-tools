@@ -2,31 +2,16 @@
 // routine written into memory.
 
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
+import { test } from "node:test";
 
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import type { ViceSessionHandle } from "../../../src/host/server.ts";
-import { viceSessionFactory } from "../../../src/host/vice/session.ts";
-import { WireFailure } from "../../../src/protocol/messages.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { failsWith } from "../../../src/errors.testkit.ts";
+import { fileSession, liveSkip } from "./live.ts";
 
-let session: ViceSessionHandle;
-before(async () => {
-  if (liveSkip !== false) return;
-  const supervisor = new ProcessSupervisor();
-  supervisor.installExitGuard();
-  session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard: "pal" });
-});
-after(async () => {
-  await session?.close();
-});
+const session = fileSession();
 
 test("writes are refused while the CPU runs", { skip: liveSkip, timeout: 60_000 }, async () => {
   await session.handle("execution", { action: "resume", space: "c64" });
-  await assert.rejects(
-    session.handle("memoryWrite", { address: 0xc000, data: "ea", space: "c64", view: "cpu" }),
-    (error: unknown) => error instanceof WireFailure && error.code === "machine-running",
-  );
+  await assert.rejects(session.handle("memoryWrite", { address: 0xc000, data: "ea", space: "c64", view: "cpu" }), failsWith("machine-running"));
   assert.equal((await session.handle("status", {})).state, "running");
 });
 
@@ -47,11 +32,7 @@ test("register writes set only the named registers", { skip: liveSkip, timeout: 
   await session.handle("execution", { action: "pause", space: "c64" });
   const before = await session.handle("registersGet", { space: "c64" });
   const after = await session.handle("registersSet", { space: "c64", values: { a: 0x42, flags: { c: !before.flags.c } } });
-  assert.equal(after.a, 0x42);
-  assert.equal(after.x, before.x);
-  assert.equal(after.pc, before.pc);
-  assert.equal(after.flags.c, !before.flags.c);
-  assert.equal(after.flags.i, before.flags.i);
+  assert.deepEqual(after, { ...before, a: 0x42, flags: { ...before.flags, c: !before.flags.c } });
   assert.deepEqual(await session.handle("registersGet", { space: "c64" }), after);
 });
 

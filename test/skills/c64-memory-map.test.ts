@@ -1,27 +1,19 @@
 // The c64-memory-map lookup and decoders.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
 import { assemble } from "../../src/native/acme.ts";
-import { ACME, findTool } from "../../src/native/discover.ts";
+import { ACME } from "../../src/native/discover.ts";
 import { localToolContext } from "../../src/native/local.ts";
-import { Refusal } from "../../src/errors.ts";
+import { failsWith } from "../../src/errors.testkit.ts";
 import { areaOf, decode, describeAddress, IO, lookup, platformNames, ROM } from "../../src/platform.ts";
-import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
+import { runScriptSync, scratchDir, skillScript, toolSkip } from "../kit.ts";
 
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-memmap-"));
-after(() => rmSync(project, { recursive: true, force: true }));
-let acmeSkip: string | false = false;
-try {
-  findTool(ACME);
-} catch {
-  acmeSkip = "ACME is not installed: install acme or set C64RT_ACME to run this test";
-}
+const project = scratchDir("memmap");
+const acmeSkip = toolSkip(ACME);
 
 test("platform addresses have names; application RAM says so", () => {
   assert.equal(lookup(0xd020).name, "EXTCOL");
@@ -94,23 +86,20 @@ test("register values decode to their C64 meaning", () => {
   assert.deepEqual(decode(0xd015, 0b10000101), { sprites: [0, 2, 7] });
   assert.deepEqual(decode(0xd019, 0x81), { sources: ["raster"], anyInterrupt: true });
   assert.deepEqual(decode(0xdc0d, 0x7f).write, { disables: ["timer A", "timer B", "TOD alarm", "serial port", "FLAG line"] });
-  assert.throws(() => decode(0xd020, 1), (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && /There is no decoder for \$d020/.test(error.message));
+  assert.throws(() => decode(0xd020, 1), failsWith("invalid-input", /There is no decoder for \$d020/));
 });
 
-const script = resolve(import.meta.dirname, "../../skills/c64-memory-map/scripts/memory-map.ts");
+const script = skillScript("c64-memory-map", "memory-map.ts");
 
-/** Runs memory-map.ts and reads its envelope; json is the body, or { error } for a refusal. */
-function memoryMap(args: string[], cwd?: string): { status: number | null; json: any; envelope: ScriptEnvelope } {
-  const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { encoding: "utf8", ...(cwd === undefined ? {} : { cwd }) });
-  return { status: run.status, ...readEnvelope(run.stdout, run.status) };
-}
+/** Runs memory-map.ts in the project; json is the body, or { error } for a refusal. */
+const memoryMap = (args: string[]) => runScriptSync(script, args, { cwd: project });
 
 test("the script answers in JSON and refuses bad input", () => {
   // The platform names of memory-map itself, in any letter case.
   const at = memoryMap(["at", "$d020", "$D021", "$fffe", "$fb", "SCROLY", "chrout", "$c000"]);
   assert.equal(at.status, 0);
   assert.deepEqual(
-    (at.json as { addresses: Array<{ address: string; name?: string }> }).addresses.map((address) => [address.address, address.name]),
+    at.json.addresses.map((address: { address: string; name?: string }) => [address.address, address.name]),
     [["$d020", "EXTCOL"], ["$d021", "BGCOL0"], ["$fffe", "IRQ vector"], ["$00fb", "FREEZP"], ["$d011", "SCROLY"], ["$ffd2", "CHROUT"], ["$c000", undefined]],
   );
   assert.equal(at.envelope.hint, "The program decides the use of $c000. Find its use in the disassembly or in the emulator.");
@@ -118,7 +107,7 @@ test("the script answers in JSON and refuses bad input", () => {
   assert.equal(unknown.envelope.error, "<address>: d020 is not a C64 platform name and not a name in the knowledge.");
   assert.match(unknown.envelope.hint!, /^Give a \$ address, a platform name that the command list or export shows \(for example SCROLY or CHROUT\), or a symbol of the project knowledge\./);
   // decode takes a platform name, and a value as $ and hex, decimal, or % and binary.
-  const decoded = memoryMap(["decode", "SCROLY", "%00011011"]).json as { register: string; name: string; value: string };
+  const decoded = memoryMap(["decode", "SCROLY", "%00011011"]).json;
   assert.deepEqual([decoded.register, decoded.name, decoded.value], ["$d011", "SCROLY", "$1b"]);
   const vic = memoryMap(["list", "vic"]);
   assert.deepEqual([vic.json.entries.count, vic.json.entries.listed.length, vic.json.entries.listed[0]!.name, vic.json.entries.rest, vic.envelope.nextAction], [47, 47, "SP0X", undefined, undefined]);
@@ -135,7 +124,7 @@ test("the script answers in JSON and refuses bad input", () => {
 test("every address in $d000-$dfff says that it is visible only while $01 maps I/O in", () => {
   const run = memoryMap(["at", "$d020", "$d800", "$dbff", "$de00", "$cfff", "$e000"]);
   assert.equal(run.status, 0);
-  const visible = (run.json as { addresses: Array<{ visible?: string }> }).addresses.map((address) => address.visible !== undefined);
+  const visible = run.json.addresses.map((address: { visible?: string }) => address.visible !== undefined);
   assert.deepEqual(visible, [true, true, true, true, false, false]);
 });
 
@@ -148,7 +137,7 @@ test("the platform names are symbols, each name once", () => {
 });
 
 test("export writes the platform names as an ACME include that ACME reads", { skip: acmeSkip }, async () => {
-  const run = memoryMap(["export", "--out", "src/hw.asm"], project);
+  const run = memoryMap(["export", "--out", "src/hw.asm"]);
   assert.equal(run.status, 0, JSON.stringify(run.envelope));
   assert.equal(run.json.names, platformNames().length);
   const include = readFileSync(join(project, "src", "hw.asm"));

@@ -19,23 +19,14 @@
 import { once } from "node:events";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
+import { after } from "node:test";
 
 import { snapshotModule } from "../../vsf.ts";
 import { buildSnapshot, cpuModule, keyboardModule } from "../../vsf.testkit.ts";
 import { BinaryMonitor, Command, EVENT_REQUEST_ID } from "./binary-monitor.ts";
 import type { ViceProcess } from "./process.ts";
+import { commandSplitter, displayBody, responseFrame, sentinelAnswer } from "./monitor-wire.testkit.ts";
 import { TextMonitor } from "./text-monitor.ts";
-
-function frame(type: number, requestId: number, body: Buffer = Buffer.alloc(0), error = 0): Buffer {
-  const header = Buffer.alloc(12);
-  header[0] = 0x02;
-  header[1] = 0x02;
-  header.writeUInt32LE(body.length, 2);
-  header[6] = type;
-  header[7] = error;
-  header.writeUInt32LE(requestId, 8);
-  return Buffer.concat([header, body]);
-}
 
 function u16(value: number): Buffer {
   const buffer = Buffer.alloc(2);
@@ -66,6 +57,8 @@ const BANKS = [
   { id: 2, name: "rom" },
   { id: 3, name: "io" },
 ];
+/** What the text monitor's io dump gives for each CIA. */
+const CIA_HIDDEN = { dc00: { latchA: 0x4025, latchB: 0xffff, interruptMask: 0x01 }, dd00: { latchA: 0xffff, latchB: 0xffff, interruptMask: 0x00 } };
 
 export interface FakeCheckpoint {
   number: number;
@@ -81,11 +74,30 @@ export interface FakeCheckpoint {
   ignore: number;
 }
 
+/** A checkpoint that hits at `pc` without a set one: an enabled exec stop there. */
+function execCheckpoint(number: number, pc: number, hits: number): FakeCheckpoint {
+  return { number, start: pc, end: pc, stop: true, enabled: true, operation: 0x04, temporary: false, memspace: 0, hits, ignore: 0 };
+}
+
+/** The ViceProcess that FakeVice.start gives, with the controls of the fake process. */
+export type FakeProcess = Awaited<ReturnType<FakeVice["start"]>>;
+
+/**
+ * Starts a FakeVice and a process wired to it; `configure` sets the fake up
+ * before it starts. Both stop when the calling test ends (at module level:
+ * when the file ends).
+ */
+export async function startFake(configure?: (fake: FakeVice) => void): Promise<{ fake: FakeVice; process: FakeProcess }> {
+  const fake = new FakeVice();
+  configure?.(fake);
+  const process = await fake.start();
+  after(() => process.stop());
+  return { fake, process };
+}
+
 export class FakeVice {
   running = true;
   warp = false;
-  /** What the text monitor's io dump gives for each CIA. */
-  ciaHidden = { dc00: { latchA: 0x4025, latchB: 0xffff, interruptMask: 0x01 }, dd00: { latchA: 0xffff, latchB: 0xffff, interruptMask: 0x00 } };
   /** Binary command bytes in arrival order. */
   readonly commands: number[] = [];
   /** Text monitor commands in arrival order (sentinels excluded). */
@@ -115,7 +127,7 @@ export class FakeVice {
    * VICE's own pause (Alt+P) or a dialog: commands on both connections wait
    * unanswered, and run in order once resumeUi() is called, as on real VICE.
    */
-  uiPaused = false;
+  #uiPaused = false;
   readonly #heldBinary: Array<[number, number, Buffer]> = [];
   readonly #heldText: string[] = [];
   /** Text commands still wait after the UI pause ended (see resumeUi). */
@@ -188,16 +200,14 @@ export class FakeVice {
     // The KERNAL reset vector.
     this.rom[0xfffc] = 0xe2;
     this.rom[0xfffd] = 0xfc;
-    this.binaryServer = createServer((socket) => this.#serveBinary(socket));
-    this.textServer = createServer((socket) => this.#serveText(socket));
+    // Without Nagle, as the clients: else each answer waits for a delayed ACK.
+    this.binaryServer = createServer({ noDelay: true }, (socket) => this.#serveBinary(socket));
+    this.textServer = createServer({ noDelay: true }, (socket) => this.#serveText(socket));
   }
 
   /** Starts both servers and returns a ViceProcess wired to them. */
   async start(): Promise<ViceProcess & { crash(): void; dropMonitor(): void; stopCount: number }> {
-    for (const server of [this.binaryServer, this.textServer]) {
-      server.listen(0, "127.0.0.1");
-      await once(server, "listening");
-    }
+    await this.serve(0, 0);
     const monitor = await BinaryMonitor.connect((this.binaryServer.address() as { port: number }).port);
     const text = await TextMonitor.connect((this.textServer.address() as { port: number }).port);
     let exit!: (status: { code: number | null; signal: NodeJS.Signals | null }) => void;
@@ -245,24 +255,13 @@ export class FakeVice {
   /** Stops the machine as a breakpoint does: a checkpoint-hit event, then the stop. `number` names a set checkpoint that hits. */
   stopSpontaneously(pc: number, number?: number): void {
     this.registers.PC = pc;
-    const checkpoint: FakeCheckpoint = (number === undefined ? undefined : this.checkpoints.get(number)) ?? {
-      number: 999,
-      start: pc,
-      end: pc,
-      stop: true,
-      enabled: true,
-      operation: 0x04,
-      temporary: false,
-      memspace: 0,
-      hits: 1,
-      ignore: 0,
-    };
-    this.#binary!.write(frame(0x11, EVENT_REQUEST_ID, this.#checkpointBody(checkpoint, true)));
+    const checkpoint = (number === undefined ? undefined : this.checkpoints.get(number)) ?? execCheckpoint(999, pc, 1);
+    this.#binary!.write(responseFrame(0x11, EVENT_REQUEST_ID, this.#checkpointBody(checkpoint, true)));
     this.#enterMonitor(this.#binary!);
   }
 
   pauseUi(): void {
-    this.uiPaused = true;
+    this.#uiPaused = true;
   }
 
   /**
@@ -270,7 +269,7 @@ export class FakeVice {
    * commands; with `textAfterMs`, the text commands run only that much later.
    */
   resumeUi(textAfterMs = 0): void {
-    this.uiPaused = false;
+    this.#uiPaused = false;
     for (const [id, command, body] of this.#heldBinary.splice(0)) this.#binaryCommand(this.#binary!, id, command, body);
     const runText = () => {
       this.#textHeld = false;
@@ -311,31 +310,20 @@ export class FakeVice {
   #enterMonitor(socket: Socket): void {
     if (!this.running) return;
     this.running = false;
-    socket.write(Buffer.concat([frame(0x31, EVENT_REQUEST_ID, this.#registerBody(0)), frame(0x62, EVENT_REQUEST_ID, this.#pc())]));
+    socket.write(Buffer.concat([responseFrame(0x31, EVENT_REQUEST_ID, this.#registerBody(0)), responseFrame(0x62, EVENT_REQUEST_ID, this.#pc())]));
   }
 
   #leaveMonitor(socket: Socket): void {
     this.running = true;
-    socket.write(frame(0x63, EVENT_REQUEST_ID, this.#pc()));
+    socket.write(responseFrame(0x63, EVENT_REQUEST_ID, this.#pc()));
     if (this.onResume === undefined) return this.#checkExec(socket);
     const stop = this.onResume(this);
     if (stop === undefined) return;
     this.registers.PC = stop.pc;
     for (const number of stop.hits) {
-      const checkpoint = this.checkpoints.get(number) ?? {
-        number,
-        start: stop.pc,
-        end: stop.pc,
-        stop: true,
-        enabled: true,
-        operation: 0x04,
-        temporary: false,
-        memspace: 0,
-        hits: 0,
-        ignore: 0,
-      };
+      const checkpoint = this.checkpoints.get(number) ?? execCheckpoint(number, stop.pc, 0);
       checkpoint.hits++;
-      socket.write(frame(0x11, EVENT_REQUEST_ID, this.#checkpointBody(checkpoint, true)));
+      socket.write(responseFrame(0x11, EVENT_REQUEST_ID, this.#checkpointBody(checkpoint, true)));
     }
     this.#enterMonitor(socket);
   }
@@ -346,7 +334,7 @@ export class FakeVice {
       const pc = this.registers.PC!;
       if (!checkpoint.enabled || !(checkpoint.operation & 0x04) || pc < checkpoint.start || pc > checkpoint.end) continue;
       checkpoint.hits++;
-      socket.write(frame(0x11, EVENT_REQUEST_ID, this.#checkpointBody(checkpoint, true)));
+      socket.write(responseFrame(0x11, EVENT_REQUEST_ID, this.#checkpointBody(checkpoint, true)));
       if (checkpoint.temporary) this.checkpoints.delete(checkpoint.number);
       if (checkpoint.stop) this.#enterMonitor(socket);
       return;
@@ -368,33 +356,23 @@ export class FakeVice {
 
   #serveBinary(socket: Socket): void {
     this.#binary = socket;
-    let pending = Buffer.alloc(0);
-    socket.on("data", (chunk) => {
-      pending = Buffer.concat([pending, chunk]);
-      while (pending.length >= 11) {
-        const length = pending.readUInt32LE(2);
-        if (pending.length < 11 + length) break;
-        const id = pending.readUInt32LE(6);
-        const command = pending[10]!;
-        const body = pending.subarray(11, 11 + length);
-        pending = pending.subarray(11 + length);
+    socket.on(
+      "data",
+      commandSplitter((id, command, body) => {
         this.commands.push(command);
-        if (this.uiPaused) {
-          this.#heldBinary.push([id, command, Buffer.from(body)]);
-          continue;
-        }
-        this.#binaryCommand(socket, id, command, body);
-      }
-    });
+        if (this.#uiPaused) this.#heldBinary.push([id, command, Buffer.from(body)]);
+        else this.#binaryCommand(socket, id, command, body);
+      }),
+    );
     socket.on("error", () => {});
   }
 
   #binaryCommand(socket: Socket, id: number, command: number, body: Buffer): void {
-    const answer = (payload: Buffer = Buffer.alloc(0), type = command) => socket.write(frame(type, id, payload));
+    const answer = (payload: Buffer = Buffer.alloc(0), type = command) => socket.write(responseFrame(type, id, payload));
     if (command === Command.advanceInstructions) {
       // VICE resumes, executes, stops, and only then answers.
       const count = body.readUInt16LE(1);
-      socket.write(frame(0x63, EVENT_REQUEST_ID, this.#pc()));
+      socket.write(responseFrame(0x63, EVENT_REQUEST_ID, this.#pc()));
       this.running = true;
       if (this.stepHangs) return;
       this.registers.PC = this.stepTo ?? (this.registers.PC! + count) & 0xffff;
@@ -468,26 +446,13 @@ export class FakeVice {
       }
       case Command.displayGet: {
         // A 504x312 PAL buffer as VICE sends it: window at (136,51), border box from (104,15).
-        const width = 504;
-        const height = 312;
-        const header = Buffer.alloc(4 + 13 + 4);
-        header.writeUInt32LE(13, 0);
-        header.writeUInt16LE(width, 4);
-        header.writeUInt16LE(height, 6);
-        header.writeUInt16LE(136, 8);
-        header.writeUInt16LE(51, 10);
-        header.writeUInt16LE(320, 12);
-        header.writeUInt16LE(200, 14);
-        header[16] = 8;
-        header.writeUInt32LE(width * height, 17);
-        const pixels = Buffer.alloc(width * height);
-        for (let y = 15; y < 287; y++) {
-          for (let x = 104; x < 488; x++) {
-            const inner = x >= 136 && x < 456 && y >= 51 && y < 251;
-            pixels[y * width + x] = inner ? this.ram[0xd021]! & 0x0f : this.ram[0xd020]! & 0x0f;
-          }
-        }
-        return void answer(Buffer.concat([header, pixels]));
+        const border = this.ram[0xd020]! & 0x0f;
+        const background = this.ram[0xd021]! & 0x0f;
+        const pixel = (x: number, y: number) => {
+          if (x < 104 || x >= 488 || y < 15 || y >= 287) return 0;
+          return x >= 136 && x < 456 && y >= 51 && y < 251 ? background : border;
+        };
+        return void answer(displayBody(504, 312, 136, 51, pixel));
       }
       case Command.paletteGet: {
         const items = Array.from({ length: 16 }, (_, index) => Buffer.from([3, index * 16, index * 16, index * 16]));
@@ -506,7 +471,7 @@ export class FakeVice {
         const file = body.subarray(1, 1 + body[0]!).toString("utf8");
         const saved = existsSync(file) ? readFileSync(file) : Buffer.alloc(0);
         const machine = snapshotModule(saved, "FAKEMACHINE")?.data;
-        if (this.refuseUndump || machine === undefined) return void socket.write(frame(command, id, Buffer.alloc(0), 0x8f));
+        if (this.refuseUndump || machine === undefined) return void socket.write(responseFrame(command, id, Buffer.alloc(0), 0x8f));
         machine.copy(this.ram, 0, 0, 0x10000);
         this.registers.PC = machine.readUInt16LE(0x10000);
         const disk = machine.subarray(0x10002);
@@ -527,7 +492,7 @@ export class FakeVice {
         return void answer();
       case Command.joyportSet: {
         const port = body.readUInt16LE(0);
-        if (port > 1) return void socket.write(frame(command, id, Buffer.alloc(0), 0x01));
+        if (port > 1) return void socket.write(responseFrame(command, id, Buffer.alloc(0), 0x01));
         this.joyport[port] = body.readUInt16LE(2);
         return void answer();
       }
@@ -537,7 +502,7 @@ export class FakeVice {
       case Command.executeUntilReturn:
         answer();
         this.running = true;
-        socket.write(frame(0x63, EVENT_REQUEST_ID, this.#pc()));
+        socket.write(responseFrame(0x63, EVENT_REQUEST_ID, this.#pc()));
         return;
       case Command.reset: {
         // VICE resets the CPU from the monitor and resumes at the vector without
@@ -551,7 +516,7 @@ export class FakeVice {
         if (this.resetStaysInMonitor) return;
         if (enteredForThis) return this.#leaveMonitor(socket);
         this.running = true;
-        socket.write(frame(0x63, EVENT_REQUEST_ID, this.#pc()));
+        socket.write(responseFrame(0x63, EVENT_REQUEST_ID, this.#pc()));
         return;
       }
       case Command.checkpointSet: {
@@ -574,23 +539,23 @@ export class FakeVice {
       }
       case Command.checkpointToggle: {
         const checkpoint = this.checkpoints.get(body.readUInt32LE(0));
-        if (checkpoint === undefined) return void socket.write(frame(command, id, Buffer.alloc(0), 0x01));
+        if (checkpoint === undefined) return void socket.write(responseFrame(command, id, Buffer.alloc(0), 0x01));
         checkpoint.enabled = body[4] !== 0;
         return void answer();
       }
       case Command.conditionSet: {
         const checkpoint = this.checkpoints.get(body.readUInt32LE(0));
-        if (checkpoint === undefined) return void socket.write(frame(command, id, Buffer.alloc(0), 0x01));
+        if (checkpoint === undefined) return void socket.write(responseFrame(command, id, Buffer.alloc(0), 0x01));
         checkpoint.condition = body.subarray(5, 5 + body[4]!).toString("latin1");
         this.conditions.push([checkpoint.number, checkpoint.condition]);
         return void answer();
       }
       case Command.checkpointDelete: {
         const deleted = this.checkpoints.delete(body.readUInt32LE(0));
-        return void socket.write(frame(command, id, Buffer.alloc(0), deleted ? 0 : 0x01));
+        return void socket.write(responseFrame(command, id, Buffer.alloc(0), deleted ? 0 : 0x01));
       }
       default:
-        return void socket.write(frame(command, id, Buffer.alloc(0), 0x83));
+        return void socket.write(responseFrame(command, id, Buffer.alloc(0), 0x83));
     }
   }
 
@@ -629,7 +594,7 @@ export class FakeVice {
       while ((newline = pending.indexOf("\n")) >= 0) {
         const line = pending.slice(0, newline);
         pending = pending.slice(newline + 1);
-        if (this.uiPaused || this.#textHeld) this.#heldText.push(line);
+        if (this.#uiPaused || this.#textHeld) this.#heldText.push(line);
         else this.#textCommand(socket, line);
       }
     });
@@ -639,12 +604,7 @@ export class FakeVice {
   #textCommand(socket: Socket, line: string): void {
     const prompt = () => `(C:$${this.registers.PC!.toString(16).padStart(4, "0")}) `;
     const sentinel = /^~ \$([0-9a-f]{4})$/.exec(line);
-    if (sentinel !== null) {
-      const value = Number.parseInt(sentinel[1]!, 16);
-      const binary = value.toString(2).padStart(16, "0");
-      socket.write(`+${value}\n$${sentinel[1]}\n${value.toString(8).padStart(7, "0")}\n%${binary.slice(0, 8)} ${binary.slice(8)}\n${prompt()}`);
-      return;
-    }
+    if (sentinel !== null) return void socket.write(sentinelAnswer(sentinel[1]!, prompt()));
     this.textCommands.push(line);
     let output = "";
     if (this.#stopForNextCommand()) {
@@ -693,7 +653,7 @@ export class FakeVice {
       for (let address = start; address <= Number.parseInt(memory[2]!, 16); address++) bytes.push(this.#textByte(address).toString(16).padStart(2, "0"));
       output += `>C:${memory[1]}  ${bytes.join(" ")}\n`;
     } else if (/^io d[cd]00$/.test(line)) {
-      const cia = this.ciaHidden[line.slice(3) as "dc00" | "dd00"];
+      const cia = CIA_HIDDEN[line.slice(3) as "dc00" | "dd00"];
       const hex = (value: number, digits: number) => value.toString(16).padStart(digits, "0");
       output += `ICR: 00 (mask: ${hex(cia.interruptMask, 2)})  CTRLA: 01  CTRLB: 08, delay: 0000 rclk--12 to_ack: 00\n\n`;
       output += `Timer A: 1492 (latched ${hex(cia.latchA, 4)})\nTimer B: ffff (latched ${hex(cia.latchB, 4)})\n`;

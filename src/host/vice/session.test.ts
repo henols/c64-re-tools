@@ -1,26 +1,16 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { after, test } from "node:test";
+import { describe, test } from "node:test";
 
-import { WireFailure } from "../../protocol/messages.ts";
-import { Command } from "./binary-monitor.ts";
-import { FakeVice } from "./fake-vice.testkit.ts";
+import { failsWith } from "../../errors.testkit.ts";
 import { readPng } from "../../graphics.testkit.ts";
+import { waitFor } from "../../native/wait.testkit.ts";
+import { Command } from "./binary-monitor.ts";
+import { startFake, type FakeCheckpoint, type FakeVice } from "./fake-vice.testkit.ts";
 import { driveEntry, entriesSince, ViceSession, type SessionOptions } from "./session.ts";
 
-const fakes: FakeVice[] = [];
-const processes: Array<{ stop(): Promise<void> }> = [];
-// Stop every fake, so a failed assertion reports instead of leaving sockets that keep the run alive.
-after(async () => {
-  await Promise.all(processes.map((process) => process.stop()));
-  for (const fake of fakes) fake.close();
-});
-
 async function startSession(options: SessionOptions = {}, log: (line: string) => void = () => {}) {
-  const fake = new FakeVice();
-  fakes.push(fake);
-  const process = await fake.start();
-  processes.push(process);
+  const { fake, process } = await startFake();
   const session = await ViceSession.start(process, "pal", log, options);
   fake.commands.length = 0;
   fake.textCommands.length = 0;
@@ -38,17 +28,6 @@ function minimalCrt(): Buffer {
   chip.writeUInt16BE(0x8000, 0x0c);
   chip.writeUInt16BE(0x2000, 0x0e);
   return Buffer.concat([header, chip]);
-}
-
-const failsWith = (code: string, message?: RegExp) => (error: unknown) =>
-  error instanceof WireFailure && error.code === code && (message === undefined || message.test(error.message));
-
-async function waitFor(condition: () => boolean, timeoutMs = 2000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error("condition not reached in time");
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
 }
 
 test("setup leaves the machine running", async () => {
@@ -96,7 +75,7 @@ test("the cpu view sees ROM where the ram view sees RAM", async () => {
 test("a read while stopped leaves the machine stopped and status reports the pc", async () => {
   const { fake, session } = await startSession();
   fake.stopSpontaneously(0x2100);
-  await waitFor(() => !fake.running);
+  await waitFor(() => !fake.running, "the machine stopped");
   fake.commands.length = 0;
   // The first read may race the breakpoint's stopped event; it must still not resume.
   const registers = await session.handle("registersGet", { space: "c64" });
@@ -169,7 +148,7 @@ test("until-return waits for the routine to return", async () => {
   await session.handle("execution", { action: "pause", space: "c64" });
   fake.returnTo = 0x1980;
   const result = session.handle("execution", { action: "until-return", space: "c64" });
-  await waitFor(() => fake.running);
+  await waitFor(() => fake.running, "the machine runs");
   fake.completeReturn();
   assert.deepEqual(await result, { state: "stopped", pc: 0x1980 });
   await session.close();
@@ -177,11 +156,7 @@ test("until-return waits for the routine to return", async () => {
 
 test("until-return that never returns stops the machine and reports the limit", async () => {
   const { fake, session } = await startSession({ untilReturnLimitMs: 50 });
-  await assert.rejects(session.handle("execution", { action: "until-return", space: "c64" }), (error: unknown) => {
-    assert.ok(failsWith("limit-exceeded")(error));
-    assert.match((error as Error).message, /stopped at \$[0-9a-f]{4}/);
-    return true;
-  });
+  await assert.rejects(session.handle("execution", { action: "until-return", space: "c64" }), failsWith("limit-exceeded", /stopped at \$[0-9a-f]{4}/));
   assert.equal(fake.running, false);
   assert.equal((await session.handle("status", {})).state, "stopped");
   await session.close();
@@ -234,14 +209,14 @@ test("a VICE crash fails the operation and every later one with machine-state-lo
 test("a VICE that ends by itself is stopped at once, before its session closes", async () => {
   const { session, process } = await startSession();
   process.crash();
-  await waitFor(() => process.stopCount === 1);
+  await waitFor(() => process.stopCount === 1, "VICE stopped");
   await session.close();
 });
 
 test("a VICE that drops its monitor but runs on is stopped at once and the session is lost", async () => {
   const { session, process } = await startSession();
   process.dropMonitor();
-  await waitFor(() => process.stopCount === 1);
+  await waitFor(() => process.stopCount === 1, "VICE stopped");
   await assert.rejects(session.handle("registersGet", { space: "c64" }), failsWith("machine-state-lost"));
   await session.close();
 });
@@ -256,103 +231,97 @@ function shortLimits(process: { monitor: { defaultTimeoutMs: number }; text: { d
 const held = (error: unknown) =>
   failsWith("machine-unavailable")(error) && /does not take commands now/.test((error as Error).message) && !/window/i.test((error as Error).message);
 
-/** Retries a read until the session takes commands again. */
-async function untilTakesCommands(session: ViceSession): Promise<void> {
+/** Retries a read until the session takes commands again; a refusal other than `refused` ends it. */
+async function untilTakesCommands(session: ViceSession, refused: (error: unknown) => boolean = held): Promise<void> {
   const deadline = Date.now() + 3000;
   for (;;) {
     try {
       await session.handle("registersGet", { space: "c64" });
       return;
     } catch (error) {
-      if (!held(error) || Date.now() > deadline) throw error;
+      if (!refused(error) || Date.now() > deadline) throw error;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
   }
 }
 
-test("a VICE paused in its window: the operation says so, later ones fail at once and send nothing, and the machine runs again as before", async () => {
-  const { fake, session, process } = await startSession();
-  shortLimits(process);
-  fake.pauseUi();
-  await assert.rejects(session.handle("memoryRead", { address: 0x1000, size: 1, space: "c64", view: "cpu" }), held);
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  const sent = fake.commands.length;
-  const started = Date.now();
-  await assert.rejects(session.handle("registersGet", { space: "c64" }), held);
-  assert.ok(Date.now() - started < 50, "no wait for a held VICE");
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  assert.equal(fake.commands.length, sent, "nothing is sent to a held VICE");
-  assert.equal(fake.running, true, "nothing has run yet");
+// Each test waits for the monitor time limits on its own fake, so they run side by side.
+describe("a VICE that does not answer in time", { concurrency: true }, () => {
+  test("a VICE paused in its window: the operation says so, later ones fail at once and send nothing, and the machine runs again as before", async () => {
+    const { fake, session, process } = await startSession();
+    shortLimits(process);
+    fake.pauseUi();
+    await assert.rejects(session.handle("memoryRead", { address: 0x1000, size: 1, space: "c64", view: "cpu" }), held);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const sent = fake.commands.length;
+    const started = Date.now();
+    await assert.rejects(session.handle("registersGet", { space: "c64" }), held);
+    assert.ok(Date.now() - started < 50, "no wait for a held VICE");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(fake.commands.length, sent, "nothing is sent to a held VICE");
+    assert.equal(fake.running, true, "nothing has run yet");
 
-  fake.resumeUi();
-  await untilTakesCommands(session);
-  // The queued read stopped the machine once VICE went on; the session resumed it.
-  assert.equal(fake.running, true);
-  assert.equal((await session.handle("status", {})).state, "running");
-  await session.close();
-});
+    fake.resumeUi();
+    await untilTakesCommands(session);
+    // The queued read stopped the machine once VICE went on; the session resumed it.
+    assert.equal(fake.running, true);
+    assert.equal((await session.handle("status", {})).state, "running");
+    await session.close();
+  });
 
-test("a held text command does not leave the machine stopped once VICE goes on", async () => {
-  const { fake, session, process } = await startSession();
-  shortLimits(process);
-  fake.pauseUi();
-  await assert.rejects(session.handle("disassemble", { address: 0xe5cf, count: 2, space: "c64", view: "cpu" }), held);
-  fake.resumeUi();
-  await untilTakesCommands(session);
-  assert.equal(fake.running, true);
-  await session.close();
-});
+  test("a held text command does not leave the machine stopped once VICE goes on", async () => {
+    const { fake, session, process } = await startSession();
+    shortLimits(process);
+    fake.pauseUi();
+    await assert.rejects(session.handle("disassemble", { address: 0xe5cf, count: 2, space: "c64", view: "cpu" }), held);
+    fake.resumeUi();
+    await untilTakesCommands(session);
+    assert.equal(fake.running, true);
+    await session.close();
+  });
 
-test("a held VICE whose text commands run later than the time limit still gets its run state back", async () => {
-  const { fake, session, process } = await startSession();
-  shortLimits(process);
-  fake.pauseUi();
-  await assert.rejects(session.handle("disassemble", { address: 0xe5cf, count: 2, space: "c64", view: "cpu" }), held);
-  fake.resumeUi(400);
-  await new Promise((resolve) => setTimeout(resolve, 200));
-  await assert.rejects(session.handle("registersGet", { space: "c64" }), held);
-  await untilTakesCommands(session);
-  assert.equal(fake.running, true);
-  assert.equal((await session.handle("status", {})).state, "running");
-  await session.close();
-});
+  test("a held VICE whose text commands run later than the time limit still gets its run state back", async () => {
+    const { fake, session, process } = await startSession();
+    shortLimits(process);
+    fake.pauseUi();
+    await assert.rejects(session.handle("disassemble", { address: 0xe5cf, count: 2, space: "c64", view: "cpu" }), held);
+    fake.resumeUi(400);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await assert.rejects(session.handle("registersGet", { space: "c64" }), held);
+    await untilTakesCommands(session);
+    assert.equal(fake.running, true);
+    assert.equal((await session.handle("status", {})).state, "running");
+    await session.close();
+  });
 
-test("a step that does not end is named, and the session takes commands again once VICE answers", async () => {
-  const { fake, session } = await startSession({ stepLimitMs: 100 });
-  fake.stepHangs = true;
-  const notEnded = (error: unknown) =>
-    failsWith("machine-unavailable")(error) && /the next of 2 instructions did not end in 0.1 seconds/.test((error as Error).message) && !/window/i.test((error as Error).message);
-  await assert.rejects(session.handle("execution", { action: "next", count: 2, space: "c64" }), notEnded);
-  fake.stepHangs = false;
-  const deadline = Date.now() + 3000;
-  for (;;) {
-    try {
-      await session.handle("registersGet", { space: "c64" });
-      break;
-    } catch (error) {
-      if (!notEnded(error) || Date.now() > deadline) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-  }
-  assert.equal(fake.running, true, "it ran before the step");
-  await session.close();
-});
+  test("a step that does not end is named, and the session takes commands again once VICE answers", async () => {
+    const { fake, session } = await startSession({ stepLimitMs: 100 });
+    fake.stepHangs = true;
+    const notEnded = (error: unknown) =>
+      failsWith("machine-unavailable")(error) && /the next of 2 instructions did not end in 0.1 seconds/.test((error as Error).message) && !/window/i.test((error as Error).message);
+    await assert.rejects(session.handle("execution", { action: "next", count: 2, space: "c64" }), notEnded);
+    fake.stepHangs = false;
+    await untilTakesCommands(session, notEnded);
+    assert.equal(fake.running, true, "it ran before the step");
+    await session.close();
+  });
 
-test("a machine that was stopped stays stopped once a held VICE goes on", async () => {
-  const { fake, session, process } = await startSession();
-  shortLimits(process);
-  fake.stopSpontaneously(0x2100);
-  await waitFor(() => !fake.running);
-  await session.handle("status", {});
-  fake.commands.length = 0;
-  fake.pauseUi();
-  await assert.rejects(session.handle("memoryRead", { address: 0, size: 1, space: "c64", view: "cpu" }), held);
-  fake.resumeUi();
-  await untilTakesCommands(session);
-  assert.equal(fake.running, false);
-  assert.ok(!fake.commands.includes(Command.exit), "a stopped machine is never resumed");
-  assert.equal((await session.handle("status", {})).state, "stopped");
-  await session.close();
+  test("a machine that was stopped stays stopped once a held VICE goes on", async () => {
+    const { fake, session, process } = await startSession();
+    shortLimits(process);
+    fake.stopSpontaneously(0x2100);
+    await waitFor(() => !fake.running, "the machine stopped");
+    await session.handle("status", {});
+    fake.commands.length = 0;
+    fake.pauseUi();
+    await assert.rejects(session.handle("memoryRead", { address: 0, size: 1, space: "c64", view: "cpu" }), held);
+    fake.resumeUi();
+    await untilTakesCommands(session);
+    assert.equal(fake.running, false);
+    assert.ok(!fake.commands.includes(Command.exit), "a stopped machine is never resumed");
+    assert.equal((await session.handle("status", {})).state, "stopped");
+    await session.close();
+  });
 });
 
 test("closing drops queued work and stops VICE", async () => {
@@ -470,11 +439,11 @@ test("an autostart index of a DEL entry or past the last entry is refused before
   });
   const image = Buffer.alloc(174848, 0x11);
   // The session gets the VICE index: the caller's index plus 1.
-  await assert.rejects(session.handle("autostart", { type: "d64", index: 2, run: true }, [image]), (error: WireFailure) => error.code === "invalid-input" && /entry 1 \(----------------\) is a DEL entry/.test(error.message));
-  await assert.rejects(session.handle("autostart", { type: "d64", index: 3, run: true }, [image]), (error: WireFailure) => error.code === "invalid-input" && /2 directory entries, so index 2 selects no entry/.test(error.message));
+  await assert.rejects(session.handle("autostart", { type: "d64", index: 2, run: true }, [image]), failsWith("invalid-input", /entry 1 \(----------------\) is a DEL entry/));
+  await assert.rejects(session.handle("autostart", { type: "d64", index: 3, run: true }, [image]), failsWith("invalid-input", /2 directory entries, so index 2 selects no entry/));
   // An image that is not of its type never reaches VICE.
-  await assert.rejects(session.handle("autostart", { type: "g64", index: 0, run: true }, [image]), (error: unknown) => error instanceof WireFailure && error.code === "media-error" && /does not start with "GCR-1541"/.test(error.message));
-  await assert.rejects(session.handle("autostart", { type: "crt", index: 0, run: true }, [Buffer.alloc(16, 0x55)]), (error: unknown) => error instanceof WireFailure && error.code === "media-error");
+  await assert.rejects(session.handle("autostart", { type: "g64", index: 0, run: true }, [image]), failsWith("media-error", /does not start with "GCR-1541"/));
+  await assert.rejects(session.handle("autostart", { type: "crt", index: 0, run: true }, [Buffer.alloc(16, 0x55)]), failsWith("media-error"));
   assert.equal(fake.autostarts.length, 0);
   await session.handle("autostart", { type: "d64", index: 1, run: true }, [image]);
   await session.handle("autostart", { type: "d64", index: 0, run: true }, [image]);
@@ -540,7 +509,7 @@ test("a disk attach takes the stop lines of a checkpoint that hit meanwhile; oth
 
 test("a stopwatch, warp, memory map or profiler answer in an unknown form fails the operation and keeps the run state", async () => {
   const { fake, session } = await startSession();
-  const unknownForm = (error: unknown) => failsWith("operation-failed")(error) && /does not read/.test((error as Error).message);
+  const unknownForm = failsWith("operation-failed", /does not read/);
   fake.textAnswer = (line) => (line === "stopwatch" ? "Stopwatch: n/a\n" : undefined);
   await assert.rejects(session.handle("timing", { action: "read" }), unknownForm);
   fake.textAnswer = (line) => (line === "warp" ? "Warp: maybe\n" : undefined);
@@ -556,20 +525,16 @@ test("a stopwatch, warp, memory map or profiler answer in an unknown form fails 
 });
 
 test("a profiler that VICE starts fresh is taken", async () => {
-  const fake = new FakeVice();
-  fakes.push(fake);
-  fake.textAnswer = (line) => (line === "profile on" ? "Profiling started.\n" : undefined);
-  const process = await fake.start();
-  processes.push(process);
+  const { fake, process } = await startFake((vice) => {
+    vice.textAnswer = (line) => (line === "profile on" ? "Profiling started.\n" : undefined);
+  });
   const session = await ViceSession.start(process, "pal");
   assert.equal(fake.running, true);
   await session.close();
-  const refusing = new FakeVice();
-  fakes.push(refusing);
-  refusing.textAnswer = (line) => (line === "profile on" ? "Profiling is not available.\n" : undefined);
-  const refused = await refusing.start();
-  processes.push(refused);
-  await assert.rejects(ViceSession.start(refused, "pal"), /does not read/);
+  const refusing = await startFake((vice) => {
+    vice.textAnswer = (line) => (line === "profile on" ? "Profiling is not available.\n" : undefined);
+  });
+  await assert.rejects(ViceSession.start(refusing.process, "pal"), /does not read/);
 });
 
 test("a staged program, disk or autostart file is removed once VICE no longer reads it", async () => {
@@ -946,7 +911,6 @@ test("a raster target the machine already stands in waits for its next pass", as
   const result = await session.handle("runUntil", { target: { kind: "raster", line: 99 }, timeoutFrames: 3 });
   assert.equal(result.stopReason, "target");
   assert.equal(stops, 2);
-  await assert.rejects(session.handle("runUntil", { target: { kind: "raster", line: 312 }, timeoutFrames: 3 }), failsWith("invalid-input"));
   await session.close();
 });
 
@@ -967,6 +931,12 @@ test("a refused run-until target leaves a running machine running and sends VICE
   await session.close();
 });
 
+/** Adds a drive 8 breakpoint at $0300; returns its checkpoint in the fake. */
+async function addDriveBreakpoint(fake: FakeVice, session: ViceSession): Promise<FakeCheckpoint> {
+  await session.handle("breakpoint", { action: "add", address: 0x0300, space: "drive8" });
+  return [...fake.checkpoints.values()].find((checkpoint) => checkpoint.memspace === 1)!;
+}
+
 /** The newest exec checkpoint over all of C64 memory: the one that completes a drive stop. */
 function boundaryOf(fake: FakeVice) {
   return [...fake.checkpoints.values()].filter((checkpoint) => checkpoint.start === 0 && checkpoint.end === 0xffff && checkpoint.memspace === 0).at(-1);
@@ -974,8 +944,7 @@ function boundaryOf(fake: FakeVice) {
 
 test("a stop in the drive is completed at the computer's next instruction before a run reports it", async () => {
   const { fake, session } = await startSession();
-  await session.handle("breakpoint", { action: "add", address: 0x0300, space: "drive8" });
-  const drive = [...fake.checkpoints.values()].find((checkpoint) => checkpoint.memspace === 1)!;
+  const drive = await addDriveBreakpoint(fake, session);
   let stops = 0;
   fake.onResume = (vice) => {
     stops++;
@@ -999,12 +968,11 @@ test("a stop in the drive is completed at the computer's next instruction before
 
 test("a stop in the drive while running is completed before the next command", async () => {
   const { fake, session } = await startSession();
-  await session.handle("breakpoint", { action: "add", address: 0x0300, space: "drive8" });
-  const drive = [...fake.checkpoints.values()].find((checkpoint) => checkpoint.memspace === 1)!;
+  const drive = await addDriveBreakpoint(fake, session);
   await session.handle("execution", { action: "pause", space: "c64" });
   fake.onResume = (vice) => (boundaryOf(vice) === undefined ? { pc: 0x1234, hits: [drive.number] } : { pc: 0x1236, hits: [boundaryOf(vice)!.number] });
   await session.handle("execution", { action: "resume", space: "c64" });
-  await waitFor(() => !fake.running);
+  await waitFor(() => !fake.running, "the machine stopped");
   // Let the session read the stop events before the next command.
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal((await session.handle("registersGet", { space: "c64" })).pc, 0x1236);
@@ -1015,8 +983,7 @@ test("a stop in the drive while running is completed before the next command", a
 /** A session with a drive 8 breakpoint whose stop completes at $1236, one instruction after the drive stop at $1234. */
 async function sessionWithDriveBreakpoint() {
   const { fake, session } = await startSession();
-  await session.handle("breakpoint", { action: "add", address: 0x0300, space: "drive8" });
-  const drive = [...fake.checkpoints.values()].find((checkpoint) => checkpoint.memspace === 1)!;
+  const drive = await addDriveBreakpoint(fake, session);
   fake.onResume = (vice) => (boundaryOf(vice) === undefined ? undefined : { pc: 0x1236, hits: [boundaryOf(vice)!.number] });
   fake.stopsAtNextCommand = { pc: 0x1234, checkpoint: drive.number };
   return { fake, session };
@@ -1068,8 +1035,7 @@ test("a stop in the drive that a pause meets is completed before the pause repor
 
 test("a drive stop that the computer does not complete is refused and leaves no checkpoint behind", async () => {
   const { fake, session } = await startSession();
-  await session.handle("breakpoint", { action: "add", address: 0x0300, space: "drive8" });
-  const drive = [...fake.checkpoints.values()].find((checkpoint) => checkpoint.memspace === 1)!;
+  const drive = await addDriveBreakpoint(fake, session);
   fake.onResume = () => ({ pc: 0x1234, hits: [drive.number] });
   await assert.rejects(session.handle("execution", { action: "advance-frames", count: 5, space: "c64" }), failsWith("operation-failed"));
   assert.equal(fake.checkpoints.size, 1);
@@ -1272,7 +1238,6 @@ test("a snapshot restore keeps the stopwatch reading", async () => {
 test("observe reads every asked part from one stop and keeps the run state", async () => {
   const { fake, session } = await startSession();
   fake.ram[0xd020] = 2;
-  fake.commands.length = 0;
   const observed = await session.handle("observe", {
     registers: "c64",
     memory: [{ address: 0x1000, size: 2, space: "c64", view: "ram" }],

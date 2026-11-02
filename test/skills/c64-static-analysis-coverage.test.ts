@@ -2,55 +2,30 @@
 // it makes, and a DXA run that finds the code that only a vector reaches.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, afterEach, beforeEach, test } from "node:test";
+import { test } from "node:test";
 
 import { COVERAGE, coverageEntries, coverageSeedKinds, executedStarts, romOnlyRanges } from "../../src/c64.ts";
 import { openForRead, openForWrite, withWrite } from "../../src/knowledge/database.ts";
 import { importFindings } from "../../src/knowledge/import.ts";
 import { regionsOverlapping } from "../../src/knowledge/read.ts";
 import { classifyRegion, renameSymbol } from "../../src/knowledge/write.ts";
-import { DXA, findTool } from "../../src/native/discover.ts";
+import { DXA } from "../../src/native/discover.ts";
 import { codeEntries, coverageConflicts, explainGaps, imageReader, writtenNotExecuted } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
 import { VECTORED_ROUTINE, vectoredPrg } from "../fixtures/prg/vectored.ts";
 import { importCoverage, importImage, importPrg } from "../fixtures/program.ts";
-import { readEnvelope } from "../kit.ts";
+import { runScriptSync, scratchDir, skillScript, toolSkip, type ScriptRun } from "../kit.ts";
 
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-analysis-coverage-"));
-const home = process.cwd();
-beforeEach(() => process.chdir(project));
-afterEach(() => process.chdir(home));
-after(() => rmSync(project, { recursive: true, force: true }));
+const dxaSkip = toolSkip(DXA);
 
-let dxaSkip: string | false = false;
-try {
-  findTool(DXA);
-} catch {
-  dxaSkip = "dxa is not installed";
-}
+/** A project of its own, for the test that calls it: the coverage of the knowledge only grows. */
+const fresh = () => scratchDir("analysis-case");
 
-const cases: string[] = [];
-after(() => {
-  for (const root of cases) rmSync(root, { recursive: true, force: true });
-});
-
-/** A project of its own: the coverage of the knowledge only grows. */
-function fresh(): string {
-  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-analysis-case-"));
-  cases.push(root);
-  return root;
-}
-
-const analyzeScript = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
-const analyzeIn = (root: string, ...args: string[]) => spawnSync(process.execPath, [...process.execArgv, analyzeScript, "analyze", ...args], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+const analyzeScript = skillScript("c64-static-analysis", "static-analysis.ts");
+const analyzeIn = (root: string, ...args: string[]) => runScriptSync(analyzeScript, ["analyze", ...args], { cwd: root });
 /** The body of a run: the envelope must be ok:true. */
-const bodyOf = (run: ReturnType<typeof analyzeIn>) => {
-  const { envelope, json } = readEnvelope(run.stdout, run.status);
-  assert.equal(envelope.ok, true, run.stdout);
-  return json;
+const bodyOf = (run: ScriptRun) => {
+  assert.equal(run.envelope.ok, true, run.stdout);
+  return run.json;
 };
 
 function mapWith(starts: number[]): Uint8Array {
@@ -83,7 +58,7 @@ test("after an executed JSR the next instruction starts a flow, and a branch tar
 });
 
 test("code regions and JMP tables are entry points, and analyzer data over executed code is a conflict", () => {
-  const db = openForWrite(project);
+  const db = openForWrite(fresh());
   const image = new Uint8Array(0x10000);
   image.set([0x4c, 0x00, 0x30, 0x4c, 0x00, 0x31], 0x2000);
   classifyRegion(db, { origin: "llm" }, { start: 0x2000, end: 0x2005, type: "jumps" });
@@ -161,7 +136,7 @@ test("with coverage, the decompiler does not follow a KERNAL call or the IRQ vec
   importImage(root, image, { segments: [{ start: 0x0016, end: 0x0019 }, { start: 0x080d, end: 0x0810 }, { start: 0xffe4, end: 0xffe9 }, { start: 0xfffe, end: 0xffff }] });
   importCoverage(root, { "kernal-run.bin": map });
   const run = analyzeIn(root, "--entry", "$080d");
-  const json = bodyOf(run) as { coverageSeeds: unknown };
+  const json = bodyOf(run);
   // $080d and the return point after JSR $ffe4.
   assert.deepEqual(json.coverageSeeds, { entryPoints: 2, used: 2, romOnlyRanges: 2, romOnlyUsed: 2 }, run.stdout);
   const db = openForRead(root);
@@ -175,7 +150,7 @@ test("with coverage, the decompiler does not follow a KERNAL call or the IRQ vec
 test("with coverage, DXA finds the code that only a vector reaches", { skip: dxaSkip, timeout: 120_000 }, () => {
   const root = fresh();
   importPrg(root, vectoredPrg);
-  const analyze = () => bodyOf(analyzeIn(root, "--analyzer", "dxa")) as Record<string, unknown>;
+  const analyze = () => bodyOf(analyzeIn(root, "--analyzer", "dxa"));
   const codeAt = (address: number) => {
     const db = openForRead(root);
     const region = regionsOverlapping(db, address, address)[0];
@@ -198,8 +173,8 @@ test("with coverage, a branch target after an RTS is no decompiler function, and
   importPrg(root, prg);
   importCoverage(root, { "branch.bin": mapWith([0x0810, 0x0812, 0x0815, 0x0818]) });
   const run = analyzeIn(root, "--entry", "$0810");
-  const json = bodyOf(run) as { functions: { listed: Array<{ entry: string }> }; coverageGaps: { count: number } };
-  assert.deepEqual(json.functions.listed.map((fn) => fn.entry), ["$0810"], run.stdout);
+  const json = bodyOf(run);
+  assert.deepEqual(json.functions.listed.map((fn: { entry: string }) => fn.entry), ["$0810"], run.stdout);
   assert.equal(json.coverageGaps.count, 0, run.stdout);
 });
 
@@ -209,10 +184,10 @@ test("a routine of the knowledge outside the program is a refused seed, but only
   importPrg(root, Buffer.from([0x10, 0x08, 0x60]));
   withWrite((db) => renameSymbol(db, { origin: "llm" }, { address: 0xc000, name: "copied_routine", kind: "routine" }), root);
   const copied = analyzeIn(root, "--entry", "$0810");
-  assert.deepEqual((bodyOf(copied) as { seeds: { refused: { listed: unknown[] } } }).seeds.refused.listed, [{ address: "$c000", reason: "outside-program" }], copied.stdout);
-  assert.doesNotMatch(readEnvelope(copied.stdout, copied.status).envelope.hint ?? "", /did not decode/);
+  assert.deepEqual(bodyOf(copied).seeds.refused.listed, [{ address: "$c000", reason: "outside-program" }], copied.stdout);
+  assert.doesNotMatch(copied.envelope.hint ?? "", /did not decode/);
   const wrong = analyzeIn(root, "--entry", "$0810", "--entry", "$c100");
-  assert.match(readEnvelope(wrong.stdout, wrong.status).envelope.hint ?? "", /did not decode 1 seeds/);
+  assert.match(wrong.envelope.hint ?? "", /did not decode 1 seeds/);
 });
 
 test("with coverage, the decompiler makes a function of the code that only a vector reaches", { timeout: 120_000 }, () => {
@@ -220,6 +195,6 @@ test("with coverage, the decompiler makes a function of the code that only a vec
   importPrg(root, vectoredPrg);
   importCoverage(root, { "run.bin": mapWith([0x080d, 0x080f, 0x0812, 0x0814, 0x0817, VECTORED_ROUTINE, VECTORED_ROUTINE + 3]) });
   const run = analyzeIn(root, "--entry", "$080d");
-  const json = bodyOf(run) as { functions: { listed: Array<{ entry: string }> } };
-  assert.ok(json.functions.listed.some((fn) => fn.entry === "$0820"), run.stdout);
+  const json = bodyOf(run);
+  assert.ok(json.functions.listed.some((fn: { entry: string }) => fn.entry === "$0820"), run.stdout);
 });

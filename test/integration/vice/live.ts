@@ -3,12 +3,26 @@
 // live VICE is headless, except in the c64_window tests: they open real
 // windows, so they also need C64RT_LIVE_WINDOW=1.
 
+import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { basename, resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { after, before } from "node:test";
 
-export const LIVE_VICE = process.env.C64RT_LIVE_VICE;
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+
+import { screenText } from "../../../src/graphics.ts";
+import { checkViceStarts } from "../../../src/host/vice/process.ts";
+import { startHostServer, type HostServer, type ViceSessionHandle } from "../../../src/host/server.ts";
+import { viceSessionFactory } from "../../../src/host/vice/session.ts";
+import { viceFlaws, type ViceFlaw } from "../../../src/native/discover.ts";
+import { ProcessSupervisor } from "../../../src/native/processes.ts";
+import type { VideoStandard } from "../../../src/protocol/messages.ts";
+import { waitFor } from "../../kit.ts";
+
+const LIVE_VICE = process.env.C64RT_LIVE_VICE;
 
 export const liveSkip: string | false =
   LIVE_VICE === undefined || LIVE_VICE === "" ? "live VICE: set C64RT_LIVE_VICE=/absolute/path/to/x64sc to run" : false;
@@ -31,7 +45,6 @@ export interface LiveHost {
   readonly process: ChildProcess;
   /** The first line that the host prints: the address where it listens. */
   readonly line: string;
-  readonly port: number;
   /** The value for C64RT_HOST. */
   readonly address: string;
   /**
@@ -66,7 +79,7 @@ export async function startHost(env: NodeJS.ProcessEnv = liveEnv()): Promise<Liv
     }
     return child.exitCode;
   };
-  const host: LiveHost = { process: child, line: "", port: 0, address: "", stop };
+  const host: LiveHost = { process: child, line: "", address: "", stop };
   running.add(host);
   const line = await Promise.race([
     once(createInterface({ input: child.stdout! }), "line").then(([first]) => first as string),
@@ -77,7 +90,7 @@ export async function startHost(env: NodeJS.ProcessEnv = liveEnv()): Promise<Liv
     await stop();
     throw new Error(line === undefined ? "The Host Runtime ended before it listened." : `The Host Runtime printed no port: ${line}`);
   }
-  Object.assign(host, { line, port, address: `127.0.0.1:${port}` });
+  Object.assign(host, { line, address: `127.0.0.1:${port}` });
   return host;
 }
 
@@ -135,4 +148,105 @@ function windowsViceChildren(parentPid: number): number[] {
 /** Host-side session log for live tests: diagnostics such as monitor timeouts reach stderr. */
 export function liveLog(line: string): void {
   process.stderr.write(`[vice-session] ${line}\n`);
+}
+
+export interface LiveSessionOptions {
+  /** PAL when not given. */
+  videoStandard?: VideoStandard;
+  /** The known flaws of the VICE version (viceFlawsOfLive). */
+  flaws?: readonly ViceFlaw[];
+  /** The supervisor that starts the VICE processes; a new one when not given. */
+  supervisor?: ProcessSupervisor;
+}
+
+/** A headless VICE session in this process, as the Host Runtime opens one. The caller closes it. */
+export async function openLiveSession(options: LiveSessionOptions = {}): Promise<ViceSessionHandle> {
+  const supervisor = options.supervisor ?? new ProcessSupervisor();
+  supervisor.installExitGuard();
+  const factory = viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog, ...(options.flaws === undefined ? {} : { flaws: options.flaws }) });
+  return factory({ videoStandard: options.videoStandard ?? "pal" });
+}
+
+/**
+ * The session of the tests of a file: opened before them, unless `skip` (liveSkip
+ * when not given) gives a reason, and closed after them. Another before hook of
+ * the file does not wait for it: a file that sets the machine up before its tests
+ * uses openLiveSession in its own hook.
+ */
+export function fileSession(options: LiveSessionOptions & { skip?: string | false } = {}): ViceSessionHandle {
+  let session: ViceSessionHandle | undefined;
+  before(async () => {
+    if ((options.skip ?? liveSkip) === false) session = await openLiveSession(options);
+  });
+  after(async () => {
+    await session?.close();
+  });
+  return {
+    handle: (op, params, attachments, reply) => session!.handle(op, params, attachments, reply),
+    close: async () => session?.close(),
+  };
+}
+
+/**
+ * A Host Runtime in this process for the tests of a file, stopped after them.
+ * The returned function starts it at its first call and gives its address, the
+ * value for C64RT_HOST.
+ */
+export function hostServer(): () => Promise<string> {
+  let server: Promise<HostServer> | undefined;
+  after(async () => {
+    await server?.then((started) => started.close(), () => {});
+  });
+  return async () => {
+    if (server === undefined) {
+      const supervisor = new ProcessSupervisor();
+      supervisor.installExitGuard();
+      server = startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+    }
+    const { host, port } = await server;
+    return `${host}:${port}`;
+  };
+}
+
+/** The known flaws of the live VICE, from its version as the Host Runtime reads it from the running emulator. */
+export async function viceFlawsOfLive(): Promise<ViceFlaw[]> {
+  const supervisor = new ProcessSupervisor();
+  supervisor.installExitGuard();
+  return viceFlaws(await checkViceStarts({ supervisor, env: liveEnv() }));
+}
+
+/** Polls the status (no fixed sleep) until the machine has stopped; returns its pc. */
+export async function waitForStop(session: Pick<ViceSessionHandle, "handle">, timeoutMs = 10_000): Promise<number> {
+  let pc = 0;
+  await waitFor(
+    async () => {
+      const status = await session.handle("status", {});
+      pc = status.pc ?? 0;
+      return status.state === "stopped";
+    },
+    "the stop of the machine",
+    timeoutMs,
+    20,
+  );
+  return pc;
+}
+
+/** The text screen at $0400 (screenText), a line for each row, without the spaces at the end of a row. */
+export async function screenOf(session: Pick<ViceSessionHandle, "handle">): Promise<string> {
+  const { data } = await session.handle("memoryRead", { address: 0x0400, size: 1000, space: "c64", view: "ram" });
+  return screenText(Buffer.from(data, "hex"))
+    .map((row) => row.trimEnd())
+    .join("\n");
+}
+
+/** Calls an MCP tool as an agent does: the test fails when the tool gives an error. */
+export async function callTool(client: Client, name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
+  const result = (await client.callTool({ name, arguments: args })) as CallToolResult;
+  assert.notEqual(result.isError, true, `${name}: ${JSON.stringify(result.content)}`);
+  return result;
+}
+
+/** The structured result of an MCP tool call (callTool). */
+export async function toolResult(client: Client, name: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+  return (await callTool(client, name, args)).structuredContent as Record<string, unknown>;
 }

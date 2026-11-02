@@ -57,7 +57,7 @@ function fail(message: string): never {
 const wordCount = (text: string) => text.split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word)).length;
 
 /** Skill text as a quote is compared with it: no backtick and no asterisk, and each run of whitespace one space. */
-export function normalizeQuote(text: string): string {
+function normalizeQuote(text: string): string {
   return text.replace(/[`*]/g, "").replace(/\s+/g, " ").trim();
 }
 

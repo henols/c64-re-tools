@@ -1,18 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { WireFailure } from "../protocol/messages.ts";
+import { failsWith } from "../errors.testkit.ts";
 import { isAlive, ProcessSupervisor, type SpawnOptions } from "./processes.ts";
 import { runTool, runToolOrFail } from "./run.ts";
 
 const node = (code: string) => [process.execPath, "-e", code];
+/** A supervisor that waits 100 ms after SIGTERM, and a signal that never aborts. */
+const context = () => ({ supervisor: new ProcessSupervisor({ graceMs: 100 }), signal: new AbortController().signal });
 
 test("a run returns exit status and output", { timeout: 30_000 }, async () => {
   const run = await runTool({
     argv: node('process.stdout.write("out"); process.stderr.write("err"); process.exit(3)'),
     cwd: process.cwd(),
-    supervisor: new ProcessSupervisor(),
-    signal: new AbortController().signal,
+    ...context(),
   });
   assert.deepEqual(
     { code: run.code, stdout: run.stdout, stderr: run.stderr, timedOut: run.timedOut, truncated: run.truncated },
@@ -21,9 +22,9 @@ test("a run returns exit status and output", { timeout: 30_000 }, async () => {
 });
 
 test("a run past its timeout is stopped and reported", { timeout: 30_000 }, async () => {
-  const supervisor = new ProcessSupervisor({ graceMs: 100 });
+  const { supervisor, signal } = context();
   const started = Date.now();
-  const run = await runTool({ argv: node("setInterval(() => {}, 1000)"), cwd: process.cwd(), supervisor, signal: new AbortController().signal, timeoutMs: 100 });
+  const run = await runTool({ argv: node("setInterval(() => {}, 1000)"), cwd: process.cwd(), supervisor, signal, timeoutMs: 100 });
   assert.equal(run.timedOut, true);
   assert.ok(Date.now() - started < 5000);
   assert.equal(supervisor.size, 0);
@@ -33,8 +34,7 @@ test("output beyond the limit is dropped and flagged", { timeout: 30_000 }, asyn
   const run = await runTool({
     argv: node('process.stdout.write("x".repeat(5000))'),
     cwd: process.cwd(),
-    supervisor: new ProcessSupervisor(),
-    signal: new AbortController().signal,
+    ...context(),
     outputLimit: 100,
   });
   assert.equal(run.stdout.length, 100);
@@ -42,7 +42,7 @@ test("output beyond the limit is dropped and flagged", { timeout: 30_000 }, asyn
 });
 
 test("an abort stops the run and its descendants", { timeout: 30_000 }, async () => {
-  const supervisor = new ProcessSupervisor({ graceMs: 100 });
+  const { supervisor } = context();
   const abort = new AbortController();
   setTimeout(() => abort.abort(), 100);
   const run = await runTool({
@@ -56,7 +56,7 @@ test("an abort stops the run and its descendants", { timeout: 30_000 }, async ()
 });
 
 test("a stop that fails during a timeout rejects the run instead of an unhandled rejection", { timeout: 30_000 }, async () => {
-  const real = new ProcessSupervisor({ graceMs: 100 });
+  const { supervisor: real, signal } = context();
   // A supervisor whose stop ends the process but then reports that the group survived.
   const supervisor = {
     spawn: (argv: readonly string[], options: SpawnOptions) => {
@@ -72,7 +72,7 @@ test("a stop that fails during a timeout rejects the run instead of an unhandled
   process.on("unhandledRejection", record);
   try {
     await assert.rejects(
-      runTool({ argv: node("setInterval(() => {}, 1000)"), cwd: process.cwd(), supervisor, signal: new AbortController().signal, timeoutMs: 100 }),
+      runTool({ argv: node("setInterval(() => {}, 1000)"), cwd: process.cwd(), supervisor, signal, timeoutMs: 100 }),
       /survived SIGKILL/,
     );
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -84,13 +84,13 @@ test("a stop that fails during a timeout rejects the run instead of an unhandled
 });
 
 test("a tool that exits while a descendant holds its output finishes without a timeout", { skip: process.platform === "win32" ? "Windows cannot find the descendants of a process that has ended" : false, timeout: 30_000 }, async () => {
-  const supervisor = new ProcessSupervisor({ graceMs: 100 });
+  const { supervisor, signal } = context();
   const started = Date.now();
   const run = await runTool({
     argv: node('const d = require("node:child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "inherit" }); console.log(d.pid); process.exit(0)'),
     cwd: process.cwd(),
     supervisor,
-    signal: new AbortController().signal,
+    signal,
     timeoutMs: 5_000,
   });
   assert.deepEqual({ code: run.code, timedOut: run.timedOut }, { code: 0, timedOut: false });
@@ -104,8 +104,7 @@ test("a character split between two output chunks stays whole", { timeout: 30_00
   const run = await runTool({
     argv: node("process.stdout.write(Buffer.from([0xc3])); setTimeout(() => process.stdout.write(Buffer.from([0xa9])), 100)"),
     cwd: process.cwd(),
-    supervisor: new ProcessSupervisor(),
-    signal: new AbortController().signal,
+    ...context(),
   });
   assert.equal(run.stdout, "é");
 });
@@ -115,16 +114,12 @@ test("the output limit counts bytes, not characters", { timeout: 30_000 }, async
   const run = await runTool({
     argv: node('process.stdout.write("€".repeat(10))'),
     cwd: process.cwd(),
-    supervisor: new ProcessSupervisor(),
-    signal: new AbortController().signal,
+    ...context(),
     outputLimit: 9,
   });
   assert.equal(run.stdout, "€".repeat(3));
   assert.equal(run.truncated, true);
 });
-
-const context = () => ({ supervisor: new ProcessSupervisor({ graceMs: 100 }), signal: new AbortController().signal });
-const failsWith = (code: string, message: RegExp) => (error: unknown) => error instanceof WireFailure && error.code === code && message.test(error.message);
 
 test("a tool that does not start is refused by name with the cause", { timeout: 30_000 }, async () => {
   await assert.rejects(

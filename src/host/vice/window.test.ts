@@ -2,35 +2,22 @@
 // and one with a window, and back, through a snapshot and a new VICE.
 
 import assert from "node:assert/strict";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
+import { failsWith } from "../../errors.testkit.ts";
 import { WireFailure } from "../../protocol/messages.ts";
-import { FakeVice } from "./fake-vice.testkit.ts";
-import type { ViceMode, ViceProcess } from "./process.ts";
+import { startFake, type FakeProcess, type FakeVice } from "./fake-vice.testkit.ts";
+import type { ViceMode } from "./process.ts";
 import { ViceSession, type ViceLauncher } from "./session.ts";
-
-type FakeProcess = Awaited<ReturnType<FakeVice["start"]>>;
-
-const fakes: FakeVice[] = [];
-const processes: FakeProcess[] = [];
-after(async () => {
-  await Promise.all(processes.map((process) => process.stop()));
-  for (const fake of fakes) fake.close();
-});
 
 const NOT_CARRIED = ["cpu history", "memory map", "profile", "keyboard input not yet typed"];
 
-const failsWith = (code: string, message?: RegExp) => (error: unknown) =>
-  error instanceof WireFailure && error.code === code && (message === undefined || message.test(error.message));
-
-async function launchFake(mode: ViceMode, configure?: (fake: FakeVice, mode: ViceMode) => void): Promise<{ fake: FakeVice; process: FakeProcess }> {
-  const fake = new FakeVice();
-  fake.mode = mode;
-  configure?.(fake, mode);
-  fakes.push(fake);
-  const process = await fake.start();
-  processes.push(process);
-  return { fake, process };
+/** Starts a fake VICE in `mode`; `configure` sets it up first. */
+function launchFake(mode: ViceMode, configure?: (fake: FakeVice, mode: ViceMode) => void) {
+  return startFake((fake) => {
+    fake.mode = mode;
+    configure?.(fake, mode);
+  });
 }
 
 /**
@@ -52,7 +39,7 @@ async function startWindowSession(
     options.refuse?.(mode, log);
     const started = await launchFake(mode, options.configure);
     vices.push(started);
-    return started.process as ViceProcess;
+    return started.process;
   };
   const session = await ViceSession.start(vices[0]!.process, "pal", () => {}, { launch });
   return { session, vices, current: () => vices.at(-1)!.fake };

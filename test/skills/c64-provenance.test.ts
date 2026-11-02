@@ -1,41 +1,27 @@
 // The c64-provenance comparison: differences, agreeing groups and alignment.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
 import { COVERAGE, formatC64Address } from "../../src/c64.ts";
+import { prg } from "../../src/c64.testkit.ts";
 import { align, compareReleases, identicalShare, shiftSuggestion, suggestShifts } from "../../skills/c64-provenance/scripts/lib/compare.ts";
 import { withWrite } from "../../src/knowledge/database.ts";
 import { separate } from "../../src/knowledge/separate.ts";
 import { classifyRegion } from "../../src/knowledge/write.ts";
-import { readEnvelope, seededBytes } from "../kit.ts";
+import { runScriptSync, scratchDir, seededBytes, skillScript } from "../kit.ts";
 import { importCoverage, importImage } from "../fixtures/program.ts";
 
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-provenance-"));
-const programs: string[] = [];
-after(() => {
-  rmSync(project, { recursive: true, force: true });
-  for (const root of programs) rmSync(root, { recursive: true, force: true });
-});
-
-const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
+const project = scratchDir("provenance");
+const script = skillScript("c64-provenance", "provenance.ts");
 
 /** Runs the script in `cwd`: the exit status, the envelope, and json (the body, or { error: { code, message } }). */
-function provenance(args: string[], cwd: string, env?: NodeJS.ProcessEnv) {
-  const spawned = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd, encoding: "utf8", ...(env === undefined ? {} : { env }) });
-  return { status: spawned.status, stdout: spawned.stdout, stderr: spawned.stderr, ...readEnvelope(spawned.stdout, spawned.status) };
-}
+const provenance = (args: string[], cwd: string) => runScriptSync(script, args, { cwd });
 
-/** A project of its own for one program in the knowledge. */
-function fresh(): string {
-  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-provenance-program-"));
-  programs.push(root);
-  return root;
-}
+/** A project of its own for one program in the knowledge, for the test that calls it. */
+const fresh = () => scratchDir("provenance-program");
 
 const base = seededBytes(0x6510, 2048);
 const crackA = Buffer.from(base);
@@ -92,20 +78,19 @@ test("a release at another address gets a suggested shift; the shifts come from 
 test("data that stayed and code that moved both get a shift, and the present alignment is marked current", () => {
   const data = seededBytes(0x1234, 256);
   const code = seededBytes(0x6510, 2048);
-  const prg = (bytes: Uint8Array[]) => Buffer.concat([Buffer.from([0x00, 0x20]), ...bytes]);
-  writeFileSync(join(project, "stay.prg"), prg([data, code]));
-  writeFileSync(join(project, "grow.prg"), prg([data, new Uint8Array(256), code]));
+  writeFileSync(join(project, "stay.prg"), prg(0x2000, data, code));
+  writeFileSync(join(project, "grow.prg"), prg(0x2000, data, new Uint8Array(256), code));
   const run = provenance(["compare", "stay.prg", "grow.prg"], project);
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const result = run.json as { identicalShare: number; suggestedShifts: Array<{ release: number; shift: number; current?: true }> };
+  assert.equal(run.status, 0, run.stdout);
+  const result = run.json;
   assert.ok(result.identicalShare < 0.5);
-  assert.deepEqual(result.suggestedShifts.map((item) => [item.release, item.shift, item.current ?? false]), [[2, -256, false], [2, 0, true]]);
+  assert.deepEqual(result.suggestedShifts.map((item: { release: number; shift: number; current?: true }) => [item.release, item.shift, item.current ?? false]), [[2, -256, false], [2, 0, true]]);
   // The next compare takes the first suggested shift that the run does not have.
   assert.match(run.envelope.hint ?? "", /^identicalShare is low/);
   assert.match(run.envelope.nextAction ?? "", /^node \/\S*provenance\.ts compare stay\.prg grow\.prg --shift 2:-256 --project \//);
   // 13 bytes are too few to suggest a shift or --align: the result gives the differences and no next compare.
   const short = provenance(["compare", "stay.prg", "grow.prg", "--range", "$2100-$210c"], project);
-  assert.equal(short.status, 0, short.stdout + short.stderr);
+  assert.equal(short.status, 0, short.stdout);
   assert.ok((short.json as { identicalShare: number }).identicalShare < 0.5);
   assert.deepEqual([(short.json as Record<string, unknown>).suggestedShifts, short.envelope.hint, short.envelope.nextAction], [undefined, undefined, undefined]);
 });
@@ -125,22 +110,21 @@ test("a shift that moves a segment out of $0000-$ffff is not suggested: the oppo
 });
 
 test("the script compares PRG files and applies a shift", () => {
-  const prg = (start: number, bytes: Uint8Array) => Buffer.concat([Buffer.from([start & 0xff, start >> 8]), bytes]);
   writeFileSync(join(project, "release.prg"), prg(0x0801, base));
   writeFileSync(join(project, "moved.prg"), prg(0x0901, base));
-  const aligned = provenance(["compare", "release.prg", "moved.prg", "--shift", "2:-256"], project).json as Record<string, unknown>;
+  const aligned = provenance(["compare", "release.prg", "moved.prg", "--shift", "2:-256"], project).json;
   assert.equal(aligned.differingBytes, 0);
   assert.equal(aligned.identicalShare, 1);
-  assert.deepEqual((aligned.releases as Array<{ shift: number }>).map((item) => item.shift), [0, -256]);
+  assert.deepEqual(aligned.releases.map((item: { shift: number }) => item.shift), [0, -256]);
   const twice = provenance(["compare", "release.prg", "moved.prg", "--shift", "2:-256", "--shift", "2:256"], project);
   assert.equal(twice.status, 2, twice.stdout);
-  const { error } = twice.json as { error: { code: string; message: string } };
+  const { error } = twice.json;
   assert.equal(error.code, "invalid-input");
   assert.match(error.message, /^--shift gives release 2 more than one shift \(-256 and 256\)\. Give one --shift for each release/);
   const refused = (args: string[]) => {
     const run = provenance(["compare", ...args], project);
     assert.equal(run.status, 2, run.stdout);
-    return run.json.error as { code: string; message: string };
+    return run.json.error;
   };
   const third = refused(["release.prg", "moved.prg", "--shift", "3:-1280"]);
   assert.equal(third.code, "invalid-input");
@@ -190,8 +174,8 @@ test("compare --align maps two image.json files, and refuses --shift, and --min-
   image("build-b", buildB);
   const compare = (args: string[]) => provenance(["compare", "build-a/image.json", "build-b/image.json", ...args], project);
   const run = compare(["--align"]);
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const result = run.json as Record<string, any>;
+  assert.equal(run.status, 0, run.stdout);
+  const result = run.json;
   assert.deepEqual(result.blocks[1], { a: { start: "$1100", end: "$113f" }, b: { start: "$1320", end: "$135f" }, shift: 544, bytes: 64 });
   assert.equal(result.blocks.length, 4);
   assert.deepEqual(result.onlyInA, [{ start: "$1340", end: "$1357" }]);
@@ -200,22 +184,22 @@ test("compare --align maps two image.json files, and refuses --shift, and --min-
   assert.ok(result.identicalShare < 0.5, "the same addresses differ after the inserted block");
   assert.equal(result.suggestedShifts, undefined, "no shift suggestions in align mode");
   assert.equal(result.differences, undefined);
-  const ranged = compare(["--align", "--min-block", "100", "--range", "$1100-$13ff"]).json as Record<string, any>;
+  const ranged = compare(["--align", "--min-block", "100", "--range", "$1100-$13ff"]).json;
   assert.deepEqual(ranged.blocks.map((block: { shift: number }) => block.shift), [-32, 8], "M is too short, and Z is cut at the end of the range");
   const refused = (args: string[]) => {
     const failed = compare(args);
     assert.equal(failed.status, 2, failed.stdout);
-    return (failed.json as { error: { code: string; message: string } }).error;
+    return failed.json.error;
   };
   assert.match(refused(["--align", "--shift", "2:-32"]).message, /^--align does not work with --shift/);
   assert.match(refused(["--min-block", "20"]).message, /^--min-block works only with --align/);
 });
 
 test("compare refuses an unknown name in the steps before an emulator starts", () => {
-  writeFileSync(join(project, "one.prg"), Buffer.from([0x01, 0x08, 0xea]));
+  writeFileSync(join(project, "one.prg"), prg(0x0801, [0xea]));
   // An unknown name in the steps stops the call before an emulator starts (no host listens at port 1).
   writeFileSync(join(project, "name.json"), JSON.stringify([{ runUntil: { target: { kind: "address", address: "nonsense" } } }]));
-  const named = provenance(["compare", "one.prg", "one.prg", "--frames", "10", "--steps", "name.json"], project, { ...process.env, C64RT_HOST: "127.0.0.1:1" });
+  const named = provenance(["compare", "one.prg", "one.prg", "--frames", "10", "--steps", "name.json"], project);
   assert.equal(named.status, 2, named.stdout);
   assert.equal(named.json.error.code, "invalid-input");
   assert.match(named.json.error.message, /^--steps name\.json: step 1: nonsense is not a name in the knowledge/);
@@ -228,9 +212,9 @@ test("an image release counts only inside its segments, and a common range never
   mkdirSync(join(project, "unpacked"), { recursive: true });
   writeFileSync(join(project, "unpacked", "image.bin"), memory);
   writeFileSync(join(project, "unpacked", "image.json"), JSON.stringify({ image: "image.bin", segments: [{ start: "$0801", end: "$0900" }, { start: "$0a01", end: "$0b00" }] }));
-  writeFileSync(join(project, "whole.prg"), Buffer.concat([Buffer.from([0x01, 0x08]), crackA]));
+  writeFileSync(join(project, "whole.prg"), prg(0x0801, crackA));
   const run = provenance(["compare", "unpacked/image.json", "whole.prg"], project);
-  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.equal(run.status, 0, run.stdout);
   const result = run.json as { releases: Array<{ release: number; outsideCommon?: unknown }>; common: unknown; differences: Array<{ start: string; end: string }>; identicalBytes: number };
   assert.deepEqual(result.common, [{ start: "$0801", end: "$0900" }, { start: "$0a01", end: "$0b00" }]);
   assert.deepEqual(result.releases.map((release) => [release.release, release.outsideCommon]), [[1, undefined], [2, [{ start: "$0901", end: "$0a00" }, { start: "$0b01", end: "$1000" }]]]);
@@ -363,8 +347,8 @@ test("the separate command reads the program with its stages and the coverage fr
     classifyRegion(db, { origin: "llm" }, { start: 0x20f0, end: 0x20f0, type: "code" });
   }, root);
   const run = provenance(["separate", "--out", "separate.json", "--max-listed", "1"], root);
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const result = run.json as Record<string, any>;
+  assert.equal(run.status, 0, run.stdout);
+  const result = run.json;
   assert.deepEqual(result.bytesByStage, { 0: 128, 1: 128, none: 0 });
   assert.equal(result.bytesByAccess.untouched, 256);
   assert.equal(result.ranges.count, 2);
@@ -389,18 +373,17 @@ test("separate says when the program has no stage log, and a run of releases wit
   const root = fresh();
   importImage(root, memory, { segments: [{ start: 0x3000, end: 0x30ff }], entry: 0x3000 });
   const separated = provenance(["separate"], root);
-  assert.equal(separated.status, 0, separated.stdout + separated.stderr);
-  const result = separated.json as Record<string, unknown>;
+  assert.equal(separated.status, 0, separated.stdout);
+  const result = separated.json;
   assert.match(String(result.noStages), /no stage log/);
   assert.equal(result.bytesByStage, undefined);
 
-  const prg = Buffer.concat([Buffer.from([0x01, 0x08]), base]);
-  writeFileSync(join(project, "same-a.prg"), prg);
-  writeFileSync(join(project, "same-b.prg"), prg);
+  writeFileSync(join(project, "same-a.prg"), prg(0x0801, base));
+  writeFileSync(join(project, "same-b.prg"), prg(0x0801, base));
   // No difference: no emulator starts, so no host is needed.
-  const run = provenance(["compare", "same-a.prg", "same-b.prg", "--frames", "10"], project, { ...process.env, C64RT_HOST: "127.0.0.1:1" });
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const compared = run.json as { run: { releases: object; skipped?: string } };
+  const run = provenance(["compare", "same-a.prg", "same-b.prg", "--frames", "10"], project);
+  assert.equal(run.status, 0, run.stdout);
+  const compared = run.json;
   assert.deepEqual(compared.run.releases, {});
   assert.match(compared.run.skipped ?? "", /no differences/);
 });
@@ -440,14 +423,14 @@ test("the separate command names the roots of the reachability in the result and
   const root = fresh();
   importImage(root, memory, { segments: [{ start: 0x2000, end: 0x20ff }, { start: 0xfffa, end: 0xffff }], entry: 0x2000 });
   const run = provenance(["separate", "--out", "separate.json"], root);
-  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.equal(run.status, 0, run.stdout);
   const roots = [
     { address: "$2000", from: "entry" },
     { address: "$2000", from: "NMI vector $fffa" },
     { address: "$2000", from: "RESET vector $fffc" },
     { address: "$2080", from: "IRQ vector $fffe" },
   ];
-  assert.deepEqual((run.json as { roots: unknown }).roots, roots);
+  assert.deepEqual(run.json.roots, roots);
   assert.deepEqual((JSON.parse(readFileSync(join(root, "separate.json"), "utf8")) as { roots: unknown }).roots, roots);
 });
 

@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { instructionLength } from "../../c64.ts";
 import { PcodeState } from "./pcode.ts";
 import { walk } from "./walk.ts";
 import { decode, loadImage, type Decoded } from "./wasm.ts";
@@ -18,12 +19,6 @@ interface Case {
   expect: Record<string, number>;
   expectMemory?: Record<number, number>;
 }
-
-/** Instruction lengths of all 256 NMOS opcodes, one row of 16 per high nibble. */
-const ROW_A = [1, 2, 1, 2, 2, 2, 2, 2, 1, 2, 1, 2, 3, 3, 3, 3];
-const ROW_B = [2, 2, 1, 2, 2, 2, 2, 2, 1, 3, 1, 3, 3, 3, 3, 3];
-const ROW_C = [2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 1, 2, 3, 3, 3, 3];
-const LENGTHS = [ROW_A, ROW_B, [3, ...ROW_A.slice(1)], ROW_B, ROW_A, ROW_B, ROW_A, ROW_B, ROW_C, ROW_B, ROW_C, ROW_B, ROW_C, ROW_B, ROW_C, ROW_B].flat();
 
 const UNDOCUMENTED: Record<string, number[]> = {
   SLO: [0x03, 0x07, 0x0f, 0x13, 0x17, 0x1b, 0x1f],
@@ -101,7 +96,7 @@ loadImage(image, 0x1000);
 const opcodes: Decoded[] = Array.from({ length: 256 }, (_, op) => decode(0x1000 + op * 4));
 
 test("every opcode decodes with its NMOS length", () => {
-  const wrong = opcodes.flatMap((opcode, op) => (opcode.length === LENGTHS[op] ? [] : [`$${op.toString(16)}: ${opcode.mnemonic} ${opcode.length}`]));
+  const wrong = opcodes.flatMap((opcode, op) => (opcode.length === instructionLength(op) ? [] : [`$${op.toString(16)}: ${opcode.mnemonic} ${opcode.length}`]));
   assert.deepEqual(wrong, []);
 });
 

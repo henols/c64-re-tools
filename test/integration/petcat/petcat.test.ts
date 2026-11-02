@@ -3,28 +3,22 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { findTool, PETCAT } from "../../../src/native/discover.ts";
 import { decode } from "../../../src/host/tools/petcat.ts";
 import { borderLoopPrg } from "../../fixtures/prg/border-loop.ts";
+import { scratchDir, toolSkip } from "../../kit.ts";
 
-let petcat = "";
-let skip: string | false = false;
-try {
-  petcat = findTool(PETCAT);
-} catch {
-  skip = "petcat is not installed: install VICE or set C64RT_PETCAT to run these tests";
-}
+const skip = toolSkip(PETCAT);
+const petcat = skip === false ? findTool(PETCAT) : "";
 
-const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-petcat-"));
+const scratch = scratchDir("petcat");
 const supervisor = new ProcessSupervisor();
 supervisor.installExitGuard();
-after(() => rmSync(scratch, { recursive: true, force: true }));
 
 const context = () => ({ supervisor, signal: new AbortController().signal });
 

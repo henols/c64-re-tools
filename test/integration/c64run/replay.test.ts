@@ -5,41 +5,33 @@
 // at the first checkpoint after the left frames start.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
+import { prg, SYS_2061 } from "../../../src/c64.testkit.ts";
 import { READY_FRAMES } from "../../../src/host-client/entry-state.ts";
-import { C64RUN, findTool } from "../../../src/native/discover.ts";
+import { C64RUN } from "../../../src/native/discover.ts";
 import { joystickCounterPrg } from "../../fixtures/prg/joystick-counter.ts";
-import { readEnvelope } from "../../kit.ts";
+import { runScriptSync, scratchDir, skillScript, toolSkip } from "../../kit.ts";
 
-let skip: string | false = false;
-try {
-  findTool(C64RUN);
-} catch {
-  skip = "c64run is not installed: install c64run or set C64RT_C64RUN to run these tests";
-}
+const skip = toolSkip(C64RUN);
 
-const root = resolve(import.meta.dirname, "../../..");
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-replay-"));
+const project = scratchDir("replay");
 mkdirSync(join(project, ".c64-re-tools"));
-after(() => rmSync(project, { recursive: true, force: true }));
 
 /** The joystick counter at another base address: its one absolute jump moves with it. */
 function counterAt(base: number, options: { countRight?: boolean } = {}): Uint8Array {
-  const prg = Uint8Array.from(joystickCounterPrg);
-  prg[0] = base & 0xff;
-  prg[1] = base >> 8;
-  const jump = prg.length - 2;
+  const program = Uint8Array.from(joystickCounterPrg);
+  program[0] = base & 0xff;
+  program[1] = base >> 8;
+  const jump = program.length - 2;
   const target = base + 0x0e;
-  prg[jump] = target & 0xff;
-  prg[jump + 1] = target >> 8;
+  program[jump] = target & 0xff;
+  program[jump + 1] = target >> 8;
   // The operand of AND #$04 (left) is at $c01c: $08 counts right.
-  if (options.countRight) prg[2 + 0x1c] = 0x08;
-  return prg;
+  if (options.countRight) program[2 + 0x1c] = 0x08;
+  return program;
 }
 
 function symbols(base: number) {
@@ -48,10 +40,10 @@ function symbols(base: number) {
   return { start: at(0), wait: at(0x0e), count: at(0x15), skip: at(0x27), frames: "$c100" };
 }
 
-function script(name: string, args: string[], cwd = project, file = "c64-testing/scripts/testing.ts"): { status: number | null; result: Record<string, unknown> } {
-  const run = spawnSync(process.execPath, [...process.execArgv, join(root, "skills", file), name, ...args], { cwd, encoding: "utf8", timeout: 120_000 });
-  assert.ok(run.stdout !== "", run.stderr);
-  return { status: run.status, result: readEnvelope(run.stdout, run.status).json as Record<string, unknown> };
+/** Runs a command of the c64-testing script; `result` is its body or its refusal. */
+function script(name: string, args: string[], cwd = project): { status: number | null; result: Record<string, unknown> } {
+  const { status, json } = runScriptSync(skillScript("c64-testing", "testing.ts"), [name, ...args], { cwd, timeoutMs: 120_000 });
+  return { status, result: json };
 }
 
 writeFileSync(join(project, "counter.prg"), counterAt(0xc000));
@@ -210,12 +202,11 @@ test("a relocated rebuild replays the same, and a changed one fails at the first
 });
 
 // A program that RUN starts: 10 SYS2061, and the counter at $080d.
-const SYS_2061 = [0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00];
-writeFileSync(join(project, "run.prg"), Uint8Array.from([0x01, 0x08, ...SYS_2061, ...counterAt(0x080d).subarray(2)]));
+writeFileSync(join(project, "run.prg"), prg(0x0801, SYS_2061, counterAt(0x080d).subarray(2)));
 writeFileSync(join(project, "run.json"), JSON.stringify(symbols(0x080d)));
 // The rebuild as a loader with a start screen: $080d waits for fire on port 1 for ever (LDA $dc01; AND #$10; BNE), $0815 JMP $0820, and the counter at $0820.
 const wait = [0xad, 0x01, 0xdc, 0x29, 0x10, 0xd0, 0xf9, 0x00, 0x4c, 0x20, 0x08, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea];
-writeFileSync(join(project, "screen.prg"), Uint8Array.from([0x01, 0x08, ...SYS_2061, ...wait, ...counterAt(0x0820).subarray(2)]));
+writeFileSync(join(project, "screen.prg"), prg(0x0801, SYS_2061, wait, counterAt(0x0820).subarray(2)));
 writeFileSync(join(project, "screen.json"), JSON.stringify({ ...symbols(0x0820), loader_start_screen_wait: "$080d", loader_start_screen_continue: "$0815" }));
 writeFileSync(join(project, "no-labels.json"), JSON.stringify(symbols(0x0820)));
 writeFileSync(join(project, "run-walk.json"), JSON.stringify({ ...walk, name: "left for 30 frames after RUN", program: "run.prg", symbols: "run.json", load: false, steps: walk.steps.slice(1) }));
@@ -280,7 +271,7 @@ function unpacked(game: Uint8Array, calls: number, delay = false): { prg: Uint8A
   ];
   const payload = 0x080d + before.length + 14;
   const copy = [0xa2, game.length - 1, 0xbd, payload & 0xff, payload >> 8, 0x9d, 0x00, 0xc0, 0xca, 0x10, 0xf7]; // copy the game to $c000
-  return { prg: Uint8Array.from([0x01, 0x08, ...SYS_2061, ...before, ...copy, 0x4c, 0x00, 0xc0, ...game]), jump: `$${(0x080d + before.length + copy.length).toString(16)}` };
+  return { prg: prg(0x0801, SYS_2061, before, copy, [0x4c, 0x00, 0xc0], game), jump: `$${(0x080d + before.length + copy.length).toString(16)}` };
 }
 
 const handover = join(project, "handover");

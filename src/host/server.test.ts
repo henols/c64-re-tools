@@ -5,12 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
+import { waitFor } from "../native/wait.testkit.ts";
 import { encodeFrame, MAX_FRAME_BYTES } from "../protocol/framing.ts";
 import { HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, type ClientMessage, WireFailure } from "../protocol/messages.ts";
 import { FrameDecoder } from "../protocol/framing.testkit.ts";
 import { PACKAGE } from "../package.ts";
 import { startTrace, TRACE_VARIABLE } from "../trace.ts";
-import { ListenError, parsePort, startHostServer, stopSignal, type HostServer, type ViceSessionFactory, type ViceSessionHandle } from "./server.ts";
+import { ListenError, parsePort, startHostServer, stopSignal, type HostServer, type HostServerOptions, type ViceSessionFactory, type ViceSessionHandle } from "./server.ts";
 
 const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, release: PACKAGE.version, role: "vice-session" } as const;
 
@@ -37,9 +38,9 @@ class RawClient {
   }
 
   /** With `halfOpen`, the client never closes its side by itself, also after the host has ended its side. */
-  static open(server: HostServer, host = server.host, halfOpen = false): Promise<RawClient> {
+  static open(server: HostServer, halfOpen = false): Promise<RawClient> {
     return new Promise((resolve, reject) => {
-      const socket = connect({ host, port: server.port, allowHalfOpen: halfOpen }, () => resolve(new RawClient(socket)));
+      const socket = connect({ host: server.host, port: server.port, allowHalfOpen: halfOpen }, () => resolve(new RawClient(socket)));
       socket.once("error", reject);
     });
   }
@@ -52,8 +53,8 @@ class RawClient {
     this.#socket.write(bytes);
   }
 
-  /** Resolves with the next unread message, or undefined once the host has closed. */
-  async next(): Promise<unknown> {
+  /** Resolves with the next unread message (any: each test reads the fields it expects), or undefined once the host has closed. */
+  async next(): Promise<any> {
     while (this.messages.length === 0) {
       if (this.#socket.destroyed || this.#socket.readableEnded) return undefined;
       await new Promise<void>((resolve) => this.#waiters.push(resolve));
@@ -71,8 +72,10 @@ interface StubLog {
   closed: number;
 }
 
-function stubFactory(log: StubLog, overrides: Partial<ViceSessionHandle> = {}): ViceSessionFactory {
-  return async ({ videoStandard }) => {
+/** A factory of stub sessions, and the log of the sessions it started and closed; `overrides` replace parts of each session. */
+function stub(overrides: Partial<ViceSessionHandle> = {}): { factory: ViceSessionFactory; log: StubLog } {
+  const log: StubLog = { started: [], closed: 0 };
+  const factory: ViceSessionFactory = async ({ videoStandard }) => {
     log.started.push({ videoStandard });
     return {
       async handle(op, params) {
@@ -86,6 +89,7 @@ function stubFactory(log: StubLog, overrides: Partial<ViceSessionHandle> = {}): 
       ...overrides,
     };
   };
+  return { factory, log };
 }
 
 const servers: HostServer[] = [];
@@ -93,26 +97,22 @@ after(async () => {
   await Promise.all(servers.map((server) => server.close()));
 });
 
-async function serve(factory: ViceSessionFactory, handshakeTimeoutMs?: number, heartbeatTimeoutMs?: number): Promise<HostServer> {
-  const server = await startHostServer({
-    port: 0,
-    createViceSession: factory,
-    ...(handshakeTimeoutMs === undefined ? {} : { handshakeTimeoutMs }),
-    ...(heartbeatTimeoutMs === undefined ? {} : { heartbeatTimeoutMs }),
-  });
+/** A host on a free loopback port, closed when the file ends; `options` replace the defaults. */
+async function serve(factory: ViceSessionFactory, options: Partial<HostServerOptions> = {}): Promise<HostServer> {
+  const server = await startHostServer({ port: 0, createViceSession: factory, ...options });
   servers.push(server);
   return server;
 }
 
 test("the host binds to loopback only", async () => {
-  const server = await serve(stubFactory({ started: [], closed: 0 }));
+  const server = await serve(stub().factory);
   assert.equal(server.host, "127.0.0.1");
   assert.ok(server.port > 0);
 });
 
 test("a vice-session handshake starts one session and answers ready", async () => {
-  const log: StubLog = { started: [], closed: 0 };
-  const client = await RawClient.open(await serve(stubFactory(log)));
+  const { factory, log } = stub();
+  const client = await RawClient.open(await serve(factory));
   client.send({ ...hello, videoStandard: "ntsc" });
   assert.deepEqual(await client.next(), { type: "ready", release: PACKAGE.version });
   assert.deepEqual(log.started, [{ videoStandard: "ntsc" }]);
@@ -120,8 +120,8 @@ test("a vice-session handshake starts one session and answers ready", async () =
 });
 
 test("the video standard defaults to PAL", async () => {
-  const log: StubLog = { started: [], closed: 0 };
-  const client = await RawClient.open(await serve(stubFactory(log)));
+  const { factory, log } = stub();
+  const client = await RawClient.open(await serve(factory));
   client.send(hello);
   await client.next();
   assert.deepEqual(log.started, [{ videoStandard: "pal" }]);
@@ -129,21 +129,18 @@ test("the video standard defaults to PAL", async () => {
 });
 
 test("a protocol version mismatch is refused as installation-incomplete and closed", async () => {
-  const log: StubLog = { started: [], closed: 0 };
-  const client = await RawClient.open(await serve(stubFactory(log)));
+  const { factory, log } = stub();
+  const client = await RawClient.open(await serve(factory));
   client.send({ ...hello, version: HOST_PROTOCOL_VERSION + 1 });
-  const reply = (await client.next()) as { type: string; error: { code: string } };
-  assert.equal(reply.type, "error");
-  assert.equal(reply.error.code, "installation-incomplete");
+  assert.partialDeepStrictEqual(await client.next(), { type: "error", error: { code: "installation-incomplete" } });
   assert.equal(await client.next(), undefined);
   await client.closed;
   assert.equal(log.started.length, 0, "no emulator may start for a mismatched client");
 });
 
 test("a client of another release, or one that gives no release, is refused as installation-incomplete before an emulator starts", async () => {
-  const log: StubLog = { started: [], closed: 0 };
-  const server = await startHostServer({ port: 0, createViceSession: stubFactory(log), release: "2.1.5" });
-  servers.push(server);
+  const { factory, log } = stub();
+  const server = await serve(factory, { release: "2.1.5" });
   const { release: _release, ...noRelease } = hello;
   for (const [sent, older] of [
     [{ ...hello, release: "2.1.4" }, /This client is from an older release/],
@@ -152,9 +149,8 @@ test("a client of another release, or one that gives no release, is refused as i
   ] as const) {
     const client = await RawClient.open(server);
     client.send(sent);
-    const reply = (await client.next()) as { type: string; error: { code: string; message: string } };
-    assert.equal(reply.type, "error");
-    assert.equal(reply.error.code, "installation-incomplete");
+    const reply = await client.next();
+    assert.partialDeepStrictEqual(reply, { type: "error", error: { code: "installation-incomplete" } });
     assert.match(reply.error.message, older);
     await client.closed;
   }
@@ -166,19 +162,19 @@ test("a client of another release, or one that gives no release, is refused as i
 });
 
 test("a malformed frame closes the connection and its session", async () => {
-  const log: StubLog = { started: [], closed: 0 };
-  const client = await RawClient.open(await serve(stubFactory(log)));
+  const { factory, log } = stub();
+  const client = await RawClient.open(await serve(factory));
   client.send(hello);
   await client.next();
   const header = Buffer.alloc(4);
   header.writeUInt32BE(5, 0);
   client.sendRaw(Buffer.concat([header, Buffer.from("{oops", "utf8")]));
   await client.closed;
-  await waitFor(() => log.closed === 1);
+  await waitFor(() => log.closed === 1, "the session closed");
 });
 
 test("an oversized frame header closes the connection", async () => {
-  const client = await RawClient.open(await serve(stubFactory({ started: [], closed: 0 })));
+  const client = await RawClient.open(await serve(stub().factory));
   const header = Buffer.alloc(4);
   header.writeUInt32BE(0xffff_ffff, 0);
   client.sendRaw(header);
@@ -186,20 +182,20 @@ test("an oversized frame header closes the connection", async () => {
 });
 
 test("a request before hello closes the connection", async () => {
-  const log: StubLog = { started: [], closed: 0 };
-  const client = await RawClient.open(await serve(stubFactory(log)));
+  const { factory, log } = stub();
+  const client = await RawClient.open(await serve(factory));
   client.send({ type: "request", id: 1, op: "status", params: {} });
   await client.closed;
   assert.equal(log.started.length, 0);
 });
 
 test("a silent connection is closed after the handshake timeout", async () => {
-  const client = await RawClient.open(await serve(stubFactory({ started: [], closed: 0 }), 50));
+  const client = await RawClient.open(await serve(stub().factory, { handshakeTimeoutMs: 50 }));
   await client.closed;
 });
 
 test("requests are dispatched to the session and replies carry their id", async () => {
-  const client = await RawClient.open(await serve(stubFactory({ started: [], closed: 0 })));
+  const client = await RawClient.open(await serve(stub().factory));
   client.send(hello);
   await client.next();
   client.send({ type: "request", id: 41, op: "status", params: {} });
@@ -215,7 +211,7 @@ test("requests are dispatched to the session and replies carry their id", async 
 
 test("invalid parameters are answered with invalid-input without reaching the session", async () => {
   let handled = 0;
-  const factory = stubFactory({ started: [], closed: 0 }, {
+  const { factory } = stub({
     async handle() {
       handled++;
       return {} as never;
@@ -225,16 +221,15 @@ test("invalid parameters are answered with invalid-input without reaching the se
   client.send(hello);
   await client.next();
   client.send({ type: "request", id: 1, op: "memoryRead", params: { address: 0x10000, size: 1, space: "c64", view: "cpu" } });
-  const reply = (await client.next()) as { error: { code: string } };
-  assert.equal(reply.error.code, "invalid-input");
+  assert.partialDeepStrictEqual(await client.next(), { error: { code: "invalid-input" } });
   client.send({ type: "request", id: 2, op: "format-disk" as never, params: {} });
-  assert.equal(((await client.next()) as { error: { code: string } }).error.code, "invalid-input");
+  assert.partialDeepStrictEqual(await client.next(), { error: { code: "invalid-input" } });
   assert.equal(handled, 0);
   client.end();
 });
 
 test("an unexpected session exception becomes operation-failed without internals", async () => {
-  const factory = stubFactory({ started: [], closed: 0 }, {
+  const { factory } = stub({
     async handle() {
       throw new Error("ECONNRESET 127.0.0.1:41234 /tmp/vice-x");
     },
@@ -243,35 +238,32 @@ test("an unexpected session exception becomes operation-failed without internals
   client.send(hello);
   await client.next();
   client.send({ type: "request", id: 9, op: "status", params: {} });
-  const reply = (await client.next()) as { error: { code: string; message: string } };
-  assert.equal(reply.error.code, "operation-failed");
+  const reply = await client.next();
+  assert.partialDeepStrictEqual(reply, { error: { code: "operation-failed" } });
   assert.doesNotMatch(reply.error.message, /ECONNRESET|127\.0\.0\.1|tmp/);
   client.end();
 });
 
 test("a result too large for one reply is refused as limit-exceeded with its size, logged, and the connection serves on", async () => {
   const lines: string[] = [];
-  const factory = stubFactory({ started: [], closed: 0 }, {
+  const { factory } = stub({
     async handle(op, params) {
       if (op === "memoryRead") return { address: (params as { address: number }).address, data: "00".repeat(MAX_FRAME_BYTES) } as never;
       return { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false } as never;
     },
   });
-  const server = await startHostServer({ port: 0, createViceSession: factory, log: (line) => lines.push(line) });
-  servers.push(server);
-  const client = await RawClient.open(server);
+  const client = await RawClient.open(await serve(factory, { log: (line) => lines.push(line) }));
   client.send(hello);
   await client.next();
   client.send({ type: "request", id: 3, op: "memoryRead", params: { address: 0, size: 1, space: "c64", view: "cpu" } });
-  const reply = (await client.next()) as { id: number; error: { code: string; message: string } };
-  assert.equal(reply.id, 3);
-  assert.equal(reply.error.code, "limit-exceeded");
+  const reply = await client.next();
+  assert.partialDeepStrictEqual(reply, { id: 3, error: { code: "limit-exceeded" } });
   assert.match(reply.error.message, new RegExp(`is \\d+ bytes, more than the ${MAX_FRAME_BYTES} bytes`));
   assert.match(reply.error.message, /Ask for less in one call/);
   assert.ok(lines.some((line) => /the reply to memoryRead is too large to send: frame of \d+ bytes exceeds/.test(line)), lines.join("\n"));
   assert.ok(!lines.some((line) => /operation memoryRead failed/.test(line)), "no generic failure line");
   client.send({ type: "request", id: 4, op: "status", params: {} });
-  assert.equal(((await client.next()) as { id: number }).id, 4);
+  assert.partialDeepStrictEqual(await client.next(), { id: 4 });
   client.end();
 });
 
@@ -290,18 +282,17 @@ test("a session that fails to start is reported and the connection closed", asyn
 });
 
 test("closing the connection closes its session", async () => {
-  const log: StubLog = { started: [], closed: 0 };
-  const client = await RawClient.open(await serve(stubFactory(log)));
+  const { factory, log } = stub();
+  const client = await RawClient.open(await serve(factory));
   client.send(hello);
   await client.next();
   client.end();
-  await waitFor(() => log.closed === 1);
+  await waitFor(() => log.closed === 1, "the session closed");
 });
 
 test("a ping is answered with pong and never reaches the session", async () => {
-  const log: StubLog = { started: [], closed: 0 };
   let handled = 0;
-  const client = await RawClient.open(await serve(stubFactory(log, { handle: async () => (handled++, {}) as never })));
+  const client = await RawClient.open(await serve(stub({ handle: async () => (handled++, {}) as never }).factory));
   client.send(hello);
   assert.deepEqual(await client.next(), { type: "ready", release: PACKAGE.version });
   client.send({ type: "ping" });
@@ -311,25 +302,25 @@ test("a ping is answered with pong and never reaches the session", async () => {
 });
 
 test("a ping before ready closes the connection", async () => {
-  const client = await RawClient.open(await serve(stubFactory({ started: [], closed: 0 })));
+  const client = await RawClient.open(await serve(stub().factory));
   client.send({ type: "ping" });
   await client.closed;
 });
 
 test("a ready client that sends nothing for the heartbeat timeout is closed with its session", async () => {
-  const log: StubLog = { started: [], closed: 0 };
-  const client = await RawClient.open(await serve(stubFactory(log), undefined, 100));
+  const { factory, log } = stub();
+  const client = await RawClient.open(await serve(factory, { heartbeatTimeoutMs: 100 }));
   client.send(hello);
   assert.deepEqual(await client.next(), { type: "ready", release: PACKAGE.version });
   // Silent, like a client behind a connection that vanished without a close.
   await client.closed;
-  await waitFor(() => log.closed === 1);
+  await waitFor(() => log.closed === 1, "the session closed");
 });
 
 test("a client that keeps pinging stays open past the heartbeat timeout", async () => {
-  const log: StubLog = { started: [], closed: 0 };
+  const { factory, log } = stub();
   const timeoutMs = 600;
-  const client = await RawClient.open(await serve(stubFactory(log), undefined, timeoutMs));
+  const client = await RawClient.open(await serve(factory, { heartbeatTimeoutMs: timeoutMs }));
   client.send(hello);
   await client.next();
   // A ping every 50 ms for two timeouts: only a stall of more than 550 ms between two pings could close the connection.
@@ -341,14 +332,13 @@ test("a client that keeps pinging stays open past the heartbeat timeout", async 
   }
   assert.equal(log.closed, 0);
   client.end();
-  await waitFor(() => log.closed === 1);
+  await waitFor(() => log.closed === 1, "the session closed");
 });
 
 test("a connection closed while its session starts still closes that session", async () => {
-  const log: StubLog = { started: [], closed: 0 };
+  const { factory: inner, log } = stub();
   let release!: () => void;
   const gate = new Promise<void>((resolve) => (release = resolve));
-  const inner = stubFactory(log);
   let entered = false;
   const client = await RawClient.open(
     await serve(async (options) => {
@@ -358,16 +348,16 @@ test("a connection closed while its session starts still closes that session", a
     }),
   );
   client.send(hello);
-  await waitFor(() => entered);
+  await waitFor(() => entered, "the session starts");
   client.end();
   await client.closed;
   release();
-  await waitFor(() => log.closed === 1);
+  await waitFor(() => log.closed === 1, "the session closed");
 });
 
 test("two connections own two independent sessions", async () => {
-  const log: StubLog = { started: [], closed: 0 };
-  const server = await serve(stubFactory(log));
+  const { factory, log } = stub();
+  const server = await serve(factory);
   const first = await RawClient.open(server);
   const second = await RawClient.open(server);
   first.send(hello);
@@ -376,16 +366,16 @@ test("two connections own two independent sessions", async () => {
   await second.next();
   assert.equal(log.started.length, 2);
   first.end();
-  await waitFor(() => log.closed === 1);
+  await waitFor(() => log.closed === 1, "the first session closed");
   second.send({ type: "request", id: 1, op: "status", params: {} });
-  assert.equal(((await second.next()) as { id: number }).id, 1);
+  assert.partialDeepStrictEqual(await second.next(), { id: 1 });
   second.end();
-  await waitFor(() => log.closed === 2);
+  await waitFor(() => log.closed === 2, "both sessions closed");
 });
 
 test("closing the server closes every session", async () => {
-  const log: StubLog = { started: [], closed: 0 };
-  const server = await startHostServer({ port: 0, createViceSession: stubFactory(log) });
+  const { factory, log } = stub();
+  const server = await startHostServer({ port: 0, createViceSession: factory });
   const clients = await Promise.all([RawClient.open(server), RawClient.open(server)]);
   for (const client of clients) client.send(hello);
   for (const client of clients) await client.next();
@@ -395,27 +385,24 @@ test("closing the server closes every session", async () => {
 });
 
 test("a tool connection is ready without starting an emulator", async () => {
-  const log: StubLog = { started: [], closed: 0 };
-  const client = await RawClient.open(await serve(stubFactory(log)));
+  const { factory, log } = stub();
+  const client = await RawClient.open(await serve(factory));
   client.send({ ...hello, role: "tool" });
   assert.deepEqual(await client.next(), { type: "ready", release: PACKAGE.version });
   client.send({ type: "request", id: 1, op: "status", params: {} });
-  assert.equal(((await client.next()) as { error: { code: string } }).error.code, "invalid-input");
+  assert.partialDeepStrictEqual(await client.next(), { error: { code: "invalid-input" } });
   assert.equal(log.started.length, 0);
   client.end();
 });
 
 test("the log has one line for each call of a skill script, and none for a VICE session's calls", async () => {
   const lines: string[] = [];
-  const server = await startHostServer({
-    port: 0,
-    createViceSession: stubFactory({ started: [], closed: 0 }),
+  const server = await serve(stub().factory, {
     tools: async () => {
       throw new Error("no tool operation runs in this test");
     },
     log: (line) => lines.push(line),
   });
-  servers.push(server);
   const tool = await RawClient.open(server);
   tool.send({ ...hello, role: "tool" });
   await tool.next();
@@ -435,17 +422,9 @@ test("the log has one line for each call of a skill script, and none for a VICE 
   session.end();
 });
 
-async function waitFor(condition: () => boolean, timeoutMs = 2000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error("condition not reached in time");
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-}
-
 test("operations get exactly the attachments they take", async () => {
   const seen: Buffer[][] = [];
-  const factory = stubFactory({ started: [], closed: 0 }, {
+  const { factory } = stub({
     async handle(_op, _params, attachments) {
       seen.push(attachments ?? []);
       return { attached: true } as never;
@@ -458,16 +437,16 @@ test("operations get exactly the attachments they take", async () => {
   assert.deepEqual(await client.next(), { type: "reply", id: 1, result: { attached: true } });
   assert.deepEqual(seen, [[Buffer.from("disk")]]);
   client.send({ type: "request", id: 2, op: "diskAttach", params: { type: "d64" } });
-  assert.equal(((await client.next()) as { error: { code: string } }).error.code, "invalid-input");
+  assert.partialDeepStrictEqual(await client.next(), { error: { code: "invalid-input" } });
   client.sendRaw(encodeFrame({ type: "request", id: 3, op: "status", params: {} }, [Buffer.from("x")]));
-  assert.equal(((await client.next()) as { error: { code: string } }).error.code, "invalid-input");
+  assert.partialDeepStrictEqual(await client.next(), { error: { code: "invalid-input" } });
   assert.equal(seen.length, 1);
   client.end();
 });
 
 test("a session factory that throws at once is reported, and the host keeps serving", async () => {
   let calls = 0;
-  const inner = stubFactory({ started: [], closed: 0 });
+  const inner = stub().factory;
   const factory = ((options) => {
     calls++;
     if (calls === 1) throw new WireFailure("installation-incomplete", "VICE (x64sc) is not installed.");
@@ -485,24 +464,21 @@ test("a session factory that throws at once is reported, and the host keeps serv
 });
 
 test("a refused client that never closes its side is cut off", { timeout: 10_000 }, async () => {
-  const refused = await RawClient.open(await serve(stubFactory({ started: [], closed: 0 })), undefined, true);
-  refused.send({ ...hello, version: HOST_PROTOCOL_VERSION + 1 });
-  assert.equal(((await refused.next()) as { type: string }).type, "error");
-  await untilCutOff(refused);
-  const failed = await RawClient.open(
-    await serve(async () => {
-      throw new WireFailure("machine-unavailable", "The emulator could not be started.");
-    }),
-    undefined,
-    true,
-  );
-  failed.send(hello);
-  assert.equal(((await failed.next()) as { type: string }).type, "error");
-  await untilCutOff(failed);
+  const failing: ViceSessionFactory = async () => {
+    throw new WireFailure("machine-unavailable", "The emulator could not be started.");
+  };
+  // Each cut-off waits for the host's own time limit, so both wait at once.
+  await Promise.all([refusedUntilCutOff(stub().factory, { ...hello, version: HOST_PROTOCOL_VERSION + 1 }), refusedUntilCutOff(failing, hello)]);
 });
 
-/** Writes until a write fails: the host has then closed the connection on its side too. */
-async function untilCutOff(client: RawClient): Promise<void> {
+/**
+ * A client that never closes its side sends `sent` and is refused; it then
+ * writes until a write fails: the host has then closed the connection on its side too.
+ */
+async function refusedUntilCutOff(factory: ViceSessionFactory, sent: ClientMessage): Promise<void> {
+  const client = await RawClient.open(await serve(factory), true);
+  client.send(sent);
+  assert.partialDeepStrictEqual(await client.next(), { type: "error" });
   let cut = false;
   void client.closed.then(() => (cut = true));
   while (!cut) {
@@ -517,9 +493,9 @@ test("a port is decimal digits from 0 to 65535 and nothing else", () => {
 });
 
 test("a port in use names the address and the port that failed", async () => {
-  const busy = await serve(stubFactory({ started: [], closed: 0 }));
+  const busy = await serve(stub().factory);
   await assert.rejects(
-    startHostServer({ port: busy.port, createViceSession: stubFactory({ started: [], closed: 0 }) }),
+    serve(stub().factory, { port: busy.port }),
     (error: unknown) => error instanceof ListenError && error.code === "EADDRINUSE" && error.address === "127.0.0.1" && error.port === busy.port,
   );
 });
@@ -536,7 +512,7 @@ for (const [first, second] of [["SIGINT", "SIGINT"], ["SIGHUP", "SIGTERM"]] as c
       assert.equal(await stopped, first);
       // Without a handler, this second signal ends the test process at once.
       process.kill(process.pid, second);
-      await waitFor(() => again.length === 1);
+      await waitFor(() => again.length === 1, "the second signal is handled");
       assert.deepEqual(again, [second]);
       assert.deepEqual(lines, [`received ${first}, stopping`, `received ${second} again; stopping at once`]);
     } finally {
@@ -551,8 +527,8 @@ test("with C64RT_TRACE every connection and request leaves a trace line with the
   const dir = mkdtempSync(join(tmpdir(), "c64-re-tools-host-trace-"));
   try {
     const on = startTrace("host", { env: { [TRACE_VARIABLE]: dir } });
-    const log: StubLog = { started: [], closed: 0 };
-    const client = await RawClient.open(await serve(stubFactory(log)));
+    const { factory, log } = stub();
+    const client = await RawClient.open(await serve(factory));
     client.send(hello);
     await client.next();
     client.send({ type: "request", id: 1, op: "status", params: {} });
@@ -561,7 +537,7 @@ test("with C64RT_TRACE every connection and request leaves a trace line with the
     await client.next();
     client.end();
     await client.closed;
-    await waitFor(() => log.closed === 1);
+    await waitFor(() => log.closed === 1, "the session closed");
 
     const events = readFileSync(on.file!, "utf8")
       .trimEnd()
@@ -572,18 +548,12 @@ test("with C64RT_TRACE every connection and request leaves a trace line with the
       assert.ok(names.includes(expected), `${expected} is in ${names.join(", ")}`);
     }
     const [ok, failed] = events.filter((event) => event.event === "request") as [Record<string, unknown>, Record<string, unknown>];
-    assert.equal(ok.op, "status");
-    assert.equal(ok.id, 1);
-    assert.equal(ok.ok, true);
+    assert.partialDeepStrictEqual(ok, { op: "status", id: 1, ok: true });
     assert.equal(typeof ok.ms, "number");
     assert.deepEqual(ok.result, { state: "running", videoStandard: "pal", warp: false, window: false, cartridge: false });
-    assert.equal(failed.op, "registersGet");
-    assert.equal(failed.ok, false);
-    assert.equal(failed.code, "unsupported-in-space");
+    assert.partialDeepStrictEqual(failed, { op: "registersGet", ok: false, code: "unsupported-in-space" });
     assert.deepEqual(failed.params, { space: "drive8" });
-    const ready = events.find((event) => event.event === "connection.ready")!;
-    assert.equal(ready.role, "vice-session");
-    assert.equal(ready.connection, ok.connection);
+    assert.partialDeepStrictEqual(events.find((event) => event.event === "connection.ready"), { role: "vice-session", connection: ok.connection });
   } finally {
     startTrace("host", { env: {} });
     rmSync(dir, { recursive: true, force: true });

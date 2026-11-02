@@ -3,16 +3,15 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
 import { mcpServerFor } from "../../distribution/package.ts";
+import { scratchDir } from "../kit.ts";
 
 const cli = resolve(import.meta.dirname, "../../src/cli/main.ts");
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-cli-"));
-after(() => rmSync(project, { recursive: true, force: true }));
+const project = scratchDir("cli");
 
 const run = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, cli, ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
 
@@ -32,43 +31,38 @@ test("install puts the skills and the MCP declaration into the project; uninstal
 });
 
 test("a project install for every harness leaves the home directory alone; uninstall leaves nothing behind", () => {
-  const home = mkdtempSync(join(tmpdir(), "c64-re-tools-home-"));
-  const fresh = mkdtempSync(join(tmpdir(), "c64-re-tools-cli-all-"));
-  try {
-    const inHome = (...args: string[]) =>
-      spawnSync(process.execPath, [...process.execArgv, cli, ...args], { cwd: fresh, encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home, C64RT_HOST: "127.0.0.1:1" } });
-    const windsurf = join(home, ".codeium", "windsurf", "mcp_config.json");
+  const home = scratchDir("home");
+  const fresh = scratchDir("cli-all");
+  const inHome = (...args: string[]) =>
+    spawnSync(process.execPath, [...process.execArgv, cli, ...args], { cwd: fresh, encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home, C64RT_HOST: "127.0.0.1:1" } });
+  const windsurf = join(home, ".codeium", "windsurf", "mcp_config.json");
 
-    const installed = inHome("install");
-    assert.equal(installed.status, 0, installed.stdout + installed.stderr);
-    assert.match(installed.stdout, /install --global --target windsurf/);
-    assert.doesNotMatch(installed.stdout, /windsurf\s+mcp/, "the report does not claim a Windsurf MCP declaration that the CLI took back");
-    assert.equal(existsSync(join(home, ".codeium")), false, "a project install writes nothing into the home directory");
-    const manifest = JSON.parse(readFileSync(join(fresh, ".ap-sdk", "install-manifest.json"), "utf8"));
-    assert.equal(
-      manifest.plugins["c64-re-tools"].items.some((item: { harness: string; kind: string }) => item.harness === "windsurf" && item.kind === "mcp"),
-      false,
-    );
-    assert.ok(existsSync(join(fresh, ".windsurf", "skills", "emulator", "SKILL.md")), "Windsurf still gets the skills");
+  const installed = inHome("install");
+  assert.equal(installed.status, 0, installed.stdout + installed.stderr);
+  assert.match(installed.stdout, /install --global --target windsurf/);
+  assert.doesNotMatch(installed.stdout, /windsurf\s+mcp/, "the report does not claim a Windsurf MCP declaration that the CLI took back");
+  assert.equal(existsSync(join(home, ".codeium")), false, "a project install writes nothing into the home directory");
+  const manifest = JSON.parse(readFileSync(join(fresh, ".ap-sdk", "install-manifest.json"), "utf8"));
+  assert.equal(
+    manifest.plugins["c64-re-tools"].items.some((item: { harness: string; kind: string }) => item.harness === "windsurf" && item.kind === "mcp"),
+    false,
+  );
+  assert.ok(existsSync(join(fresh, ".windsurf", "skills", "emulator", "SKILL.md")), "Windsurf still gets the skills");
 
-    const removed = inHome("uninstall");
-    assert.equal(removed.status, 0, removed.stdout + removed.stderr);
-    assert.deepEqual(readdirSync(fresh), [], "no empty directory and no empty MCP configuration stays");
+  const removed = inHome("uninstall");
+  assert.equal(removed.status, 0, removed.stdout + removed.stderr);
+  assert.deepEqual(readdirSync(fresh), [], "no empty directory and no empty MCP configuration stays");
 
-    // A declaration from a global install survives a project install and uninstall.
-    assert.equal(inHome("install", "--global", "--target", "windsurf").status, 0);
-    const global = readFileSync(windsurf, "utf8");
-    assert.equal(inHome("install", "--target", "windsurf").status, 0);
-    assert.equal(readFileSync(windsurf, "utf8"), global);
-    assert.equal(inHome("uninstall", "--target", "windsurf").status, 0);
-    assert.equal(readFileSync(windsurf, "utf8"), global);
-    assert.deepEqual(readdirSync(fresh), []);
-    assert.equal(inHome("uninstall", "--global", "--target", "windsurf").status, 0);
-    assert.equal(existsSync(windsurf), false, "the global uninstall removes the configuration it emptied");
-  } finally {
-    rmSync(home, { recursive: true, force: true });
-    rmSync(fresh, { recursive: true, force: true });
-  }
+  // A declaration from a global install survives a project install and uninstall.
+  assert.equal(inHome("install", "--global", "--target", "windsurf").status, 0);
+  const global = readFileSync(windsurf, "utf8");
+  assert.equal(inHome("install", "--target", "windsurf").status, 0);
+  assert.equal(readFileSync(windsurf, "utf8"), global);
+  assert.equal(inHome("uninstall", "--target", "windsurf").status, 0);
+  assert.equal(readFileSync(windsurf, "utf8"), global);
+  assert.deepEqual(readdirSync(fresh), []);
+  assert.equal(inHome("uninstall", "--global", "--target", "windsurf").status, 0);
+  assert.equal(existsSync(windsurf), false, "the global uninstall removes the configuration it emptied");
 });
 
 test("an unknown command or option exits 2 with the help", () => {

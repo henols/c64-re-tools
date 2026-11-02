@@ -2,43 +2,27 @@
 // itself.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
-import { DXA, findTool } from "../../src/native/discover.ts";
+import { DXA } from "../../src/native/discover.ts";
 import { openForRead } from "../../src/knowledge/database.ts";
 import { analyzerNamesAt, listReferences, regionsOverlapping, symbolAt } from "../../src/knowledge/read.ts";
 import { analysisSubjectPrg, MAIN, ROUTINE, TABLE_START } from "../fixtures/prg/analysis-subject.ts";
 import { nthIn } from "../../src/knowledge/revisions.testkit.ts";
 import { importPrg } from "../fixtures/program.ts";
-import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
+import { runScript, scratchDir, skillScript, toolSkip } from "../kit.ts";
 
-let dxaSkip: string | false = false;
-try {
-  findTool(DXA);
-} catch {
-  dxaSkip = "dxa is not installed: install dxa or set C64RT_DXA to run these tests";
-}
+const dxaSkip = toolSkip(DXA);
 
-const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/static-analysis.ts");
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-analysis-"));
+const script = skillScript("c64-static-analysis", "static-analysis.ts");
+const project = scratchDir("analysis");
 // The program is the first revision of the knowledge.
 importPrg(project, analysisSubjectPrg);
-after(() => rmSync(project, { recursive: true, force: true }));
 
-async function analyze(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown>; envelope: ScriptEnvelope }> {
-  const child = spawn(process.execPath, [...process.execArgv, script, "analyze", ...args], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  child.stderr.on("data", (chunk) => (stderr += chunk));
-  const [status] = (await once(child, "exit")) as [number | null];
-  assert.equal(stderr, "");
-  return { status, ...readEnvelope(stdout, status) };
+function analyze(...args: string[]) {
+  return runScript(script, ["analyze", ...args], { cwd: project });
 }
 
 test("an analysis imports the decompiler's structure into knowledge and reports it", { timeout: 600_000 }, async () => {
@@ -46,11 +30,11 @@ test("an analysis imports the decompiler's structure into knowledge and reports 
   assert.equal(status, 0, JSON.stringify(json));
   assert.deepEqual(json.coverage, [{ start: "$0801", end: "$0827" }]);
   assert.equal(json.revision, nthIn(project, 2));
-  assert.deepEqual((json.changes as { names: unknown }).names, { added: 2, changed: 0, retired: 0, unchanged: 0, suppressed: 0 });
+  assert.deepEqual(json.changes.names, { added: 2, changed: 0, retired: 0, unchanged: 0, suppressed: 0 });
   assert.deepEqual(json.conflicts, []);
   // The rest of the list is in the knowledge as the analyzer names of the decompiler.
   assert.deepEqual(json.functions, { count: 2, listed: [{ entry: "$080d", name: "FUN_080d" }], rest: "a larger --max-listed. The project knowledge has all of them as analyzer names" });
-  assert.equal((json.decompilations as Array<{ entry: string }>)[0]?.entry, "$0818");
+  assert.equal(json.decompilations[0]?.entry, "$0818");
 
   const db = openForRead(project);
   assert.equal(symbolAt(db, ROUTINE), undefined, "an analyzer name is no symbol");
@@ -69,8 +53,8 @@ test("a DXA pass imports its regions and labels and writes the listing", { skip:
   const { status, json } = await analyze("--analyzer", "dxa", "--out-listing", "analysis/game.lst");
   assert.equal(status, 0, JSON.stringify(json));
   assert.equal(json.analyzer, "dxa");
-  assert.equal((json.listing as { out: string }).out, "analysis/game.lst");
-  assert.deepEqual((json.regions as { listed: unknown[] }).listed, [
+  assert.equal(json.listing.out, "analysis/game.lst");
+  assert.deepEqual(json.regions.listed, [
     { start: "$0801", end: "$080c", classification: "data" },
     { start: "$080d", end: "$0815", classification: "code" },
     { start: "$0816", end: "$0817", classification: "data" },
@@ -78,7 +62,7 @@ test("a DXA pass imports its regions and labels and writes the listing", { skip:
     { start: "$0824", end: "$0827", classification: "data" },
   ]);
   assert.match(readFileSync(join(project, "analysis", "game.lst"), "utf8"), /jsr /);
-  const labels = json.labels as { count: number; listed: unknown[]; rest?: string };
+  const { labels } = json;
   assert.equal(labels.listed.length, labels.count, "a short list is not cut");
   assert.equal(labels.rest, undefined);
   const db = openForRead(project);
@@ -94,6 +78,6 @@ test("--decompile and --out-listing are refused with the analyzer that does not 
   ]) {
     const { status, json } = await analyze(...args);
     assert.equal(status, 2, args.join(" "));
-    assert.equal((json.error as { code: string }).code, "invalid-input");
+    assert.equal(json.error.code, "invalid-input");
   }
 });

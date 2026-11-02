@@ -2,7 +2,7 @@
 // scanning every import in src/, skills/ and distribution/.
 
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { test } from "node:test";
 
@@ -238,9 +238,7 @@ test("every import in the tree follows the dependency rules", () => {
   const violations: string[] = [];
   let scanned = 0;
   for (const top of SCANNED) {
-    const dir = join(ROOT, top);
-    if (!existsSync(dir)) continue;
-    for (const file of typescriptFiles(dir)) {
+    for (const file of typescriptFiles(join(ROOT, top))) {
       scanned++;
       const from = relative(ROOT, file).split(sep).join("/");
       for (const specifier of importsOf(readFileSync(file, "utf8"))) {

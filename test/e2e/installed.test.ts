@@ -25,17 +25,12 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { mcpServerFor } from "../../distribution/package.ts";
-import { ACME, findTool } from "../../src/native/discover.ts";
+import { ACME } from "../../src/native/discover.ts";
 import { killTree, signalGroup } from "../../src/native/processes.ts";
-import { liveEnv, liveSkip } from "../integration/vice/live.ts";
-import { readEnvelope } from "../kit.ts";
+import { HOST_STOP_MS, liveEnv, liveSkip } from "../integration/vice/live.ts";
+import { readEnvelope, toolSkip } from "../kit.ts";
 
-let acme: string | false = false;
-try {
-  findTool(ACME);
-} catch {
-  acme = "ACME is not installed";
-}
+const acme = toolSkip(ACME);
 
 const root = resolve(import.meta.dirname, "../..");
 // npm and npx are .cmd shims on Windows, which spawn runs only through a shell.
@@ -43,8 +38,6 @@ const windows = process.platform === "win32";
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-installed-"));
 const npmCache = join(root, "node_modules", ".cache", "installed-test-npm");
 let host: ChildProcess | undefined;
-/** How long the Host Runtime gets to stop after the stop signal. */
-const HOST_STOP_MS = 30_000;
 after(async () => {
   try {
     if (host !== undefined && host.stdout !== null && !host.stdout.closed) {

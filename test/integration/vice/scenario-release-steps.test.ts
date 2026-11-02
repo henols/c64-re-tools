@@ -4,42 +4,21 @@
 // counter, loaded and started without BASIC. Opt-in with C64RT_LIVE_VICE.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
-import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { REFERENCE } from "../../fixtures/prg/counter-variants.ts";
 import { gatedPackedPrg } from "../../fixtures/prg/gated-packed.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
 import { importImage } from "../../fixtures/program.ts";
-import { readEnvelope } from "../../kit.ts";
+import { runScript, scratchDir, skillScript } from "../../kit.ts";
+import { hostServer, liveSkip } from "./live.ts";
 
-const script = resolve(import.meta.dirname, "../../../skills/c64-testing/scripts/testing.ts");
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-d46-"));
-let server: HostServer | undefined;
-after(async () => {
-  await server?.close();
-  rmSync(project, { recursive: true, force: true });
-});
+const script = skillScript("c64-testing", "testing.ts");
+const project = scratchDir("release-steps");
+const host = hostServer();
 
-async function runTest(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
-  if (server === undefined) {
-    const supervisor = new ProcessSupervisor();
-    supervisor.installExitGuard();
-    server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
-  }
-  const child = spawn(process.execPath, [...process.execArgv, script, "test", ...args], { cwd: project, env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` }, stdio: ["ignore", "pipe", "inherit"] });
-  let stdout = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  const [status] = (await once(child, "exit")) as [number | null];
-  return { status, json: readEnvelope(stdout, status).json as Record<string, unknown> };
-}
+const runTest = async (...args: string[]) => runScript(script, ["test", ...args], { cwd: project, host: await host() });
 
 const steps = [
   { autostart: true, side: "reference" },

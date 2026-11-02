@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { once } from "node:events";
 import { connect } from "node:net";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
+import { shellStandIn } from "../../src/native/standin.testkit.ts";
 import { encodeFrame } from "../../src/protocol/framing.ts";
 import { HOST_PROTOCOL_ID } from "../../src/protocol/messages.ts";
 import { PACKAGE } from "../../src/package.ts";
@@ -24,7 +25,7 @@ after(async () => {
     rmSync(scratch, { recursive: true, force: true });
   }
 });
-const shellStandIn = process.platform === "win32" ? "the stand-in VICE is a shell script" : false;
+const shellSkip = process.platform === "win32" ? "the stand-in VICE is a shell script" : false;
 
 test("c64-re-tools-host runs in the foreground, serves the protocol and stops on SIGTERM", { skip: liveSkip }, async () => {
   // The runtime starts VICE once before it listens, so this needs the real one.
@@ -62,15 +63,12 @@ test("c64-re-tools-host does not start without VICE and says how to install it",
   assert.match(run.stderr, /C64RT_VICE.*Install VICE/);
 });
 
-test("c64-re-tools-host does not start when VICE cannot load its ROMs", { skip: shellStandIn }, () => {
-  const brokenVice = join(scratch, "x64sc");
-  writeFileSync(brokenVice, [
-    "#!/bin/sh",
+test("c64-re-tools-host does not start when VICE cannot load its ROMs", { skip: shellSkip }, () => {
+  const brokenVice = shellStandIn(scratch, "x64sc", [
     'while [ $# -gt 0 ]; do [ "$1" = -logfile ] && log="$2"; shift; done',
     "echo \"C64MEM: Error - Couldn't load kernal ROM 'kernal-901227-03.bin'.\" > \"$log\"",
     "exit 255",
-  ].join("\n"));
-  chmodSync(brokenVice, 0o755);
+  ]);
   const run = spawnSync(process.execPath, [...process.execArgv, "src/host/main.ts", "--port", "0"], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_VICE: brokenVice } });
   assert.equal(run.status, 1);
   assert.match(run.stderr, /does not start:\n  C64MEM: Error - Couldn't load kernal ROM/);

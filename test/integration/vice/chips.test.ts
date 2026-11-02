@@ -3,17 +3,13 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import type { ViceSessionHandle } from "../../../src/host/server.ts";
-import { viceSessionFactory } from "../../../src/host/vice/session.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { liveSkip, openLiveSession } from "./live.ts";
 
 let session: ViceSessionHandle;
 before(async () => {
   if (liveSkip !== false) return;
-  const supervisor = new ProcessSupervisor();
-  supervisor.installExitGuard();
-  session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard: "pal" });
+  session = await openLiveSession();
   // Let the KERNAL finish its start-up.
   await session.handle("runUntil", { target: { kind: "address", address: 0xe5cd, space: "c64" }, timeoutFrames: 500 });
 });
@@ -25,11 +21,7 @@ const write = (address: number, data: string) => session.handle("memoryWrite", {
 
 test("the VIC-II state after start-up is the KERNAL's text screen", { skip: liveSkip, timeout: 60_000 }, async () => {
   const state = await session.handle("vicii", {});
-  assert.equal(state.mode, "text");
-  assert.equal(state.screenAddress, 0x0400);
-  assert.equal(state.borderColor, 14);
-  assert.equal(state.backgroundColors[0], 6);
-  assert.equal(state.scrollY, 3);
+  assert.deepEqual([state.mode, state.screenAddress, state.borderColor, state.backgroundColors[0], state.scrollY], ["text", 0x0400, 14, 6, 3]);
   assert.ok(state.rasterLine < 312);
   // $d018 selects the character set: $15 is the ROM upper-case set at $1000, $17 the other at $1800.
   await session.handle("execution", { action: "pause", space: "c64" });

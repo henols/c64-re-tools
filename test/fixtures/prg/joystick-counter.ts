@@ -15,10 +15,8 @@
 // $c027  skip: LDA $d012 ; CMP #$80 ; BEQ skip
 // $c02e  JMP wait
 
-export const COUNTER_START = 0xc000;
 export const LEFT_SEEN = 0xc01f;
 export const FRAMES_SEEN = 0xc100;
-export const LEFT_FRAMES = 0xc101;
 
 export const joystickCounterPrg = Uint8Array.from([
   0x00, 0xc0, // load address $c000

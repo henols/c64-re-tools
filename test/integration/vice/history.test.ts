@@ -1,23 +1,11 @@
 // Real-VICE checks for CPU history, backtrace and the cycle stopwatch.
 
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
+import { test } from "node:test";
 
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import type { ViceSessionHandle } from "../../../src/host/server.ts";
-import { viceSessionFactory } from "../../../src/host/vice/session.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { fileSession, liveSkip } from "./live.ts";
 
-let session: ViceSessionHandle;
-before(async () => {
-  if (liveSkip !== false) return;
-  const supervisor = new ProcessSupervisor();
-  supervisor.installExitGuard();
-  session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard: "pal" });
-});
-after(async () => {
-  await session?.close();
-});
+const session = fileSession();
 
 // $c100: JSR $c110 ; NOP     $c110: LDX #$05 ; DEX ; BNE $c112 ; RTS
 async function loadRoutine(): Promise<void> {

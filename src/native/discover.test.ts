@@ -1,21 +1,18 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { WireFailure } from "../protocol/messages.ts";
 import { ACME, environmentValue, findOnPath, findTool, INSTALL_STEPS, pathSuffixes } from "./discover.ts";
+import { shellStandIn } from "./standin.testkit.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-discover-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
-function executable(name: string): string {
-  const path = join(scratch, name);
-  writeFileSync(path, "");
-  chmodSync(path, 0o755);
-  return path;
-}
+/** An executable file that the tests find and never start. */
+const executable = (name: string) => shellStandIn(scratch, name, []);
 
 const refused = (error: unknown) =>
   error instanceof WireFailure && error.code === "installation-incomplete" && /ACME/.test(error.message) && error.message.includes(INSTALL_STEPS);

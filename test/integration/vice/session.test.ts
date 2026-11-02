@@ -5,15 +5,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { WireFailure } from "../../../src/protocol/messages.ts";
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { viceSessionFactory } from "../../../src/host/vice/session.ts";
-import { liveEnv, liveLog, liveSkip, viceChildren } from "./live.ts";
+import { failsWith } from "../../../src/errors.testkit.ts";
+import { liveSkip, openLiveSession, viceChildren } from "./live.ts";
 
 test("a live session reads memory and registers without stopping a running machine", { skip: liveSkip, timeout: 90_000 }, async () => {
-  const supervisor = new ProcessSupervisor();
-  supervisor.installExitGuard();
-  const session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard: "pal" });
+  const session = await openLiveSession();
   try {
     assert.deepEqual(await session.handle("status", {}), { state: "running", videoStandard: "pal", warp: false, window: false, cartridge: false });
 
@@ -33,10 +29,7 @@ test("a live session reads memory and registers without stopping a running machi
     assert.notEqual(dos.data, "0000");
     await session.handle("registersGet", { space: "drive8" });
 
-    await assert.rejects(
-      session.handle("memoryRead", { address: 0, size: 1, space: "drive8", view: "ram" }),
-      (error: unknown) => error instanceof WireFailure && error.code === "unsupported-in-space",
-    );
+    await assert.rejects(session.handle("memoryRead", { address: 0, size: 1, space: "drive8", view: "ram" }), failsWith("unsupported-in-space"));
     assert.equal((await session.handle("status", {})).state, "running");
   } finally {
     await session.close();
@@ -45,18 +38,13 @@ test("a live session reads memory and registers without stopping a running machi
 });
 
 test("a VICE killed under a live session reports machine-state-lost", { skip: liveSkip, timeout: 90_000 }, async () => {
-  const supervisor = new ProcessSupervisor();
-  supervisor.installExitGuard();
-  const session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard: "pal" });
+  const session = await openLiveSession();
   try {
     const [pid] = viceChildren(process.pid);
     assert.ok(pid !== undefined, "no VICE child found");
     process.kill(pid, "SIGKILL");
     for (let attempt = 0; attempt < 2; attempt++) {
-      await assert.rejects(
-        session.handle("memoryRead", { address: 0xe000, size: 1, space: "c64", view: "cpu" }),
-        (error: unknown) => error instanceof WireFailure && error.code === "machine-state-lost",
-      );
+      await assert.rejects(session.handle("memoryRead", { address: 0xe000, size: 1, space: "c64", view: "cpu" }), failsWith("machine-state-lost"));
     }
   } finally {
     await session.close();

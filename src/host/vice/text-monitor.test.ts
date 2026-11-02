@@ -3,18 +3,13 @@ import { once } from "node:events";
 import { createServer, type Server, type Socket } from "node:net";
 import { after, test } from "node:test";
 
+import { sentinelAnswer } from "./monitor-wire.testkit.ts";
 import { cleanOutput, TextMonitor, TextMonitorError } from "./text-monitor.ts";
 
 const servers: Server[] = [];
 after(() => {
   for (const server of servers) server.close();
 });
-
-/** The four-line answer VICE gives to `~ $nnnn`, then a prompt. */
-function sentinelAnswer(hex: string, prompt = "(C:$e5cf) "): string {
-  const value = Number.parseInt(hex, 16);
-  return `+${value}\n$${hex}\n${value.toString(8).padStart(7, "0")}\n%${value.toString(2).padStart(16, "0").replace(/(.{8})/, "$1 ")}\n${prompt}`;
-}
 
 /** Returned by an answer function: VICE silently drops this one line. */
 const DROP = Symbol("drop");

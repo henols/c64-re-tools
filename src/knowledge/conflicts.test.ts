@@ -3,30 +3,19 @@
 // revision decides them.
 
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
-import { Refusal } from "../errors.ts";
+import { failsWith } from "../errors.testkit.ts";
 import { conflicts, type Conflict } from "./conflicts.ts";
-import { openForRead, openForWrite, textPath, transaction, withWrite } from "./database.ts";
+import { openForWrite, textPath, transaction, withWrite } from "./database.ts";
 import { importFindings } from "./import.ts";
 import { listRegions, operandAt, referencesFrom, symbolAt } from "./read.ts";
 import { currentStartScreen, listMacros, listMacroUses, listPatches, listSwitches } from "./read.ts";
 import { addReference, Change, classifyRegion, mergeConflicts, renameSymbol, setComment, setMacro, setMacroUse, setModule, setOperand, setPatch, setRelease, setStartScreen, setSwitch, unclassifyRegion, type OperandImage, type WriteContext } from "./write.ts";
-
-const roots: string[] = [];
-after(() => {
-  for (const root of roots) rmSync(root, { recursive: true, force: true });
-});
-
-function project(): string {
-  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-conflicts-"));
-  roots.push(root);
-  return root;
-}
+import { findings, scratchProject, withRead } from "./project.testkit.ts";
 
 const llm: WriteContext = { origin: "llm" };
 const platform = new Map([["CINV", 0x0314]]);
@@ -39,9 +28,9 @@ function later(): void {
 
 /** Two copies of one project, as two clones of one repository: the base work, then the work of each computer. */
 function computers(base: (root: string) => void, first: (root: string) => void, second: (root: string) => void): string {
-  const origin = project();
+  const origin = scratchProject();
   base(origin);
-  const [a, b] = [project(), project()];
+  const [a, b] = [scratchProject(), scratchProject()];
   for (const root of [a, b]) if (existsSync(textPath(origin))) cpSync(textPath(origin), textPath(root), { recursive: true });
   first(a);
   later();
@@ -51,7 +40,7 @@ function computers(base: (root: string) => void, first: (root: string) => void, 
 
 /** The knowledge that git makes with merge=union: the lines of both sides of each file. */
 function union(a: string, b: string): string {
-  const root = project();
+  const root = scratchProject();
   mkdirSync(textPath(root), { recursive: true });
   const names = new Set([...readdirSync(textPath(a)), ...readdirSync(textPath(b))]);
   for (const name of names) {
@@ -61,17 +50,7 @@ function union(a: string, b: string): string {
   return root;
 }
 
-function read<T>(root: string, work: (db: DatabaseSync) => T): T {
-  const db = openForRead(root)!;
-  try {
-    return work(db);
-  } finally {
-    db.close();
-  }
-}
-
 const rules = (found: Conflict[]) => found.map((conflict) => conflict.rule);
-const isConflict = (error: unknown) => error instanceof Refusal && error.code === "conflict";
 const nothing = () => undefined;
 
 test("two names at one address and one name at two addresses are conflicts, and merge keeps the newer name", () => {
@@ -80,23 +59,23 @@ test("two names at one address and one name at two addresses are conflicts, and 
     (a) => withWrite((db) => renameSymbol(db, llm, { address: 0x2100, name: "read_joystick" }), a),
     (b) => withWrite((db) => renameSymbol(db, llm, { address: 0x2100, name: "poll_input" }), b),
   );
-  const found = read(root, conflicts);
+  const found = withRead(root, conflicts);
   assert.deepEqual(rules(found), ["symbol-address"]);
   assert.deepEqual(found[0]!.rows.map((entry) => (entry.row as { name: string }).name), ["read_joystick", "poll_input"], "oldest first");
   const merged = withWrite((db) => mergeConflicts(db, { origin: "user", description: "keep the newer name" }, platform), root);
   assert.deepEqual(merged.current.map((choice) => [choice.rule, (choice.kept.row as { name: string }).name, choice.closed.map((entry) => (entry.row as { name: string }).name)]), [["symbol-address", "poll_input", ["read_joystick"]]]);
-  assert.deepEqual(read(root, conflicts), []);
-  assert.equal(read(root, (db) => symbolAt(db, 0x2100)?.name), "poll_input");
+  assert.deepEqual(withRead(root, conflicts), []);
+  assert.equal(withRead(root, (db) => symbolAt(db, 0x2100)?.name), "poll_input");
 
   const moved = computers(
     nothing,
     (a) => withWrite((db) => renameSymbol(db, llm, { address: 0x2100, name: "main" }), a),
     (b) => withWrite((db) => renameSymbol(db, llm, { address: 0x2200, name: "main" }), b),
   );
-  assert.deepEqual(rules(read(moved, conflicts)), ["symbol-name"]);
+  assert.deepEqual(rules(withRead(moved, conflicts)), ["symbol-name"]);
   withWrite((db) => mergeConflicts(db, llm, platform), moved);
-  assert.equal(read(moved, (db) => symbolAt(db, 0x2200)?.name), "main");
-  assert.equal(read(moved, (db) => symbolAt(db, 0x2100)), undefined);
+  assert.equal(withRead(moved, (db) => symbolAt(db, 0x2200)?.name), "main");
+  assert.equal(withRead(moved, (db) => symbolAt(db, 0x2100)), undefined);
 });
 
 test("overlapping regions are a conflict, and merge keeps the newer region and the parts of the older one outside it", () => {
@@ -105,10 +84,10 @@ test("overlapping regions are a conflict, and merge keeps the newer region and t
     (a) => withWrite((db) => classifyRegion(db, llm, { start: 0x1000, end: 0x10ff, type: "words", element: 2 }), a),
     (b) => withWrite((db) => classifyRegion(db, llm, { start: 0x1080, end: 0x117f, type: "code" }), b),
   );
-  assert.deepEqual(rules(read(root, conflicts)), ["region"]);
+  assert.deepEqual(rules(withRead(root, conflicts)), ["region"]);
   withWrite((db) => mergeConflicts(db, llm, platform), root);
   assert.deepEqual(
-    read(root, (db) => listRegions(db).map((region) => [region.start, region.end, region.type, region.element])),
+    withRead(root, (db) => listRegions(db).map((region) => [region.start, region.end, region.type, region.element])),
     [
       [0x1000, 0x107f, "words", 2],
       [0x1080, 0x117f, "code", undefined],
@@ -146,12 +125,12 @@ test("comments, references, operands, modules and region suppressions have their
         return unclassifyRegion(db, llm, { start: 0x3040, end: 0x30bf });
       }, b),
   );
-  assert.deepEqual(rules(read(root, conflicts)), ["region", "comment", "reference", "reference", "operand", "module-start", "module-file", "suppression-region"]);
+  assert.deepEqual(rules(withRead(root, conflicts)), ["region", "comment", "reference", "reference", "operand", "module-start", "module-file", "suppression-region"]);
   const merged = withWrite((db) => mergeConflicts(db, llm, platform), root);
   assert.equal(merged.current.length, 8);
-  assert.deepEqual(read(root, conflicts), []);
-  assert.equal(read(root, (db) => operandAt(db, 0x8079)?.expression), "<irq_handler");
-  assert.deepEqual(read(root, (db) => referencesFrom(db, 0x8079).map((reference) => [reference.to, reference.kind])), [[0x80c0, "pointer"]], "one pointer reference stays");
+  assert.deepEqual(withRead(root, conflicts), []);
+  assert.equal(withRead(root, (db) => operandAt(db, 0x8079)?.expression), "<irq_handler");
+  assert.deepEqual(withRead(root, (db) => referencesFrom(db, 0x8079).map((reference) => [reference.to, reference.kind])), [[0x80c0, "pointer"]], "one pointer reference stays");
 });
 
 test("while the knowledge has conflicts, writes and imports are refused, and merge is one revision", () => {
@@ -160,9 +139,8 @@ test("while the knowledge has conflicts, writes and imports are refused, and mer
     (a) => withWrite((db) => renameSymbol(db, llm, { address: 0x2100, name: "a" }), a),
     (b) => withWrite((db) => renameSymbol(db, llm, { address: 0x2100, name: "b" }), b),
   );
-  assert.throws(() => withWrite((db) => renameSymbol(db, llm, { address: 0x3000, name: "other" }), root), (error: unknown) => isConflict(error) && /two symbols at one address in c64 \(\$2100\).*Decide the conflicts of the git merge in the project knowledge/.test((error as Error).message));
-  const findings = { analyzer: "dxa" as const, coverage: [{ start: 0x3000, end: 0x30ff }], authoritative: { symbols: true, regions: true, references: true }, symbols: [], regions: [], references: [] };
-  assert.throws(() => withWrite((db) => importFindings(db, findings), root), isConflict);
+  assert.throws(() => withWrite((db) => renameSymbol(db, llm, { address: 0x3000, name: "other" }), root), failsWith("conflict", /two symbols at one address in c64 \(\$2100\).*Decide the conflicts of the git merge in the project knowledge/));
+  assert.throws(() => withWrite((db) => importFindings(db, findings("dxa", 0x3000, 0x30ff)), root), failsWith("conflict"));
   const merged = withWrite((db) => mergeConflicts(db, llm, platform), root);
   assert.notEqual(merged.revision, null);
   assert.equal(withWrite((db) => mergeConflicts(db, llm, platform), root).revision, null, "no conflicts, no revision");
@@ -170,7 +148,7 @@ test("while the knowledge has conflicts, writes and imports are refused, and mer
 });
 
 test("a write that would leave two current rows is refused before it commits", () => {
-  const root = project();
+  const root = scratchProject();
   withWrite((db) => renameSymbol(db, llm, { address: 0x2100, name: "main" }), root);
   const before = readFileSync(join(textPath(root), "symbols.jsonl"), "utf8");
   const db = openForWrite(root);
@@ -183,13 +161,13 @@ test("a write that would leave two current rows is refused before it commits", (
           change.insertSymbol({ space: "c64", address: 0x2100, name: "other", kind: "label", origin: "llm" });
           change.check();
         }),
-      (error: unknown) => isConflict(error) && /would leave two symbols at one address/.test((error as Error).message),
+      failsWith("conflict", /would leave two symbols at one address/),
     );
   } finally {
     db.close();
   }
   assert.equal(readFileSync(join(textPath(root), "symbols.jsonl"), "utf8"), before);
-  assert.equal(read(root, (db) => symbolAt(db, 0x2100)?.name), "main");
+  assert.equal(withRead(root, (db) => symbolAt(db, 0x2100)?.name), "main");
 });
 
 test("patches, switches, macros and macro uses have their conflicts, and merge keeps the newest", () => {
@@ -218,20 +196,20 @@ test("patches, switches, macros and macro uses have their conflicts, and merge k
         return setMacroUse(db, { ...llm, image }, { start: 0x8104, end: 0x8106, macro: "skip" });
       }, b),
   );
-  assert.deepEqual(rules(read(root, conflicts)), ["patch", "switch", "macro", "macro-use"]);
+  assert.deepEqual(rules(withRead(root, conflicts)), ["patch", "switch", "macro", "macro-use"]);
   withWrite((db) => mergeConflicts(db, llm, platform), root);
-  assert.deepEqual(read(root, conflicts), []);
-  assert.deepEqual(read(root, (db) => listPatches(db).map((row) => row.switch)), ["TRAINER"]);
-  assert.deepEqual(read(root, (db) => listSwitches(db).map((row) => [row.name, row.default])), [["CRACK", 0], ["LEVELS", 1], ["TRAINER", 0]], "the newest LEVELS stays");
-  assert.deepEqual(read(root, (db) => listMacros(db).map((row) => [row.name, row.body.split("\n").length])), [["inc16", 4], ["skip", 1]], "the newest inc16 stays");
-  assert.deepEqual(read(root, (db) => listMacroUses(db).map((row) => row.macro)), ["skip"]);
+  assert.deepEqual(withRead(root, conflicts), []);
+  assert.deepEqual(withRead(root, (db) => listPatches(db).map((row) => row.switch)), ["TRAINER"]);
+  assert.deepEqual(withRead(root, (db) => listSwitches(db).map((row) => [row.name, row.default])), [["CRACK", 0], ["LEVELS", 1], ["TRAINER", 0]], "the newest LEVELS stays");
+  assert.deepEqual(withRead(root, (db) => listMacros(db).map((row) => [row.name, row.body.split("\n").length])), [["inc16", 4], ["skip", 1]], "the newest inc16 stays");
+  assert.deepEqual(withRead(root, (db) => listMacroUses(db).map((row) => row.macro)), ["skip"]);
 });
 
 test("two start screens are a conflict, and merge keeps the newest", () => {
   const screen = (background: number) => (db: DatabaseSync) => setStartScreen(db, llm, { mode: "multicolour", screen: 0x5c00, bitmap: 0x6000, colours: 0x7f40, border: 0, background });
   const root = computers(nothing, (a) => withWrite(screen(1), a), (b) => withWrite(screen(2), b));
-  assert.deepEqual(rules(read(root, conflicts)), ["start-screen"]);
+  assert.deepEqual(rules(withRead(root, conflicts)), ["start-screen"]);
   withWrite((db) => mergeConflicts(db, llm, platform), root);
-  assert.deepEqual(read(root, conflicts), []);
-  assert.equal(read(root, (db) => currentStartScreen(db)?.background), 2);
+  assert.deepEqual(withRead(root, conflicts), []);
+  assert.equal(withRead(root, (db) => currentStartScreen(db)?.background), 2);
 });

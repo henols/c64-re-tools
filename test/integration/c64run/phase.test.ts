@@ -6,15 +6,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { C64RunSession, PAL_FRAME_CYCLES } from "../../../src/native/c64run.ts";
-import { C64RUN, findTool } from "../../../src/native/discover.ts";
+import { C64RUN } from "../../../src/native/discover.ts";
 import { localToolContext } from "../../../src/native/local.ts";
+import { toolSkip } from "../../kit.ts";
 
-let skip: string | false = false;
-try {
-  findTool(C64RUN);
-} catch {
-  skip = "c64run is not installed: install c64run or set C64RT_C64RUN to run these tests";
-}
+const skip = toolSkip(C64RUN);
 
 // At $c000: LDA $dc04, STA $c100, LDA $d012, STA $c101, JMP *. At $c200: JMP $c000, the jump of a loader.
 const ENTRY = Uint8Array.of(0xad, 0x04, 0xdc, 0x8d, 0x00, 0xc1, 0xad, 0x12, 0xd0, 0x8d, 0x01, 0xc1, 0x4c, 0x0c, 0xc0);

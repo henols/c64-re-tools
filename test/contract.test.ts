@@ -10,12 +10,12 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { after, before, test } from "node:test";
+import { test } from "node:test";
 
 import { closureOf } from "../distribution/plugin.ts";
+import { readEnvelope, scratchDir } from "./kit.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 
@@ -37,11 +37,7 @@ const SCRIPTS: Script[] = readdirSync(join(ROOT, "skills"))
     return names.map((name) => ({ skill, name, path: join(ROOT, "skills", skill, "scripts", name) }));
   });
 
-let project: string;
-before(() => {
-  project = mkdtempSync(join(tmpdir(), "c64-re-tools-contract-"));
-});
-after(() => rmSync(project, { recursive: true, force: true }));
+const project = scratchDir("contract");
 
 interface Run {
   status: number | null;
@@ -104,10 +100,7 @@ test("a wrong call is one ok:false envelope with exit status 2 and nothing on st
       const run = await call(script, ["no-such-command"]);
       assert.equal(run.status, 2, `${script.name}: ${run.stdout}${run.stderr}`);
       assert.equal(run.stderr, "", `${script.name}: stderr`);
-      const lines = run.stdout.split("\n").filter((line) => line !== "");
-      assert.equal(lines.length, 1, `${script.name}: one line`);
-      const envelope = JSON.parse(lines[0]!) as { ok: boolean; code: string; nextAction?: string };
-      assert.equal(envelope.ok, false, script.name);
+      const { envelope } = readEnvelope(run.stdout, run.status);
       assert.equal(envelope.code, "invalid-input", script.name);
       if (envelope.nextAction !== undefined) assert.match(envelope.nextAction, /^node \/\S+\.ts /, `${script.name}: nextAction`);
     }),
@@ -274,7 +267,8 @@ test("each section that a skill names in quotes is a heading of its files, and e
 });
 
 test("no skill names another skill or the script of another skill", () => {
-  const scripts = new Map(SCRIPTS.map((script) => [script.name, script.skill]));
+  const skillNames = SKILLS.filter((skill) => skill.startsWith("c64-")).map((skill) => ({ skill, pattern: new RegExp(`\\b${skill}\\b(?![-/])`) }));
+  const scriptNames = SCRIPTS.map((script) => ({ ...script, pattern: new RegExp(`(?<![\\w/-])${script.name.replace(".", "\\.")}\\b`) }));
   const problems: string[] = [];
   for (const skill of SKILLS) {
     const directory = join(ROOT, "skills", skill);
@@ -286,8 +280,8 @@ test("no skill names another skill or the script of another skill", () => {
         .forEach((line, index) => {
           // Code comments may name a skill: only the text that the agent reads counts.
           if (file.endsWith(".ts") && /^\s*(\/\/|\*|\/\*|import )/.test(line)) return;
-          for (const other of SKILLS) if (other !== skill && other.startsWith("c64-") && new RegExp(`\\b${other}\\b(?![-/])`).test(line)) problems.push(`${skill}/${file}:${index + 1} names ${other}`);
-          for (const [name, owner] of scripts) if (owner !== skill && new RegExp(`(?<![\\w/-])${name.replace(".", "\\.")}\\b`).test(line)) problems.push(`${skill}/${file}:${index + 1} names ${name}`);
+          for (const other of skillNames) if (other.skill !== skill && other.pattern.test(line)) problems.push(`${skill}/${file}:${index + 1} names ${other.skill}`);
+          for (const script of scriptNames) if (script.skill !== skill && script.pattern.test(line)) problems.push(`${skill}/${file}:${index + 1} names ${script.name}`);
         });
     }
   }

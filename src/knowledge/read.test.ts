@@ -5,11 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 
-import { openForRead, openForWrite } from "./database.ts";
+import { openForWrite } from "./database.ts";
 import { historyAt, historyNamed, revision, revisionCounts, revisions } from "./history.ts";
 import { at, goes, listComments, listReferences, listRegions, listSymbols, referenceCounts, regionCounts, search, sourceRevision, type ReferenceRow } from "./read.ts";
 import { setImage } from "./program.ts";
 import { addReference, classifyRegion, renameSymbol, setComment, setStartScreen } from "./write.ts";
+import { fresh } from "./project.testkit.ts";
 import { nth } from "./revisions.testkit.ts";
 
 let root: string;
@@ -46,17 +47,11 @@ test("at() gives the symbol, containing region, comments and references of an ad
 });
 
 test("a project without a database reads as empty knowledge", () => {
-  const empty = mkdtempSync(join(tmpdir(), "c64-re-tools-empty-"));
-  try {
-    const none = openForRead(empty);
-    assert.equal(none, undefined);
-    assert.deepEqual(at(none, 0x2100), { space: "c64", address: 0x2100, comments: [], referencesFrom: [], referencesTo: [], analyzerNames: [], suppressions: [], revision: "0" });
-    assert.deepEqual(search(none, "x"), { symbols: [], analyzerNames: [], comments: [] });
-    assert.deepEqual(historyAt(none, 0x2100), []);
-    assert.deepEqual(revisions(none), []);
-  } finally {
-    rmSync(empty, { recursive: true, force: true });
-  }
+  // openForRead gives undefined for a project without knowledge.
+  assert.deepEqual(at(undefined, 0x2100), { space: "c64", address: 0x2100, comments: [], referencesFrom: [], referencesTo: [], analyzerNames: [], suppressions: [], revision: "0" });
+  assert.deepEqual(search(undefined, "x"), { symbols: [], analyzerNames: [], comments: [] });
+  assert.deepEqual(historyAt(undefined, 0x2100), []);
+  assert.deepEqual(revisions(undefined), []);
 });
 
 test("lists filter by range, kind and type", () => {
@@ -112,25 +107,19 @@ test("revision 0 is the knowledge before every revision: it added and closed not
 });
 
 test("the source revision of a space is its newest revision and that of the stage of its start screen; a change in another space keeps it", () => {
-  const folder = mkdtempSync(join(tmpdir(), "c64-re-tools-read-"));
-  const own = openForWrite(folder);
-  try {
-    const llm = { origin: "llm" } as const;
-    renameSymbol(own, llm, { address: 0x1000, name: "start" });
-    const first = sourceRevision(own);
-    renameSymbol(own, llm, { space: "drive8", address: 0x0500, name: "drive_loop" });
-    assert.equal(sourceRevision(own), first, "a change in drive8");
-    assert.notEqual(sourceRevision(own, "drive8"), first);
-    // The stage of the start screen is part of the source of c64.
-    setImage(own, llm, { space: "bank1", segments: [{ start: 0x5c00, end: 0x83ff }], byteAt: () => 0 });
-    setStartScreen(own, llm, { mode: "multicolour", screen: 0x5c00, bitmap: 0x6000, colourRam: true, border: 0, background: 6, stage: "bank1" });
-    const staged = sourceRevision(own);
-    renameSymbol(own, llm, { space: "bank1", address: 0x6000, name: "picture" });
-    assert.notEqual(sourceRevision(own), staged, "a change in the stage");
-  } finally {
-    own.close();
-    rmSync(folder, { recursive: true, force: true });
-  }
+  const own = fresh();
+  const llm = { origin: "llm" } as const;
+  renameSymbol(own, llm, { address: 0x1000, name: "start" });
+  const first = sourceRevision(own);
+  renameSymbol(own, llm, { space: "drive8", address: 0x0500, name: "drive_loop" });
+  assert.equal(sourceRevision(own), first, "a change in drive8");
+  assert.notEqual(sourceRevision(own, "drive8"), first);
+  // The stage of the start screen is part of the source of c64.
+  setImage(own, llm, { space: "bank1", segments: [{ start: 0x5c00, end: 0x83ff }], byteAt: () => 0 });
+  setStartScreen(own, llm, { mode: "multicolour", screen: 0x5c00, bitmap: 0x6000, colourRam: true, border: 0, background: 6, stage: "bank1" });
+  const staged = sourceRevision(own);
+  renameSymbol(own, llm, { space: "bank1", address: 0x6000, name: "picture" });
+  assert.notEqual(sourceRevision(own), staged, "a change in the stage");
 });
 
 test("a reference goes into a range, out of it or inside it, and references count by kind and by target, the most first", () => {

@@ -1,24 +1,12 @@
 // Real-VICE checks for execution control, reset and warp (src/host/vice/session.ts).
 
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
+import { test } from "node:test";
 
-import { WireFailure } from "../../../src/protocol/messages.ts";
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
-import { viceSessionFactory } from "../../../src/host/vice/session.ts";
-import type { ViceSessionHandle } from "../../../src/host/server.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { failsWith } from "../../../src/errors.testkit.ts";
+import { fileSession, liveSkip } from "./live.ts";
 
-let session: ViceSessionHandle;
-before(async () => {
-  if (liveSkip !== false) return;
-  const supervisor = new ProcessSupervisor();
-  supervisor.installExitGuard();
-  session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard: "pal" });
-});
-after(async () => {
-  await session?.close();
-});
+const session = fileSession();
 
 test("pause stops with a pc, status agrees, and resume runs again", { skip: liveSkip, timeout: 60_000 }, async () => {
   const paused = await session.handle("execution", { action: "pause", space: "c64" });
@@ -68,10 +56,7 @@ test("warp turns on and off and keeps the run state", { skip: liveSkip, timeout:
 
 test("stepping the drive CPU is refused with the reason", { skip: liveSkip, timeout: 60_000 }, async () => {
   for (const action of ["step", "next", "until-return"] as const) {
-    await assert.rejects(
-      session.handle("execution", { action, space: "drive8", ...(action === "until-return" ? {} : { count: 1 }) }),
-      (error: unknown) => error instanceof WireFailure && error.code === "unsupported-in-space" && /single instruction/.test(error.message),
-    );
+    await assert.rejects(session.handle("execution", { action, space: "drive8", ...(action === "until-return" ? {} : { count: 1 }) }), failsWith("unsupported-in-space", /single instruction/));
   }
 });
 

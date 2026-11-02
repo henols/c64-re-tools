@@ -5,8 +5,7 @@
 // Needs real VICE (C64RT_LIVE_VICE), DXA, ACME, c1541 and petcat.
 
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
-import { once } from "node:events";
+import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -15,20 +14,10 @@ import { after, test } from "node:test";
 import { ACME, C1541, DXA, findTool, PETCAT } from "../../../src/native/discover.ts";
 import { basicCounterPrg } from "../../fixtures/prg/basic-counter.ts";
 import { liveSkip, startHost, stopHosts } from "../../integration/vice/live.ts";
-import { readEnvelope } from "../../kit.ts";
+import { runScript, skillScript, toolSkip } from "../../kit.ts";
 
-let skip: string | false = liveSkip;
-let c1541 = "";
-if (skip === false) {
-  try {
-    c1541 = findTool(C1541);
-    findTool(PETCAT);
-    findTool(ACME);
-    findTool(DXA);
-  } catch (error) {
-    skip = `a native tool is missing: ${(error as Error).message}`;
-  }
-}
+const skip = liveSkip || toolSkip(C1541, PETCAT, ACME, DXA);
+const c1541 = skip === false ? findTool(C1541) : "";
 
 const root = resolve(import.meta.dirname, "../../..");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-reverse-"));
@@ -40,14 +29,6 @@ after(async () => {
   }
 });
 
-async function skill(address: string, name: string, file: string, ...args: string[]): Promise<{ status: number | null; stdout: string; json: Record<string, unknown> }> {
-  const child = spawn(process.execPath, [...process.execArgv, join(root, "skills", name, "scripts", file), ...args], { cwd: project, env: { ...process.env, C64RT_HOST: address }, stdio: ["ignore", "pipe", "inherit"] });
-  let stdout = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  const [status] = (await once(child, "exit")) as [number | null];
-  return { status, stdout, json: readEnvelope(stdout, status).json as Record<string, unknown> };
-}
-
 test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout: 900_000 }, async () => {
   // The unknown artifact: a disk made by real c1541.
   mkdirSync(join(project, "releases"));
@@ -56,7 +37,7 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
   assert.equal(made.status, 0, made.stdout + made.stderr);
   rmSync(join(project, "releases", "game.prg"));
   const { address } = await startHost();
-  const run = (name: string, file: string, ...args: string[]) => skill(address, name, file, ...args);
+  const run = (name: string, file: string, ...args: string[]) => runScript(skillScript(name, file), args, { cwd: project, host: address });
 
   // 1. Media: list the disk and extract the start file.
   const directory = await run("c64-disk", "disk.ts", "directory", "releases/mystery.d64");

@@ -5,24 +5,16 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
-import { ACME, findTool } from "../../src/native/discover.ts";
-import { readEnvelope } from "../kit.ts";
+import { ACME } from "../../src/native/discover.ts";
+import { runScriptSync, scratchDir, skillScript, toolSkip } from "../kit.ts";
 
-let generateSkip: string | false = false;
-try {
-  findTool(ACME);
-} catch {
-  generateSkip = "ACME is not installed: the clones are compared without generated source";
-}
+const generateSkip = toolSkip(ACME);
 
-const skills = resolve(import.meta.dirname, "../../skills");
-const scratch = realpathSync(mkdtempSync(join(tmpdir(), "c64-re-tools-merge-")));
-after(() => rmSync(scratch, { recursive: true, force: true }));
+const scratch = scratchDir("merge");
 
 function git(cwd: string, ...args: string[]): { status: number | null; stdout: string; stderr: string } {
   const run = spawnSync("git", ["-c", "user.name=Tester", "-c", "user.email=tester@example.com", "-c", "pull.rebase=false", ...args], { cwd, encoding: "utf8" });
@@ -35,11 +27,8 @@ function gitOk(cwd: string, ...args: string[]): string {
   return run.stdout;
 }
 
-/** Runs a skill script in the project folder of a clone and gives its exit status and its JSON line. */
-function script(clone: string, skill: string, file: string, ...args: string[]): { status: number | null; json: Record<string, unknown> } {
-  const run = spawnSync(process.execPath, [...process.execArgv, join(skills, skill, "scripts", file), ...args], { cwd: join(clone, "game"), encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
-  return { status: run.status, json: readEnvelope(run.stdout, run.status).json as Record<string, unknown> };
-}
+/** Runs a skill script in the project folder of a clone. */
+const script = (clone: string, skill: string, file: string, ...args: string[]) => runScriptSync(skillScript(skill, file), args, { cwd: join(clone, "game") });
 
 const knowledge = (clone: string, ...args: string[]) => script(clone, "c64-knowledge", "knowledge.ts", ...args);
 
@@ -112,8 +101,8 @@ test("two clones write, git merges the knowledge, merge decides the conflicts, a
   assert.deepEqual(conflicts[0]!.rows.map((row) => row.name), ["copy_loop", "fill_screen"]);
   const refused = knowledge(second, "rename", "$1001", "x");
   assert.equal(refused.status, 2);
-  assert.equal((refused.json.error as { code: string }).code, "conflict");
-  assert.match((refused.json.error as { message: string }).message, /from a git merge/);
+  assert.equal(refused.json.error.code, "conflict");
+  assert.match(refused.json.error.message, /from a git merge/);
 
   const merged = knowledge(second, "merge", "--reason", "merge of two computers", "--by", "user");
   assert.equal(merged.status, 0, JSON.stringify(merged.json));

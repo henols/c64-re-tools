@@ -7,10 +7,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
+import { failsWith } from "../../../src/errors.testkit.ts";
 import { callTool, decodeBasic, inspectDisk } from "../../../src/host-client/tools.ts";
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
-import { startHostServer, type HostServer, type ToolDispatcher } from "../../../src/host/server.ts";
+import type { ToolDispatcher } from "../../../src/host/server.ts";
 import { WireFailure } from "../../../src/protocol/messages.ts";
+import { noEmulatorHost } from "./stub-host.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-tools-"));
 mkdirSync(join(project, "src", "lib"), { recursive: true });
@@ -25,25 +27,12 @@ beforeEach(() => process.chdir(project));
 // Windows cannot remove the current directory.
 afterEach(() => process.chdir(home));
 
-const servers: HostServer[] = [];
-after(async () => {
-  await Promise.all(servers.map((server) => server.close()));
-  rmSync(project, { recursive: true, force: true });
-});
+after(() => rmSync(project, { recursive: true, force: true }));
 
 async function host(tools?: ToolDispatcher): Promise<NodeJS.ProcessEnv> {
-  const server = await startHostServer({
-    port: 0,
-    createViceSession: async () => {
-      throw new WireFailure("machine-unavailable", "no emulators in this test");
-    },
-    ...(tools === undefined ? {} : { tools }),
-  });
-  servers.push(server);
+  const server = await noEmulatorHost(tools === undefined ? {} : { tools });
   return { C64RT_HOST: `${server.host}:${server.port}` };
 }
-
-const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;
 
 test("tool errors and refusals keep their code", async () => {
   const env = await host(async () => {
@@ -80,13 +69,14 @@ test("a client that disconnects aborts its tool request", async () => {
 test("a host that stops during a tool request is machine-unavailable", async () => {
   let started!: () => void;
   const running = new Promise<void>((resolve) => (started = resolve));
-  const env = await host(async (_op, _params, _attachments, signal) => {
-    started();
-    await new Promise((resolve) => signal.addEventListener("abort", resolve));
-    throw new WireFailure("operation-failed", "aborted");
+  const server = await noEmulatorHost({
+    tools: async (_op, _params, _attachments, signal) => {
+      started();
+      await new Promise((resolve) => signal.addEventListener("abort", resolve));
+      throw new WireFailure("operation-failed", "aborted");
+    },
   });
-  const server = servers[servers.length - 1]!;
-  const request = decodeBasic({ program: "media/loader.prg" }, { env });
+  const request = decodeBasic({ program: "media/loader.prg" }, { env: { C64RT_HOST: `${server.host}:${server.port}` } });
   await running;
   await server.close();
   await assert.rejects(request, failsWith("machine-unavailable"));

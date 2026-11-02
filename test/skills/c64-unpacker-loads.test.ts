@@ -2,21 +2,20 @@
 // and the blocks that a capture writes.
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { after, afterEach, beforeEach, test } from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
 import { captureBlocks, changedBlocks, readLoadSteps } from "../../skills/c64-unpacker/scripts/lib/loads.ts";
 import { withWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
+import { scratchDir } from "../kit.ts";
 
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-loads-"));
+const project = scratchDir("loads");
 const home = process.cwd();
 beforeEach(() => process.chdir(project));
 afterEach(() => process.chdir(home));
-after(() => rmSync(project, { recursive: true, force: true }));
 
 const steps = (value: unknown) => {
   writeFileSync(join(project, "steps.json"), JSON.stringify(value));

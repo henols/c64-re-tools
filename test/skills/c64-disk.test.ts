@@ -2,67 +2,30 @@
 // Skipped (never passed) when c1541 is not installed.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { after, test } from "node:test";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
 
-import { ProcessSupervisor } from "../../src/native/processes.ts";
-import { startHostServer, type HostServer } from "../../src/host/server.ts";
-import { C1541, findTool } from "../../src/native/discover.ts";
-import { createToolDispatcher } from "../../src/host/tools/index.ts";
-import { WireFailure } from "../../src/protocol/messages.ts";
+import { C1541 } from "../../src/native/discover.ts";
 import { buildD64, offsetOf } from "../fixtures/d64.ts";
 import { borderLoopPrg } from "../fixtures/prg/border-loop.ts";
-import { readEnvelope, type ScriptEnvelope } from "../kit.ts";
+import { runScript, scratchDir, skillScript, toolSkip } from "../kit.ts";
+import { toolsHost } from "./tools-host.ts";
 
-let skip: string | false = false;
-try {
-  findTool(C1541);
-} catch {
-  skip = "c1541 is not installed: install VICE or set C64RT_C1541 to run these tests";
-}
+const skip = toolSkip(C1541);
 
-const script = resolve(import.meta.dirname, "../../skills/c64-disk/scripts/disk.ts");
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-disk-"));
+const script = skillScript("c64-disk", "disk.ts");
+const project = scratchDir("disk");
 mkdirSync(join(project, "releases"));
 const gameDisk = buildD64([{ name: "LOOP", bytes: borderLoopPrg }], "GAME DISK", [{ track: 20, sector: 5 }, { track: 1, sector: 0 }]);
 // The sectors that no file holds have their own bytes, as a loader that reads them directly finds them.
 gameDisk.fill(0xaa, offsetOf(1, 0), offsetOf(1, 0) + 256);
 gameDisk.fill(0x55, offsetOf(20, 5), offsetOf(20, 5) + 256);
 writeFileSync(join(project, "releases", "game.d64"), gameDisk);
-let server: HostServer | undefined;
-after(async () => {
-  await server?.close();
-  rmSync(project, { recursive: true, force: true });
-});
+const host = toolsHost();
 
-async function hostEnv(): Promise<string> {
-  if (server === undefined) {
-    const supervisor = new ProcessSupervisor();
-    supervisor.installExitGuard();
-    server = await startHostServer({
-      port: 0,
-      createViceSession: async () => {
-        throw new WireFailure("machine-unavailable", "no emulators here");
-      },
-      tools: createToolDispatcher({ supervisor }),
-    });
-  }
-  return `${server.host}:${server.port}`;
-}
-
-async function disk(...args: string[]): Promise<{ status: number | null; json: Record<string, any>; envelope: ScriptEnvelope }> {
-  const child = spawn(process.execPath, [...process.execArgv, script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: await hostEnv() }, stdio: ["ignore", "pipe", "pipe"] });
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  child.stderr.on("data", (chunk) => (stderr += chunk));
-  const [status] = (await once(child, "exit")) as [number | null];
-  assert.equal(stderr, "");
-  return { status, ...readEnvelope(stdout, status) };
+async function disk(...args: string[]) {
+  return runScript(script, args, { cwd: project, host: await host() });
 }
 
 test("the directory lists the disk and its files", { skip }, async () => {
@@ -93,7 +56,7 @@ test("entry and chain give the file's blocks", { skip }, async () => {
 test("bam gives each track and the used sectors that no file holds", { skip }, async () => {
   const { status, json, envelope } = await disk("bam", "releases/game.d64");
   assert.equal(status, 0, JSON.stringify(json));
-  const tracks = json.tracks as Array<{ track: number; usedSectors: number[] }>;
+  const tracks: Array<{ track: number; usedSectors: number[] }> = json.tracks;
   assert.equal(tracks.length, 35);
   assert.deepEqual(tracks[16]!.usedSectors, [0], "the file LOOP");
   assert.deepEqual(json.unreferenced, [
@@ -106,14 +69,12 @@ test("bam gives each track and the used sectors that no file holds", { skip }, a
 test("sectors writes the blocks in the given order, then the used sectors that no file holds, and gives the index", { skip }, async () => {
   const { status, json } = await disk("sectors", "releases/game.d64", "18/0", "--unreferenced", "--out", "extracted/hidden.bin");
   assert.equal(status, 0, JSON.stringify(json));
-  assert.equal(json.count, 3);
+  assert.partialDeepStrictEqual(json, { count: 3, out: "extracted/hidden.bin", bytes: 768 });
   assert.deepEqual(json.sectors, [
     { track: 18, sector: 0, offset: 0 },
     { track: 1, sector: 0, offset: 256 },
     { track: 20, sector: 5, offset: 512 },
   ]);
-  assert.equal(json.out, "extracted/hidden.bin");
-  assert.equal(json.bytes, 768);
   const written = readFileSync(join(project, "extracted", "hidden.bin"));
   assert.deepEqual(written.subarray(0, 256), gameDisk.subarray(offsetOf(18, 0), offsetOf(18, 0) + 256));
   assert.ok(written.subarray(256, 512).every((byte) => byte === 0xaa));
@@ -127,6 +88,6 @@ test("sectors needs a sector or --unreferenced, and a sector is <track>/<sector>
   ]) {
     const { status, json } = await disk(...args);
     assert.equal(status, 2, args.join(" "));
-    assert.equal((json.error as { code: string }).code, "invalid-input");
+    assert.equal(json.error.code, "invalid-input");
   }
 });

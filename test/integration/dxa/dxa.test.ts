@@ -4,18 +4,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { DXA, findTool } from "../../../src/native/discover.ts";
+import { DXA } from "../../../src/native/discover.ts";
 import { analyze } from "../../../src/native/dxa.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import type { DxaParams } from "../../../src/native/types.ts";
 import { analysisSubjectPrg, MAIN, ROUTINE, TABLE_END, TABLE_START } from "../../fixtures/prg/analysis-subject.ts";
+import { toolSkip } from "../../kit.ts";
 
-let skip: string | false = false;
-try {
-  findTool(DXA);
-} catch {
-  skip = "dxa is not installed: install dxa or set C64RT_DXA to run these tests";
-}
+const skip = toolSkip(DXA);
 
 const supervisor = new ProcessSupervisor();
 supervisor.installExitGuard();

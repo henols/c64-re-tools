@@ -6,46 +6,37 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
-import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-
 import { isAlive, ProcessSupervisor } from "../../../src/native/processes.ts";
 import { Command } from "../../../src/host/vice/binary-monitor.ts";
 import { launchVice } from "../../../src/host/vice/process.ts";
 import { ViceSession } from "../../../src/host/vice/session.ts";
 import { startMcp, waitFor } from "../../kit.ts";
-import { liveEnv, liveLog, liveSkip, startHost, stopHosts, viceChildren } from "./live.ts";
+import { liveEnv, liveLog, liveSkip, startHost, stopHosts, toolResult, viceChildren } from "./live.ts";
 
 after(stopHosts);
-
-async function tool(client: Client, name: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
-  const result = (await client.callTool({ name, arguments: args })) as CallToolResult;
-  assert.notEqual(result.isError, true, JSON.stringify(result.content));
-  return result.structuredContent as Record<string, unknown>;
-}
 
 test("host → MCP → one VICE: KERNAL bytes, registers and running state", { skip: liveSkip, timeout: 120_000 }, async () => {
   const host = await startHost();
   const { client } = await startMcp(host.address);
   try {
     // The KERNAL ROM starts at $e000 with the same bytes on every stock C64.
-    const kernal = await tool(client, "c64_memory_read", { address: "$E000", size: 8 });
+    const kernal = await toolResult(client, "c64_memory_read", { address: "$E000", size: 8 });
     assert.equal(kernal.address, "$e000");
     assert.equal(kernal.size, 8);
     assert.match(kernal.data as string, /^8556200f/);
 
-    const registers = await tool(client, "c64_registers", { action: "read" });
+    const registers = await toolResult(client, "c64_registers", { action: "read" });
     assert.match(registers.pc as string, /^\$[0-9a-f]{4}$/);
     for (const name of ["a", "x", "y", "sp"]) assert.ok(Number.isInteger(registers[name]));
     assert.equal(Object.keys(registers.flags as object).sort().join(""), "bcdinvz");
 
     // A paused machine reports stopped with its pc, and a read keeps it stopped.
-    const paused = await tool(client, "c64_execution", { action: "pause" });
+    const paused = await toolResult(client, "c64_execution", { action: "pause" });
     assert.equal(paused.state, "stopped");
     assert.match(paused.pc as string, /^\$[0-9a-f]{4}$/);
-    await tool(client, "c64_memory_read", { address: "$e000", size: 1 });
-    assert.equal((await tool(client, "c64_registers", { action: "read" })).pc, paused.pc);
-    assert.deepEqual(await tool(client, "c64_execution", { action: "resume" }), { state: "running" });
+    await toolResult(client, "c64_memory_read", { address: "$e000", size: 1 });
+    assert.equal((await toolResult(client, "c64_registers", { action: "read" })).pc, paused.pc);
+    assert.deepEqual(await toolResult(client, "c64_execution", { action: "resume" }), { state: "running" });
     assert.equal(viceChildren(host.process.pid!).length, 1, "one MCP must own exactly one VICE");
   } finally {
     await client.close();
@@ -79,7 +70,7 @@ test("a stopped machine reports stopped with its pc, and reads keep it stopped",
 test("terminating the MCP process, even with SIGKILL, makes its VICE exit", { skip: liveSkip, timeout: 120_000 }, async () => {
   const host = await startHost();
   const { client, transport } = await startMcp(host.address);
-  await tool(client, "c64_memory_read", { address: "$e000", size: 1 });
+  await toolResult(client, "c64_memory_read", { address: "$e000", size: 1 });
   await waitFor(() => viceChildren(host.process.pid!).length === 1, "VICE start", 20_000);
   process.kill(transport.pid!, "SIGKILL");
   await waitFor(() => viceChildren(host.process.pid!).length === 0, "VICE exit after MCP SIGKILL", 20_000);
@@ -92,13 +83,13 @@ test("two MCP processes own two independent VICE processes", { skip: liveSkip, t
   const first = await startMcp(host.address);
   const second = await startMcp(host.address);
   try {
-    await tool(first.client, "c64_memory_read", { address: "$e000", size: 1 });
-    await tool(second.client, "c64_memory_read", { address: "$e000", size: 1 });
+    await toolResult(first.client, "c64_memory_read", { address: "$e000", size: 1 });
+    await toolResult(second.client, "c64_memory_read", { address: "$e000", size: 1 });
     await waitFor(() => viceChildren(host.process.pid!).length === 2, "two VICE processes", 20_000);
 
     await first.client.close();
     await waitFor(() => viceChildren(host.process.pid!).length === 1, "first VICE exit", 20_000);
-    const kernal = await tool(second.client, "c64_memory_read", { address: "$e000", size: 2 });
+    const kernal = await toolResult(second.client, "c64_memory_read", { address: "$e000", size: 2 });
     assert.equal(kernal.data, "8556", "the second session must survive the first one's end");
   } finally {
     await second.client.close();
@@ -110,7 +101,7 @@ test("two MCP processes own two independent VICE processes", { skip: liveSkip, t
 test("stopping the Host Runtime stops every VICE it started", { skip: liveSkip, timeout: 120_000 }, async () => {
   const host = await startHost();
   const mcps = [await startMcp(host.address), await startMcp(host.address)];
-  for (const { client } of mcps) await tool(client, "c64_memory_read", { address: "$e000", size: 1 });
+  for (const { client } of mcps) await toolResult(client, "c64_memory_read", { address: "$e000", size: 1 });
   const vicePids = viceChildren(host.process.pid!);
   assert.equal(vicePids.length, 2);
   await host.stop();

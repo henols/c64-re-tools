@@ -1,22 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { displayBody } from "./monitor-wire.testkit.ts";
 import { compareFrames, decodeDisplay, decodePalette, differenceImage, visibleFrame } from "./screen.ts";
-
-function displayBody(width: number, height: number, innerX: number, innerY: number, fill: (x: number, y: number) => number): Buffer {
-  const header = Buffer.alloc(4 + 13 + 4);
-  header.writeUInt32LE(13, 0);
-  header.writeUInt16LE(width, 4);
-  header.writeUInt16LE(height, 6);
-  header.writeUInt16LE(innerX, 8);
-  header.writeUInt16LE(innerY, 10);
-  header.writeUInt16LE(320, 12);
-  header.writeUInt16LE(200, 14);
-  header[16] = 8;
-  header.writeUInt32LE(width * height, 17);
-  const pixels = Buffer.alloc(width * height);
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) pixels[y * width + x] = fill(x, y);
-  return Buffer.concat([header, pixels]);
-}
 
 test("the visible PAL frame is the 384x272 bordered area of VICE's raster buffer", () => {
   // As VICE sends it: a 504x312 buffer, window at (136,51), border pixels from (104,15).
