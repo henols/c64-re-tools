@@ -6,6 +6,8 @@
 // writes the memory into the project. "loads" captures each part of a
 // multi-load program. No native unpack tool is used.
 
+import { basename, extname } from "node:path";
+
 import { type AddressRange, COVERAGE, EXECUTE, formatC64Address, formatC64Range, formatC64RangeFields, inRanges, parseC64Address } from "#src/c64.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { IO_RAM, markIoRamWrites, readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
@@ -15,11 +17,12 @@ import { readPrg } from "#src/host-client/image.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
 import { PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
+import { projectRelative } from "#src/project.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
 import { basicStart, inspect, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
 import { callReturn, captureSegments, droppedRanges, executedIn, mergeMaps, notExecutedUnderIo, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "./lib/stages.ts";
-import { entryStateFile, machineState, readyState, vectorsOf, writeCapture } from "./lib/machine.ts";
+import { capturedProgram, entryStateFile, machineState, readyState, vectorsOf, vicRam, writeCapture } from "./lib/machine.ts";
 
 /** Written-then-executed bytes from this many on are unpacking, decrypting or relocating, not self-changing code. */
 const UNPACKED_BYTES = 256;
@@ -558,7 +561,7 @@ async function capture(
     const used = options.range === undefined ? await usedAfter(client) : undefined;
     const found = used === undefined ? [options.range!] : captureSegments(followed.stages, registers.pc, { loaded: { start: load, end: Math.min(0xffff, load + bytes.length - 3) }, used });
     const segments = withoutRanges(found, options.exclude);
-    const underIo = used === undefined ? [] : notExecutedUnderIo(segments, used).map(formatC64RangeFields);
+    const underIo = used === undefined ? [] : notExecutedUnderIo(segments, used, vicRam(state.io, memory)).map(formatC64RangeFields);
     // The written ranges that the leftover rule took out of the segments. A --range takes no rule.
     const dropped = (options.range === undefined ? droppedRanges(followed.stages, registers.pc, [...found, ...options.exclude]) : []).map((range) => ({
       ...formatC64RangeFields(range),
@@ -568,12 +571,14 @@ async function capture(
     const vectors = vectorsOf(state, memory);
     // A clean machine at the READY prompt shows what the loader and the stages changed.
     const entry = entryStateFile(registers, state, vectors, await readyState(client));
+    const ran = capturedProgram(program);
     const { written, removed } = writeCapture(
       options.out,
       memory,
       segments,
       [],
       (files) => ({
+        ...(ran === undefined ? {} : { program: ran }),
         entry: formatC64Address(registers.pc),
         segments: segments.map((segment, index) => ({ ...formatC64RangeFields(segment), ...("writtenBy" in segment ? { writtenBy: segment.writtenBy } : {}), ...("loaded" in segment ? { loaded: true } : {}), file: files[index] })),
         ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(formatC64RangeFields) }),
@@ -635,8 +640,21 @@ const joined = (hints: Array<string | undefined>) => {
   const given = hints.filter((hint): hint is string => hint !== undefined);
   return given.length === 0 ? undefined : given.join(" ");
 };
-/** The folder that a capture writes when the agent follows the nextAction of stages. */
-const CAPTURE_OUT = ".c64-re-tools/local/capture";
+/**
+ * The folder that a capture writes when the agent follows the nextAction of
+ * stages: one for each program, by its path in the project without the
+ * extension, so programs with the same name in two folders get two folders.
+ * A program outside the project gets the folder of its file name.
+ */
+function captureOut(program: string): string {
+  let path: string;
+  try {
+    path = projectRelative(program);
+  } catch {
+    path = basename(program);
+  }
+  return `.c64-re-tools/local/capture/${path.slice(0, path.length - extname(path).length)}`;
+}
 
 /** inspect: the next step is a run of the program with trace. A program without a BASIC start needs --entry for it. */
 function inspected(call: Call) {
@@ -664,7 +682,7 @@ function staged(call: Call, { output, failed }: { output: Record<string, unknown
   const more = output.moreStages === true ? `The script followed only the first ${MAX_STAGES} stages. Give a larger --min-stage, so that small stages join.` : undefined;
   return reply(result, {
     hint: joined([more, `Disassemble the code at ${last}, the entry of the last stage. Make sure that it is the start of the program and not a second unpacker. Then capture at that address.`]),
-    nextAction: call.next("capture", call.subject(0), "--until", last, "--out", CAPTURE_OUT, ...sameStart(call)),
+    nextAction: call.next("capture", call.subject(0), "--until", last, "--out", captureOut(call.subject(0)), ...sameStart(call)),
   });
 }
 
@@ -727,7 +745,7 @@ const COMMANDS: CommandSpec[] = [
   },
   {
     name: "capture",
-    summary: "Runs the program until the CPU gets to --until after the steps, and writes into --out: image.bin (64 KiB of RAM), image.json (the entry, the segments that the stages wrote, the written ranges that it dropped, the vectors, the steps, the stages), a PRG for each segment, and entry_state.json.",
+    summary: "Runs the program until the CPU gets to --until after the steps, and writes into --out: image.bin (64 KiB of RAM), image.json (the program file and its SHA-256, the entry, the segments that the stages wrote, the written ranges that it dropped, the vectors, the steps, the stages), a PRG for each segment, and entry_state.json.",
     subjects: [PROGRAM],
     options: {
       until: { kind: "address", value: "<address>", required: true, help: "the unpacked entry point" },

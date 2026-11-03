@@ -1003,7 +1003,8 @@ function unswitchStep(db: DatabaseSync, change: Change, request: InSpace & { nam
  * A release. `rows` are the bytes of a release other than the base release,
  * as memoryRows gives them: the address of each row and its bytes as hex. The
  * base release has no bytes of its own: its bytes are the program. `file` and
- * `sha256` are the project file that the bytes come from and its SHA-256.
+ * `sha256` are the project file of the release and its SHA-256: the PRG that
+ * the bytes come from, or for a capture the program file that the capture ran.
  */
 type ReleaseRequest = InSpace & { label: string; base?: boolean; file?: string; sha256?: string; comment?: string; rows?: ReadonlyMap<number, string> };
 

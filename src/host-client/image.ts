@@ -20,6 +20,8 @@ export interface Image {
   state?: EntryState;
   /** The stages of the capture in image.json, as the unpacker wrote them. */
   stages?: Array<Record<string, unknown>>;
+  /** The PRG that the capture in image.json ran, as the project path that the capture got, and the SHA-256 of that file. */
+  program?: { file: string; sha256: string };
 }
 
 /** The kinds of media files that are no PRG, by extension. */
@@ -104,6 +106,11 @@ export function readImage(path: string): Image {
   if (state !== undefined) image.state = state;
   if (manifest.entry !== undefined) image.entry = address(manifest.entry, "entry");
   if (Array.isArray(manifest.stages)) image.stages = manifest.stages.map((stage, index) => (isObject(stage) ? stage : fail(`stage ${index + 1} is not an object`)));
+  if (manifest.program !== undefined) {
+    const program = isObject(manifest.program) ? manifest.program : fail("its program is not an object");
+    if (typeof program.file !== "string" || program.file === "" || typeof program.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(program.sha256)) fail("its program has no file and SHA-256");
+    image.program = { file: program.file as string, sha256: program.sha256 as string };
+  }
   return image;
 }
 

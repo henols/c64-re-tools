@@ -39,7 +39,7 @@ Commit the folder `.c64-re-tools/knowledge/` of the project with git.
 | Record the verdict of one comment of a check | `verdict 4711 '$2100' wrong --class callers --why 'JSR at $1f00 calls it too' --text 'Moves the player.'` |
 | Write all knowledge to one file | `export --out .c64-re-tools/local/knowledge.json` |
 | Find what the knowledge holds of the program | `program` |
-| Put a captured program into the knowledge | `image .c64-re-tools/local/capture/image.json` |
+| Put a captured program into the knowledge | `image .c64-re-tools/local/capture/releases/game/image.json` |
 | Put a PRG into the knowledge | `image releases/game.prg` |
 | Add the coverage of runs | `coverage .c64-re-tools/local/runs/rooms/room0.bin` |
 | Add the coverage of a recording | `coverage tests/recordings/walk` |
@@ -63,6 +63,7 @@ Commit the folder `.c64-re-tools/knowledge/` of the project with git.
 | Write a macro | `macro inc16 --params dst --body-file inc16.asm` |
 | Write instructions as one use of a macro | `use '$1005-$100a' inc16 --args ptr` |
 | Do many writes as one revision | `apply .c64-re-tools/local/batch.json` |
+| Check the batch of one agent | `join batch.json` |
 | Show the batches of parallel agents as one list of writes | `join a.json b.json` |
 | Write the batches of parallel agents as one revision | `join a.json b.json --apply` |
 | Read the history of an address or a name | `history '$2100'` |
@@ -235,7 +236,7 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 ### `releases`
 
 - `body.releases` lists the releases, the base release first. Each item has `label`, `base`, `define`, `file` and `sha256`. `define` is the assembler define that builds the release.
-- `file` is the path of the file of the release, and `sha256` is the SHA-256 of that file. Use them for the facts of a release, for example in a README. Do not calculate a SHA-256 yourself.
+- `file` is the path of the program file of the release, and `sha256` is the SHA-256 of that file. For a release from the `image.json` of a capture, this file is the program file that the capture ran. This file can hold packed bytes, or a disk with more parts. Use them for the facts of a release, for example in a README. Do not calculate a SHA-256 yourself.
 
 ### `macros`
 
@@ -402,7 +403,7 @@ An operand expression tells the generated source how to write the operand of one
 
 ### `release <label>`
 
-- `body.release` gives the release, with its `define`, `file` and `sha256`. `body.bytes` gives the number of bytes of the file.
+- `body.release` gives the release, with its `define`, `file` and `sha256`. `body.bytes` gives the number of bytes of the release.
 - See "Releases" of `<skill>/references/source-knowledge.md`.
 
 ### `unrelease <label>`
@@ -474,6 +475,7 @@ An operand expression tells the generated source how to write the operand of one
 ### `join <batch>...`
 
 - `join` joins the batches of agents that name the program at the same time. See "Batches of parallel agents" of `<skill>/references/batches.md`.
+- `join` also takes one batch. Then `writes` shows the writes of that batch, and `join` checks the batch as it checks more batches.
 - Without `--apply`, `join` writes no knowledge. `body` holds `writes`, `repeated` and `choices`. `writes` lists the joined writes. `choices` lists each place where the batches gave different values, with the value that stays.
 - Examine `choices` and `writes`. `nextAction` is the same `join` with `--apply`. Run it when the choices agree with your task.
 - With `--apply`, `join` writes the joined writes as one revision, or nothing when the knowledge refuses one write. Then `body` holds `revision`, `writes`, `replaced`, `repeated` and `choices`, as for `apply`.

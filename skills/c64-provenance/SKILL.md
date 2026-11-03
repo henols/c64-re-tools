@@ -45,7 +45,7 @@ To get the command list, run the script with no arguments.
 
 - `compare` takes two or more releases. A release is one of these:
   - `knowledge`: the program in the project knowledge.
-  - The label of a release in the project knowledge, for example `V2`. The base release is the program in the project knowledge. For another release, the project knowledge keeps only its bytes. Thus `--frames` cannot start it. To run that release, give its file. A label that is not a release gets error `not-found`, with the labels of the releases.
+  - The label of a release in the project knowledge, for example `V2`. The base release is the program in the project knowledge. For another release, the project knowledge keeps only its bytes. Thus `--frames` cannot start it. To run that release, give its PRG when the PRG holds the bytes of the release. Else, give the `image.json` of a capture of the release. The error tells you which file to give. A label that is not a release gets error `not-found`, with the labels of the releases.
   - A PRG file. The script puts it at its load address.
   - The `image.json` of a capture folder. Keep all files of the capture folder together. Without them, `--frames` cannot start the release.
 - Get a PRG out of a disk image before you compare it. The script refuses a disk image, a tape image and a cartridge image.
@@ -125,7 +125,7 @@ With `--shift`, the addresses of `segments`, `common` and `differences` are the 
 With `--frames`, the body also holds:
 
 - `runtime` in each difference: one item for each release that started, by the number of the release. `start` and `end` are the addresses in the release, without the shift.
-  - `first`: the first access in that release: `read`, `write`, `execute` or `none`. An instruction that reads and then writes the same byte, for example INC, counts as `read`. The operand bytes of an executed instruction count as `execute`, for example the `$03` of `LDA #$03`.
+  - `first`: the first access in that release: `read`, `write`, `execute` or `none`. An instruction that reads and then writes the same byte, for example INC, counts as `read`. A store counts as `write`, also an indexed store that first makes a dummy read of the byte, for example `STA ($06),Y`. The operand bytes of an executed instruction count as `execute`, for example the `$03` of `LDA #$03`. During a `press` step, no access stops the run. Thus a range that the program reads and writes during a `press` step counts as `read`.
   - `changed`: `true` when the bytes at the end of the run are not the bytes of the release.
 - `run`: `frames`, `steps` and `releases`. `releases` tells for each release, by its number, if it started, or the `reason` that it did not start. `skipped` tells that the releases have no differences, so no release ran.
 

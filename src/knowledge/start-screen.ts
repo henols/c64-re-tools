@@ -3,7 +3,7 @@
 // the colour RAM of the capture gives the colours. Thus the start screen of a
 // stage needs no address from the user.
 
-import { d018Offsets, formatC64Byte, vicBankBase } from "../c64.ts";
+import { formatC64Byte, vicScreenMemory } from "../c64.ts";
 import { Refusal } from "../errors.ts";
 import { LEFTOVERS_SWITCH, START_SCREEN_SWITCH, type StartScreenMode } from "./schema.ts";
 
@@ -70,18 +70,15 @@ function vicScreen(state: Record<string, unknown> | undefined, named: Named): Om
   const vic = ioBytes(state, "vic");
   const cia2 = ioBytes(state, "cia2");
   if (state === undefined || vic === undefined || vic.length < 0x2f || cia2 === undefined) throw new Refusal("not-found", `${named.program} has no entry state with the VIC-II and CIA 2. ${named.again}`);
-  const [d011, d016, d018] = [vic[0x11]!, vic[0x16]!, vic[0x18]!];
+  const [d011, d016] = [vic[0x11]!, vic[0x16]!];
   if ((d011 & 0x10) === 0) throw new Refusal("invalid-input", `${named.capture} has the display off ($d011 = ${formatC64Byte(d011)}). ${named.again}`);
   if ((d011 & 0x40) !== 0) throw new Refusal("invalid-input", `${named.capture} shows a screen in the extended colour mode, which a start screen does not have.`);
   const bitmap = (d011 & 0x20) !== 0;
   const multicolour = (d016 & 0x10) !== 0;
   if (!bitmap && multicolour) throw new Refusal("invalid-input", `${named.capture} shows a multicolour text screen, which a start screen does not have.`);
-  const bank = vicBankBase(cia2[0]!, cia2[2]);
-  const offsets = d018Offsets(d018);
   return {
     mode: bitmap ? (multicolour ? "multicolour" : "hires") : "text",
-    screen: bank + offsets.screen,
-    ...(bitmap ? { bitmap: bank + offsets.bitmap } : { charset: bank + offsets.characters }),
+    ...vicScreenMemory(vic, cia2),
     border: vic[0x20]! & 0x0f,
     background: vic[0x21]! & 0x0f,
   };

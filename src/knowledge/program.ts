@@ -281,19 +281,28 @@ export function coverageAccess(db: DatabaseSync | undefined, space: Space = DEFA
   };
 }
 
-/** The bytes of memory rows in address order, in 64 KiB, and the ranges that they fill: rows that touch are one range. */
+/** The bytes of memory rows in 64 KiB, and the ranges that they fill: rows that touch are one range (mergeRanges). */
 function rowsImage(rows: ReadonlyArray<{ address: number; bytes: string }>): { segments: AddressRange[]; memory: Uint8Array } {
   const memory = new Uint8Array(SIZE);
-  const segments: AddressRange[] = [];
-  for (const row of rows) {
+  const ranges = rows.map((row) => {
     const bytes = Buffer.from(row.bytes, "hex");
     memory.set(bytes, row.address);
-    const end = row.address + bytes.length - 1;
-    const last = segments.at(-1);
-    if (last !== undefined && last.end + 1 === row.address) last.end = end;
-    else segments.push({ start: row.address, end });
-  }
-  return { segments, memory };
+    return { start: row.address, end: row.address + bytes.length - 1 };
+  });
+  return { segments: mergeRanges(ranges), memory };
+}
+
+/**
+ * True when an image holds the program of the knowledge: the same ranges and
+ * the same byte at each address. The knowledge keeps segments that touch as
+ * one range (rowsImage), so the segments of the image are joined in the same
+ * way before the compare.
+ */
+export function isProgram(program: Pick<ProgramImage, "segments" | "byteAt">, image: Pick<ProgramImage, "segments" | "byteAt">): boolean {
+  return JSON.stringify(mergeRanges(image.segments)) === JSON.stringify(program.segments) && program.segments.every((segment) => {
+    for (let address = segment.start; address <= segment.end; address++) if (program.byteAt(address) !== image.byteAt(address)) return false;
+    return true;
+  });
 }
 
 /** The program of a space, or undefined when the knowledge has no bytes for it. */
@@ -310,6 +319,11 @@ export function programImage(db: DatabaseSync | undefined, space: Space = DEFAUL
     if (entry.stages !== null) image.stages = JSON.parse(entry.stages) as Array<Record<string, unknown>>;
   }
   return image;
+}
+
+/** The entry of the program of a space, without its bytes; undefined when the knowledge has none. */
+export function programEntry(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): number | undefined {
+  return (db?.prepare("SELECT address FROM current_entries WHERE space = ?").get(space) as { address: number } | undefined)?.address;
 }
 
 /** The program of a space for a tool; refused with the way to put it in when the knowledge has none. */

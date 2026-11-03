@@ -5,6 +5,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,7 +26,7 @@ import { selfOverwritingPrg } from "../../fixtures/prg/self-overwriting.ts";
 import { stagedPrg } from "../../fixtures/prg/staged.ts";
 import { xorPackedPrg } from "../../fixtures/prg/xor-packed.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
-import { readEnvelope } from "../../kit.ts";
+import { readEnvelope, type ScriptEnvelope } from "../../kit.ts";
 
 const script = resolve(import.meta.dirname, "../../../skills/c64-unpacker/scripts/unpacker.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-unpack-"));
@@ -44,7 +45,7 @@ after(async () => {
 /** The written blocks from $0400 on: the KERNAL writes variables in pages 0-3 while a stage runs, and wrote lists each block. */
 const fromScreen = (wrote: Array<{ start: string; end: string }>) => wrote.filter((block) => Number.parseInt(block.start.slice(1), 16) >= 0x0400);
 
-async function unpack(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
+async function unpack(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown>; envelope: ScriptEnvelope }> {
   if (server === undefined) {
     const supervisor = new ProcessSupervisor();
     supervisor.installExitGuard();
@@ -54,7 +55,8 @@ async function unpack(...args: string[]): Promise<{ status: number | null; json:
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];
-  return { status, json: readEnvelope(stdout, status).json as Record<string, unknown> };
+  const { envelope, json } = readEnvelope(stdout, status);
+  return { status, json: json as Record<string, unknown>, envelope };
 }
 
 test("a capture at the unpacked entry gives the original program back", { skip: liveSkip, timeout: 180_000 }, async () => {
@@ -194,8 +196,9 @@ test("stage 0 starts at the program also when the first step is no frames step: 
 });
 
 test("stages finds each stage of a staged release and where the next one starts", { skip: liveSkip, timeout: 300_000 }, async () => {
-  const { status, json } = await unpack("stages", "staged.prg", "--steps", "press-key.json", "--frames", "400");
+  const { status, json, envelope } = await unpack("stages", "staged.prg", "--steps", "press-key.json", "--frames", "400");
   assert.equal(status, 0, JSON.stringify(json));
+  assert.match(envelope.nextAction!, / capture staged\.prg .*--out \.c64-re-tools\/local\/capture\/staged /, "a capture folder of its own for each program");
   const found = json.stages as Array<{ stage: number; entry: string; next?: string; wrote: Array<{ start: string; end: string }> }>;
   assert.deepEqual(
     found.map((stage) => [stage.entry, stage.next]),
@@ -229,6 +232,7 @@ test("a capture at the last stage writes the image, its segments and the entry s
   const { status, json } = await unpack("capture", "staged.prg", "--until", "$4000", "--out", "unpacked/staged", "--steps", "press-key.json", "--timeout-frames", "400");
   assert.equal(status, 0, JSON.stringify(json));
   const image = JSON.parse(readFileSync(join(project, "unpacked", "staged", "image.json"), "utf8")) as Record<string, unknown>;
+  assert.deepEqual(image.program, { file: "staged.prg", sha256: createHash("sha256").update(stagedPrg).digest("hex") }, "the PRG that the capture ran");
   assert.equal(image.entry, "$4000");
   // Stage 1's own code at $c000 is loader code: only the program that it wrote is a segment.
   assert.deepEqual(image.segments, [{ start: "$4000", end: "$407f", writtenBy: 1, file: "segment-4000-407f.prg" }]);

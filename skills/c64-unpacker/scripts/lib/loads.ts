@@ -15,7 +15,7 @@ import { isObject } from "#src/host-client/tools.ts";
 import { knowledgeAt } from "#src/knowledge/names.ts";
 import { readProjectFile, readProjectJson, writeReported } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
-import { entryStateFile, machineState, readyState, vectorsOf, writeCapture } from "./machine.ts";
+import { capturedProgram, entryStateFile, machineState, readyState, vectorsOf, writeCapture } from "./machine.ts";
 import { FIRST_SEGMENT_ADDRESS } from "./stages.ts";
 
 
@@ -105,11 +105,13 @@ export function captureBlocks(before: Uint8Array, after: Uint8Array, map: Uint8A
 
 /**
  * Runs the program and its steps. Each capture step writes <out>/<name>/:
- * image.bin, image.json, entry_state.json, a PRG for each segment, and with
- * `drive` the drive RAM as drive8.prg. Blocks below `minBlock` bytes are
- * counted, not written: a game changes its variables all the time.
+ * image.bin, image.json with the program file that it ran, entry_state.json,
+ * a PRG for each segment, and with `drive` the drive RAM as drive8.prg.
+ * Blocks below `minBlock` bytes are counted, not written: a game changes its
+ * variables all the time.
  */
 export async function loads(program: string, options: { out: string; steps: LoadStep[]; drive: boolean; minBlock: number; exclude: AddressRange[] }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
+  const ran = capturedProgram(program);
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
     // A clean machine at the READY prompt shows what the program changed at each capture. The run goes on after a capture, so it is read first.
@@ -202,6 +204,7 @@ export async function loads(program: string, options: { out: string; steps: Load
         other,
         (files) => ({
           capture: step.capture,
+          ...(ran === undefined ? {} : { program: ran }),
           entry: formatC64Address(registers.pc),
           segments: segments.map((segment, at) => ({ ...formatC64RangeFields(segment), file: files[at] })),
           ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(formatC64RangeFields) }),

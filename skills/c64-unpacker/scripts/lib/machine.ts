@@ -5,11 +5,13 @@
 import { readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-import { type AddressRange, formatC64Address, hexWord, prgOf } from "#src/c64.ts";
+import { type AddressRange, formatC64Address, hexWord, prgOf, spriteData, spritePointer, vicScreenMemory } from "#src/c64.ts";
 import { resetToReady } from "#src/host-client/entry-state.ts";
-import { writeRefusal, writeReported, type Written } from "#src/host-client/transfer.ts";
+import { readProjectFile, writeRefusal, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
-import { projectRoot, resolveProjectPath } from "#src/project.ts";
+import { startScreenRanges } from "#src/knowledge/read.ts";
+import { sha256 } from "#src/knowledge/text.ts";
+import { projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 
 type Registers = Awaited<ReturnType<ViceSessionClient["registersGet"]>>;
 
@@ -45,6 +47,41 @@ export async function machineState(client: ViceSessionClient): Promise<MachineSt
   const [cia1, cia2] = (await client.cia("both")).chips.map(({ latchA, latchB, interruptMask }) => ({ latchA, latchB, interruptMask }));
   const romVectors = Buffer.from((await client.memoryRead({ address: 0xfffa, size: 6, space: "c64", view: "cpu" })).data, "hex");
   return { port, pages, io, cia: { cia1: cia1!, cia2: cia2! }, romVectors };
+}
+
+/**
+ * The RAM that the VIC-II shows in a machine state, from the VIC-II and CIA 2
+ * of `io`: the screen, the bitmap in bitmap mode or else the charset when it
+ * is RAM (startScreenRanges), and for each sprite that $d015 enables its
+ * pointer at the end of the screen and its 64 data bytes in `memory`. The
+ * VIC-II always reads RAM, also under the I/O area.
+ */
+export function vicRam(io: { vic: Uint8Array; cia2: Uint8Array }, memory: Uint8Array): AddressRange[] {
+  const shown = vicScreenMemory(io.vic, io.cia2);
+  const ranges = startScreenRanges(shown).map((part) => part.range);
+  for (let sprite = 0; sprite < 8; sprite++) {
+    if ((io.vic[0x15]! & (1 << sprite)) === 0) continue;
+    const pointer = spritePointer(shown.screen, sprite);
+    const data = spriteData(io.cia2, memory[pointer]!);
+    ranges.push({ start: pointer, end: pointer }, { start: data, end: data + 63 });
+  }
+  return ranges;
+}
+
+/**
+ * The program file that a capture ran, for its image.json: the path in the
+ * project in one spelling, and the SHA-256 of the file. A release of the
+ * capture cites them, because git ignores the capture in local/. A file
+ * outside the project gives undefined: then a release cites the image.json.
+ */
+export function capturedProgram(path: string): { file: string; sha256: string } | undefined {
+  let file: string;
+  try {
+    file = projectRelative(path);
+  } catch {
+    return undefined;
+  }
+  return { file, sha256: sha256(readProjectFile(path).bytes) };
 }
 
 const word = (bytes: Buffer, offset: number) => formatC64Address(bytes[offset]! | (bytes[offset + 1]! << 8));

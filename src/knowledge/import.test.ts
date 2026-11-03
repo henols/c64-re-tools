@@ -451,9 +451,11 @@ test("a JMP table is code, and dual-use bytes conflict with no finding", () => {
   const db = fresh();
   classifyRegion(db, { origin: "llm" }, { start: 0x0500, end: 0x0508, type: "jumps" });
   classifyRegion(db, { origin: "llm" }, { start: 0x0408, end: 0x0409, type: "dual-use" });
+  renameSymbol(db, { origin: "llm" }, { address: 0x0408, name: "frame_count", kind: "variable" });
   const result = importFindings(
     db,
     findings("decompiler", 0x0400, 0x05ff, {
+      symbols: [{ address: 0x0408, name: "FUN_0408", kind: "routine" }],
       regions: [
         { start: 0x0400, end: 0x04ff, type: "code" },
         { start: 0x0500, end: 0x0508, type: "bytes" },
@@ -461,9 +463,9 @@ test("a JMP table is code, and dual-use bytes conflict with no finding", () => {
     }),
   );
   assert.deepEqual(
-    result.conflicts.map((conflict) => (conflict.category === "region" ? [conflict.start, conflict.end, conflict.current.type] : [])),
+    result.conflicts.map((conflict) => (conflict.category === "region" ? [conflict.start, conflict.end, conflict.current.type] : [conflict.category])),
     [[0x0500, 0x0508, "jumps"]],
-    "data over a JMP table conflicts; code over dual-use bytes does not",
+    "data over a JMP table conflicts; code over dual-use bytes and a routine at a variable in them do not",
   );
 });
 

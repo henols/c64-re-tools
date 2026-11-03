@@ -107,6 +107,11 @@ export function accessedValue(opcode: number, before: { a: number; x: number; y:
   }
 }
 
+/** True for a store, documented or undocumented: it writes its operand address and uses no byte there. An indexed store also makes a dummy read there first. */
+export function isStore(opcode: number): boolean {
+  return WRITES.has(OPCODES[opcode]!.mnemonic);
+}
+
 /** The use of the operand address of an instruction that takes an address. Through (zp),y and (zp,x) the address is a pointer. */
 export function useKind(opcode: number): UseKind {
   const { mnemonic, mode } = OPCODES[opcode]!;

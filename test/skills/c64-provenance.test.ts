@@ -7,11 +7,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { COVERAGE, formatC64Address } from "../../src/c64.ts";
+import { COVERAGE, formatC64Address, prgOf } from "../../src/c64.ts";
 import { align, compareReleases, identicalShare, shiftSuggestion, suggestShifts } from "../../skills/c64-provenance/scripts/lib/compare.ts";
 import { withWrite } from "../../src/knowledge/database.ts";
 import { separate } from "../../src/knowledge/separate.ts";
 import { memoryRows } from "../../src/knowledge/program.ts";
+import { sha256 } from "../../src/knowledge/text.ts";
 import { classifyRegion, setRelease } from "../../src/knowledge/write.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
 import { importCoverage, importImage } from "../fixtures/program.ts";
@@ -220,7 +221,9 @@ test("compare takes the label of a release in the knowledge: the base release is
   importImage(root, memory, { segments: [segment], entry: 0x0810 });
   withWrite((db) => {
     setRelease(db, { origin: "user" }, { label: "ORIGINAL", base: true });
-    setRelease(db, { origin: "user" }, { label: "CRACK", file: "releases/crack.prg", rows: memoryRows([segment], (address) => crackA[address - 0x0801]!) });
+    setRelease(db, { origin: "user" }, { label: "CRACK", file: "releases/crack.prg", sha256: sha256(prgOf(0x0801, crackA)), rows: memoryRows([segment], (address) => crackA[address - 0x0801]!) });
+    // A release from a capture: its file is the packed PRG that the capture ran, with other bytes.
+    setRelease(db, { origin: "user" }, { label: "PACKED", file: "releases/packed.prg", sha256: sha256("packed"), rows: memoryRows([segment], (address) => crackA[address - 0x0801]!) });
   }, root);
   // Neither release can start, so no emulator starts and no host is needed.
   const run = provenance(["compare", "ORIGINAL", "CRACK", "--frames", "10"], root, { ...process.env, C64RT_HOST: "127.0.0.1:1" });
@@ -229,11 +232,13 @@ test("compare takes the label of a release in the knowledge: the base release is
   assert.deepEqual(result.releases.map((release) => [release.name, release.segments]), [["ORIGINAL", [{ start: "$0801", end: "$1000" }]], ["CRACK", [{ start: "$0801", end: "$1000" }]]]);
   assert.deepEqual(result.differences.map((difference) => [difference.start, difference.end, difference.groups]), [["$0900", "$0902", [[1], [2]]]]);
   assert.match(result.run.releases["1"]!.reason, /^The knowledge has no entry state/);
-  assert.match(result.run.releases["2"]!.reason, /^The knowledge keeps only the bytes of the release CRACK.* releases\/crack\.prg /);
+  assert.match(result.run.releases["2"]!.reason, /^The knowledge keeps only the bytes of the release CRACK, not its entry state\. To run the release, give its file releases\/crack\.prg in place of CRACK\.$/);
+  const packed = provenance(["compare", "ORIGINAL", "PACKED", "--frames", "10"], root, { ...process.env, C64RT_HOST: "127.0.0.1:1" });
+  assert.match((packed.json as typeof result).run.releases["2"]!.reason, /To run the release, capture the unpacked program of releases\/packed\.prg with its entry state, and give the image\.json of that capture in place of PACKED\.$/);
   const missing = provenance(["compare", "ORIGINAL", "TBC"], root);
   assert.equal(missing.status, 2, missing.stdout);
   assert.equal(missing.json.error.code, "not-found");
-  assert.match(missing.json.error.message, /^There is no release TBC in the project knowledge\. The releases of the knowledge are ORIGINAL, CRACK\./);
+  assert.match(missing.json.error.message, /^There is no release TBC in the project knowledge\. The releases of the knowledge are ORIGINAL, CRACK, PACKED\./);
 });
 
 test("compare refuses an unknown name in the steps before an emulator starts", () => {
