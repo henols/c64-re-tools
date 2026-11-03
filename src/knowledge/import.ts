@@ -183,7 +183,8 @@ function ownNames(db: DatabaseSync, analyzer: Analyzer, range: AddressRange, spa
  * one for each analyzer at an address, and never to symbols. A run replaces
  * the analyzer's own names in its coverage. A name that the user or the LLM
  * gave the address already is not kept twice. A code or data kind that
- * disagrees with the name of the address is a conflict.
+ * disagrees with the name of the address is a conflict, except on dual-use
+ * bytes: they are code at one time and data at another.
  */
 function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
@@ -206,9 +207,10 @@ function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindi
       else replaced.add(own.address);
     }
   }
+  const dualUse = (address: number) => regionsOverlapping(db, address, address, space).some((row) => row.type === "dual-use");
   for (const finding of findings.symbols) {
     const current = symbolAt(db, finding.address, space);
-    if (current !== undefined && isCode(current.kind) !== isCode(finding.kind)) {
+    if (current !== undefined && isCode(current.kind) !== isCode(finding.kind) && !dualUse(finding.address)) {
       result.conflicts.push({ category: "symbol", address: finding.address, reason: "kind", current, finding: { name: finding.name, kind: finding.kind } });
     }
     if (settled.has(finding.address)) continue;
