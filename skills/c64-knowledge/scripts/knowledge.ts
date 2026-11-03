@@ -18,7 +18,7 @@ import { OPERAND_SELECTS, operandText, type OperandSelect } from "#src/knowledge
 import { historyAt, historyNamed, historyOfMacro, historyOfSwitch, revision, revisionCounts, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { addCoverage, coverageAccess, coverageRangeCounts, memoryRows, operandImages as programImages, programCoverage, programImage, releaseCode, requireProgram, setImage, type ImageRequest, type ProgramImage } from "#src/knowledge/program.ts";
+import { addCoverage, coverageAccess, coverageRangeCounts, entryMemory, memoryRows, operandImages as programImages, programCoverage, programImage, releaseCode, requireProgram, setImage, type ImageRequest, type ProgramImage } from "#src/knowledge/program.ts";
 import { coloursOfCapture, startScreenOfCapture, startScreenOfStage } from "#src/knowledge/start-screen.ts";
 import {
   at,
@@ -315,12 +315,13 @@ function byAddress<T extends { address: number }>(rows: readonly T[]): Map<numbe
 
 /**
  * The lookups of a listing of a range: the program and the coverage in the knowledge, the knowledge of the space and the platform names of the ROMs that the program uses.
+ * The lines show `memory`, the bytes that the analyzers read (entryMemory); a target outside the segments is named as c64-source names it.
  * The rows of the range are read once: a listing asks for each line.
  */
-function listingSource(db: DatabaseSync | undefined, image: ProgramImage, range: AddressRange): ListingSource {
+function listingSource(db: DatabaseSync | undefined, image: ProgramImage, memory: Pick<ProgramImage, "segments" | "byteAt">, range: AddressRange): ListingSource {
   const space = image.space;
   const coverage = programCoverage(db, space)?.map;
-  const byteAt = programBytes(image);
+  const byteAt = programBytes(memory);
   const platform = programPlatform(space, coverage, image.state);
   const entries = platform.filter((entry) => entry.end > entry.address);
   const secondNames = byAddress(listAnalyzerNames(db, range, undefined, undefined, space));
@@ -335,7 +336,7 @@ function listingSource(db: DatabaseSync | undefined, image: ProgramImage, range:
   }
   return {
     byteAt,
-    entryStart: (at) => (byteAt(at) !== undefined ? undefined : entries.find((entry) => at > entry.address && at <= entry.end)?.address),
+    entryStart: (at) => (inRanges(image.segments, at) ? undefined : entries.find((entry) => at > entry.address && at <= entry.end)?.address),
     ...namesOf(db, space, platform),
     ...(space === DEFAULT_SPACE ? { io: IO_RAM } : {}),
     secondNames: (at) => (secondNames.get(at) ?? []).map((row) => row.name),
@@ -848,12 +849,14 @@ const READ_COMMANDS: CommandSpec[] = [
     (db, call) => {
       const range = call.parseRange(call.subject(0), "<range>");
       const image = requireProgram(db, call.space);
-      const lines = listingLines(listing(listingSource(db, image, range), range.start, range.end, { code: call.flag("code") }));
+      const memory = entryMemory(image);
+      const lines = listingLines(listing(listingSource(db, image, memory, range), range.start, range.end, { code: call.flag("code") }));
       const out = call.string("out");
       const body = out !== undefined ? { lines: lines.length, ...writeReported(out, lines.map((line) => `${line}\n`).join(""), { what: "--out" }) } : { lines: list(call, lines, (line) => line, "a larger --max-listed, a smaller <range>, or --out <file> for all lines") };
-      // A range outside the program has no lines: the hint names the segments that have them.
-      if (image.segments.some((segment) => rangesOverlap(segment, range))) return body;
-      return reply(body, { hint: `The range ${formatC64Range(range)} is outside the program. The program has bytes only in ${image.segments.map(formatC64Range).join(", ")}. Give a range in one of them.` });
+      // A range outside the program has no lines: the hint names the ranges that have them.
+      if (memory.segments.some((part) => rangesOverlap(part, range))) return body;
+      const held = `${memory.segments.map(formatC64Range).join(", ")}${image.state === undefined ? "" : " (the segments, and $0002-$03ff of the entry state)"}`;
+      return reply(body, { hint: `The range ${formatC64Range(range)} is outside the program. The program has bytes only in ${held}. Give a range in one of them.` });
     },
   ),
 ];
