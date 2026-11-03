@@ -96,6 +96,15 @@ export async function watchRelease(
     points.set(index, ids);
   }
   await client.memmap({ action: "clear" });
+  /** Switches each point that has not settled on or off. */
+  const switchPoints = async (action: "enable" | "disable") => {
+    for (const ids of points.values()) {
+      for (const point of ids) {
+        if (point.kind === "watch") await client.watchpoint({ action, id: point.id });
+        else await client.breakpoint({ action, id: point.id });
+      }
+    }
+  };
 
   /**
    * After a stop: the ranges that the coverage shows accessed get their first
@@ -103,7 +112,9 @@ export async function watchRelease(
    * executed instruction, so an instruction that starts up to two bytes before
    * a range, or in it, executes its operand bytes too. A stop at a watchpoint
    * comes after the instruction that made the access, so at a stop (`atPoint`)
-   * the last entry of the CPU history is that instruction.
+   * the last entry of the CPU history is that instruction. Each stop settles
+   * before the run goes on, so the flags of a range that has not settled are
+   * of the accesses since the last stop.
    */
   const settle = async (atPoint = true): Promise<boolean> => {
     const map = await readCoverage(client);
@@ -141,7 +152,9 @@ export async function watchRelease(
     while (left > 0 && guard-- > 0) {
       const ran = await client.execution({ action: "advance-frames", count: left, space: "c64" });
       left -= ran.advancedFrames ?? left;
-      if (left > 0 && !(await settle())) left--;
+      // A stop at a point settles, also in the last frame.
+      const settled = ran.stopReason === "watchpoint" || ran.stopReason === "breakpoint" ? await settle() : false;
+      if (left > 0 && !settled) left--;
     }
   };
   const at = knowledgeAt();
@@ -159,6 +172,15 @@ export async function watchRelease(
       }
       continue;
     }
+    if ("press" in step) {
+      // A stop at a point ends the taps early and lets the keys go: the points are off for the taps, and the coverage of the taps gives the first access.
+      await switchPoints("disable");
+      await runActionStep(client, step, at);
+      await switchPoints("enable");
+      await settle(false);
+      continue;
+    }
+    // The other steps do not run the CPU.
     await runActionStep(client, step, at);
   }
   await runFrames(run.frames);
