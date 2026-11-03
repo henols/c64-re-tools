@@ -540,16 +540,17 @@ export interface RecordOutcome {
   coverageFrom?: { tick: number; pc: number };
   /** Why the session did not complete (a runUntil that did not reach its target). */
   reason?: string;
-  /** With an entry: why a rebuild with a loader cannot replay the recording (eventBeforeEntry). */
-  beforeEntry?: string;
+  /** With an entry: why a rebuild with a loader cannot replay the recording, as replay finds it on the reference. */
+  loaderProblem?: string;
 }
 
 /**
  * Plays the steps of a record file in the replay core and records the session.
  * `input` runs after the steps, with `restore` for a RESTORE press of the play;
  * a reason that it gives means no recording. With `entry`, the entry of the
- * program where the loader of a rebuild jumps to, the outcome tells which event
- * ran before the program came to it, as replay finds it on the reference.
+ * program where the loader of a rebuild jumps to, the outcome tells when the
+ * program did not come to it, or which event ran before it came to it, as
+ * replay finds it on the reference.
  */
 export async function record(
   core: C64RunSession,
@@ -654,7 +655,12 @@ export async function record(
   };
   if (input !== undefined && reason === undefined) reason = await input(core, restore);
   const came = await mark?.end();
-  const beforeEntry = came === undefined ? undefined : eventBeforeEntry(events, came.eventsBefore, entry!);
+  const loaderProblem =
+    entry === undefined
+      ? undefined
+      : came === undefined
+        ? `the program did not come to its entry ${formatC64Address(entry)} in the session, where the loader of a rebuild jumps. Make the session go on until the program runs from its entry`
+        : eventBeforeEntry(events, came.eventsBefore, entry);
   const end = await core.status("status");
   const sites = (await core.command("sites")).split(" ").slice(2).map((entry): RecordedSite => {
     const [where, reads, kind] = entry.split(":");
@@ -684,7 +690,7 @@ export async function record(
     coverage: readFileSync(coverage),
     ...(from === null ? {} : { coverageFrom: { tick: Number(from[1]), pc: Number.parseInt(from[2]!, 16) } }),
     ...(reason === undefined ? {} : { reason }),
-    ...(beforeEntry === undefined ? {} : { beforeEntry }),
+    ...(loaderProblem === undefined ? {} : { loaderProblem }),
   };
 }
 

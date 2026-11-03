@@ -84,9 +84,10 @@ test("the coverage of a record file starts at the first input read, at the progr
 /**
  * A stand-in replay core for record: it answers each command with the machine
  * state, writes the files that record and coverage name, logs the commands,
- * and answers coverage status with `from`. A mark comes at the second marked.
+ * and answers coverage status with `from`. A mark comes at the second marked,
+ * or with `marks` false never.
  */
-function recordingCore(name: string, from: string): { path: string; log: string } {
+function recordingCore(name: string, from: string, marks = true): { path: string; log: string } {
   const path = join(project, name);
   const log = join(project, `${name}.log`);
   const state = "ok tick=982800 sync=1 pc=1aed a=00 x=00 y=00 s=fd p=16 line=0 cycle=7 hash=0123abcd";
@@ -101,7 +102,7 @@ function recordingCore(name: string, from: string): { path: string; log: string 
       '    inputs|joy|key|write) echo "ok" ;;',
       '    record) [ "$rest" = off ] || : > "$rest"; echo "ok" ;;',
       '    sites) echo "ok unknown=0" ;;',
-      `    marked) if [ -e ${log}.marked ]; then echo "ok tick=990000 phase=00"; else : > ${log}.marked; echo "ok none"; fi ;;`,
+      `    marked) if [ ${marks} = true ] && [ -e ${log}.marked ]; then echo "ok tick=990000 phase=00"; else : > ${log}.marked; echo "ok none"; fi ;;`,
       '    coverage) case "$rest" in',
       `        status) echo "${from}" ;;`,
       '        on*|off) echo "ok" ;;',
@@ -307,19 +308,28 @@ test("a record file names itself and the step of a key that the replay core does
   assert.equal(message("umlaut.json", { ...valid, steps: [{ frames: 10 }, { press: { keys: "ä" } }] }), 'record file umlaut.json: step 2: press.keys: the C64 keyboard has no key "ä"');
 });
 
-test("record gives the hint of replay when an event ran before the program came to the entry of the knowledge, where the loader of a rebuild jumps", { skip: process.platform === "win32" ? "the stand-in replay core is a shell script" : false }, () => {
+test("record gives the hint of replay when an event ran before the program came to the entry of the knowledge, where the loader of a rebuild jumps, or when the program did not come to it", { skip: process.platform === "win32" ? "the stand-in replay core is a shell script" : false }, () => {
   writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
+  writeFileSync(join(project, "build-names.json"), JSON.stringify({ start: "$0400" }));
   importImage(project, new Uint8Array(0x10000), { segments: [{ start: 0x0400, end: 0x04ff }], entry: 0x0400 });
+  const record = (name: string, symbols: string, marks: boolean) => {
+    const core = recordingCore(`c64run-${name}`, "ok from tick=982800 pc=1aed", marks);
+    const run = spawnSync(process.execPath, [...process.execArgv, resolve(home, "skills/c64-testing/scripts/testing.ts"), "record", file(`${name}.json`, { name, program: "game.prg", symbols, steps: [{ write: { address: "$c000", data: "01" } }, { frames: 10 }] }), "--out", `tests/recordings/${name}`], {
+      cwd: project,
+      encoding: "utf8",
+      env: { ...process.env, C64RT_C64RUN: core.path },
+    });
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+    const { envelope, json } = readEnvelope(run.stdout, run.status);
+    assert.equal((json as { result: string }).result, "PASS", "the recording replays on the reference");
+    return { hint: envelope.hint ?? "", marked: readFileSync(core.log, "utf8").split("\n").includes("mark 0400") };
+  };
   // The crack screen of SAEGER waits for a key through the KERNAL: an event before the entry $0400.
-  const core = recordingCore("c64run-early", "ok from tick=982800 pc=1aed");
-  const run = spawnSync(process.execPath, [...process.execArgv, resolve(home, "skills/c64-testing/scripts/testing.ts"), "record", file("early.json", { name: "early", program: "game.prg", symbols: "none", steps: [{ write: { address: "$c000", data: "01" } }, { frames: 10 }] }), "--out", "tests/recordings/early"], {
-    cwd: project,
-    encoding: "utf8",
-    env: { ...process.env, C64RT_C64RUN: core.path },
-  });
-  assert.equal(run.status, 0, run.stdout + run.stderr);
-  const { envelope, json } = readEnvelope(run.stdout, run.status);
-  assert.equal((json as { result: string }).result, "PASS", "the recording replays on the reference");
-  assert.ok(readFileSync(core.log, "utf8").split("\n").includes("mark 0400"));
-  assert.ok(envelope.hint?.startsWith("step 1 ran before the program came to its entry $0400. A rebuild with a loader has no point for it."), envelope.hint);
+  const early = record("early", "none", true);
+  assert.ok(early.marked && early.hint.startsWith("step 1 ran before the program came to its entry $0400. A rebuild with a loader has no point for it."), early.hint);
+  const never = record("never", "knowledge", false);
+  assert.ok(never.marked && never.hint.startsWith("the program did not come to its entry $0400 in the session, where the loader of a rebuild jumps."), never.hint);
+  // The names of a build: replay finds the entry of the loader in the reference by them, not by the names of the knowledge.
+  const build = record("build", "build-names.json", true);
+  assert.ok(!build.marked && !build.hint.includes("entry $0400"), build.hint);
 });

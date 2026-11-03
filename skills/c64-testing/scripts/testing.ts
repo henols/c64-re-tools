@@ -17,7 +17,7 @@ import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { changedEvidence } from "#src/knowledge/evidence.ts";
-import { programImage } from "#src/knowledge/program.ts";
+import { programEntry } from "#src/knowledge/program.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { RECORDING_FILES } from "#src/knowledge/recording-files.ts";
 import { LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot } from "#src/project.ts";
@@ -96,8 +96,10 @@ async function recordCommand(call: Call): Promise<Reply> {
           return play(session, { httpPort, joystick, ready, restore });
         }
       : undefined;
-    // The loader of a rebuild jumps to the entry of the program in the knowledge. As in replay, a recording with load true has no loader entry.
-    const outcome = await record(core, file, workspace, person, file.load ? undefined : programImage(db)?.entry);
+    // The loader of a rebuild jumps to the entry of the program in the knowledge. replay finds it in the reference by the names of the
+    // knowledge, also for symbols none. With the names of a build, or with load true (no loader entry), record marks no entry.
+    const namedAsKnowledge = file.symbols === "knowledge" || file.symbols === "none";
+    const outcome = await record(core, file, workspace, person, file.load || !namedAsKnowledge ? undefined : programEntry(db));
     const summary = {
       name: file.name,
       frames: Math.round(outcome.recording.ticks / PAL_FRAME_CYCLES),
@@ -130,7 +132,7 @@ async function recordCommand(call: Call): Promise<Reply> {
       ...(evidence.some((change) => change.file !== map) ? [" For each other file in evidence, examine the facts of its revisions against the new recording."] : []),
     ].join("");
     // The recording replays on the reference and on a rebuild without a loader: the event before the entry is no refusal.
-    const loader = outcome.beforeEntry === undefined ? "" : `${outcome.beforeEntry}, then record again. Until then, the recording replays on the reference and on a rebuild without a loader, not on a rebuild with a loader. `;
+    const loader = outcome.loaderProblem === undefined ? "" : `${outcome.loaderProblem}, then record again. Until then, the recording replays on the reference and on a rebuild without a loader, not on a rebuild with a loader. `;
     return reply(
       { result: "PASS", recorded: true, out, ...summary, files, ...(evidence.length === 0 ? {} : { evidence }) },
       { hint: `${loader}${keep}${recordFile}${cited} ${summary.coverageFrom === null ? "The coverage did not start: the map is empty." : "The map has no marks for the code that ran before coverageFrom."} To make sure that the recording replays, run nextAction.`, nextAction: call.next("replay", out) },
