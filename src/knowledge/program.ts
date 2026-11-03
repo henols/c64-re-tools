@@ -341,21 +341,26 @@ const STATE_PAGES = ["$0000", "$0100", "$0200", "$0300"] as const;
  * The memory that the program has at its entry: the segments, and below them
  * $0002-$03ff of the entry state (the zero page, the stack and the system
  * pages hold code and data that the loader left). $0000 and $0001 are the
- * CPU port, not memory. A segment byte wins over a state byte.
+ * CPU port, not memory. A segment byte wins over a state byte. `segments`
+ * are the ranges that hold these bytes, and `fromState` the ranges of the
+ * state pages in them: none when the state has no page. The analyzers read
+ * this memory, and the listing of the knowledge shows it.
  */
-function entryMemory(image: ProgramImage): Uint8Array {
+export function entryMemory(image: ProgramImage): Pick<ProgramImage, "segments" | "memory" | "byteAt"> & { fromState: AddressRange[] } {
   const memory = new Uint8Array(image.memory);
+  const fromState: AddressRange[] = [];
   const pages = image.state?.pages;
-  if (typeof pages !== "object" || pages === null) return memory;
   STATE_PAGES.forEach((page, index) => {
-    const hex = (pages as Record<string, unknown>)[page];
+    const hex = typeof pages === "object" && pages !== null ? (pages as Record<string, unknown>)[page] : undefined;
     if (typeof hex !== "string" || !/^(?:[0-9a-fA-F]{2}){1,256}$/.test(hex)) return;
-    Buffer.from(hex, "hex").forEach((byte, offset) => {
+    const bytes = Buffer.from(hex, "hex");
+    bytes.forEach((byte, offset) => {
       const address = index * 0x100 + offset;
       if (address >= 2 && !inRanges(image.segments, address)) memory[address] = byte;
     });
+    if (index * 0x100 + bytes.length > 2) fromState.push({ start: Math.max(index * 0x100, 2), end: index * 0x100 + bytes.length - 1 });
   });
-  return memory;
+  return { segments: mergeRanges([...image.segments, ...fromState]), fromState: mergeRanges(fromState), memory, byteAt: (address) => memory[address]! };
 }
 
 /**
@@ -368,7 +373,7 @@ export function analyzedBytes(image: ProgramImage): { bytes: Buffer; kind: "prg"
     const [segment] = image.segments;
     return { bytes: prgOf(segment!.start, image.memory.subarray(segment!.start, segment!.end + 1)), kind: "prg" };
   }
-  return { bytes: Buffer.from(entryMemory(image)), kind: "flat64k" };
+  return { bytes: Buffer.from(entryMemory(image).memory), kind: "flat64k" };
 }
 
 /**

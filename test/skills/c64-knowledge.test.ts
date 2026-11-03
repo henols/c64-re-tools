@@ -499,6 +499,44 @@ test("listing names only the platform of the ROMs that the program uses, and a r
   assert.equal(knowledge(root, "listing", "$1000-$1006").envelope.hint, undefined);
 });
 
+test("listing shows the bytes of the entry state at $0002-$03ff as the analyzers read them, and the hint names them", () => {
+  const root = project();
+  // The segment: $c000 JSR $0080 / RTS. The entry state: $0080 LDA $90 / RTS, and $07 at $0090.
+  const capture = join(root, ".c64-re-tools", "local", "capture");
+  mkdirSync(capture, { recursive: true });
+  const memory = Buffer.alloc(0x10000);
+  memory.set([0x20, 0x80, 0x00, 0x60], 0xc000);
+  writeFileSync(join(capture, "image.bin"), memory);
+  writeFileSync(join(capture, "image.json"), JSON.stringify({ entry: "$c000", segments: [{ start: "$c000", end: "$c003" }], image: "image.bin" }));
+  const zeroPage = Buffer.alloc(0x100);
+  zeroPage.set([0xa5, 0x90, 0x60], 0x80);
+  zeroPage[0x90] = 0x07;
+  const pages = { $0000: zeroPage.toString("hex"), $0100: "00".repeat(256), $0200: "00".repeat(256), $0300: "00".repeat(256) };
+  writeFileSync(join(capture, "entry_state.json"), JSON.stringify({ registers: { pc: "$c000", a: 0, x: 0, y: 0, sp: 0xf6, flags: { i: true } }, cpuPort: { $00: 0x2f, $01: 0x37 }, pages, differsFromReset: [] }));
+  assert.equal(knowledge(root, "image", ".c64-re-tools/local/capture/image.json").status, 0);
+  writeFileSync(
+    join(root, "batch.json"),
+    JSON.stringify([
+      { op: "rename", address: "$0080", name: "read_frames", kind: "routine" },
+      { op: "rename", address: "$0090", name: "frame_count", kind: "data" },
+      { op: "classify", start: "$0080", end: "$0082", type: "code" },
+      { op: "comment", address: "$0080", placement: "side", text: "Reads the frame count." },
+    ]),
+  );
+  assert.equal(knowledge(root, "apply", "batch.json").status, 0);
+  const coverage = new Uint8Array(0x10000);
+  coverage[0x0080] = COVERAGE.ramExecute;
+  writeFileSync(join(root, "run.bin"), coverage);
+  assert.equal(knowledge(root, "coverage", "run.bin").status, 0);
+  const listed = knowledge(root, "listing", "$0080-$0082");
+  assert.deepEqual(items<string>(listed.json.lines), ["$0080  a5 90  x  read_frames: lda frame_count  ; Reads the frame count.", "$0082  60  -  rts"]);
+  assert.equal(listed.envelope.hint, undefined);
+  assert.equal(
+    knowledge(root, "listing", "$0400-$04ff").envelope.hint,
+    "The range $0400-$04ff is outside the program. The program has bytes only in $0002-$03ff, $c000-$c003 (the segments, and $0002-$03ff of the entry state). Give a range in one of them.",
+  );
+});
+
 test("listing writes a table of words or addresses as its values with the names of the targets, as c64-source does", () => {
   // $2000: addresses of $3000 (room_a) and $3010; $2004: an RTS table, split, of $3100 (handler) and $3200; $2008: words with an odd last byte.
   const table = [0x00, 0x30, 0x10, 0x30, 0xff, 0xff, 0x30, 0x31, 0x34, 0x12, 0x56];

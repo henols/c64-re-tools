@@ -1658,6 +1658,16 @@ test("an operand inside a named table without its own name is the table's name p
   assert.match(text, /^room_colours\n {8}!byte \$00,\$01,\$02,\$03,\$04,\$05,\$06,\$07\n/m);
 });
 
+test("a named table that starts outside the image is a constant, and an operand inside the image is its name plus the offset", () => {
+  // $1000-$1001 the end of a table frame_count at $0ff0-$1001, which starts outside the image (found on Bruce Lee); $1002 LDA $1001 / RTS.
+  const bytes = [0x07, 0x08, 0xad, 0x01, 0x10, 0x60];
+  const instructions = new Map([[0x1002, 3], [0x1005, 1]]);
+  const laid = layout(input(bytes, 0x1000, { instructions, symbols: [{ address: 0x0ff0, name: "frame_count" }], regions: [{ start: 0x0ff0, end: 0x1001, type: "bytes" }] }));
+  const rendered = render(laid, new Set(), []);
+  assert.match(textOf(rendered, "segments/segment_1000.asm"), / {8}lda frame_count\+17\n/);
+  assert.equal(textOf(rendered, "constants.asm"), CONSTANTS + "frame_count = $0ff0 ; Used: read 1.\n");
+});
+
 test("an immediate stored to a register with a decoder gets the decoded value as a side comment; a knowledge side comment wins", () => {
   // $1000 LDA #$1b / STA $d011 / LDX #$15 / STX $d018 / LDA #$00 / STA $d020 (no decoder)
   const bytes = [0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0xa2, 0x15, 0x8e, 0x18, 0xd0, 0xa9, 0x00, 0x8d, 0x20, 0xd0];

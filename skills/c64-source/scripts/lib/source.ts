@@ -438,7 +438,9 @@ export function layout(input: SourceInput): Layout {
   const use = (address: number, kind: UseKind) => {
     if (inImage(address)) {
       const table = tableStart(address);
-      wanted.add(table ?? address);
+      // A table that starts outside the image is a constant: a label there has no line.
+      if (table !== undefined && !inImage(table)) count(table, kind);
+      else wanted.add(table ?? address);
       if (table !== undefined) insideEntry.set(address, table);
     } else if (symbols.has(address) || platform.has(address)) count(address, kind);
     else {

@@ -8,7 +8,7 @@ import { Refusal } from "../errors.ts";
 import { COVERAGE } from "../c64.ts";
 import { indexPath, openForRead, textPath, withWrite } from "./database.ts";
 import { coverageRuns, listSpaces } from "./read.ts";
-import { addCoverage, analyzedBytes, coverageAccess, isProgram, memoryRows, programCoverage, programImage, releaseCode, setImage, type ImageRequest } from "./program.ts";
+import { addCoverage, analyzedBytes, coverageAccess, entryMemory, isProgram, memoryRows, programCoverage, programImage, releaseCode, setImage, type ImageRequest } from "./program.ts";
 import { revision as revisionChanges } from "./history.ts";
 import { revert, setRelease } from "./write.ts";
 
@@ -119,7 +119,15 @@ test("analyzed bytes hold the entry-state pages below the segments, without the 
   const page3 = "ab".repeat(0x100);
   const state = { registers: { pc: "$0400" }, pages: { $0000: zeroPage, $0100: "00".repeat(0x100), $0200: "00".repeat(0x100), $0300: page3 } };
   withWrite((db) => setImage(db, llm, image([{ start: 0x03ff, end: 0x0410 }], 0, { entry: 0x0400, state })), root);
-  const { bytes, kind } = analyzedBytes(fromText(root).image!);
+  const program = fromText(root).image!;
+  const { bytes, kind } = analyzedBytes(program);
+  assert.deepEqual(entryMemory(program).segments, [{ start: 0x0002, end: 0x0410 }], "the memory with bytes: the state pages from $0002, joined with the segment");
+  assert.deepEqual(entryMemory(program).fromState, [{ start: 0x0002, end: 0x03ff }]);
+  // An entry state without pages, or with page hex that is not hex, adds no memory.
+  for (const pages of [undefined, { $0000: "zz" }]) {
+    const noPages = { ...fromText(root).image!, state: { registers: { pc: "$0400" }, ...(pages === undefined ? {} : { pages }) } };
+    assert.deepEqual([entryMemory(noPages).segments, entryMemory(noPages).fromState], [[{ start: 0x03ff, end: 0x0410 }], []]);
+  }
   assert.equal(kind, "flat64k");
   assert.equal(bytes[0x0080], 0x60, "the RTS of the entry state");
   assert.deepEqual([bytes[0x0000], bytes[0x0001]], [0, 0], "the CPU port is no memory");
