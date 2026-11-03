@@ -8,8 +8,9 @@
 // count while each target is a plausible instruction in the program.
 // The knowledge of the user and the LLM wins: an idiom gives no region, no
 // reference and no entry point where their region has another type or a
-// removal holds the bytes, and a table ends where their region ends. A $2c in
-// an instruction that a run executed is an operand, not a BIT.
+// removal holds the bytes, and a table ends where their region ends. A BIT
+// skip hides a 2-byte instruction in its operand bytes. A $2c in an
+// instruction that a run executed is an operand, not a BIT.
 
 import { COVERAGE, instructionLength, type ReferenceKind } from "#src/c64.ts";
 import type { NormalizedFindings } from "#src/knowledge/import.ts";
@@ -210,7 +211,7 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
     at += 3 * run - 1;
   }
 
-  // BIT skips: BIT abs ($2c) whose operand bytes are an instruction that a JMP, a JSR or the coverage enters.
+  // BIT skips: BIT abs ($2c) whose operand bytes are a 2-byte instruction that a JMP, a JSR or the coverage enters.
   // A $2c in an executed instruction is its operand; the BIT is code and its operand bytes are dual-use.
   const entered = new Set<number>();
   for (let at = range.start; at + 2 <= range.end; at++) {
@@ -218,7 +219,7 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
   }
   if (coverage !== undefined) for (let address = range.start; address <= range.end; address++) if ((coverage[address]! & COVERAGE.ramExecute) !== 0) entered.add(address);
   for (let at = range.start; at + 2 <= range.end; at++) {
-    if (byteAt(at) !== 0x2c || !entered.has(at + 1) || !plausible(byteAt, at + 1, range) || inExecutedOperand(at)) continue;
+    if (byteAt(at) !== 0x2c || !entered.has(at + 1) || !plausible(byteAt, at + 1, range) || instructionLength(byteAt(at + 1)!) !== 2 || inExecutedOperand(at)) continue;
     if (!fits(at, at, "code") || !fits(at + 1, at + 2, "dual-use")) continue;
     if (!addRegions("bit-skip", [{ start: at + 1, end: at + 2, type: "dual-use" }])) continue;
     counts.bitSkips++;

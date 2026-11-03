@@ -111,6 +111,14 @@ test("a $2c in an instruction that a run executed is its operand, not a BIT skip
   assert.deepEqual(findIdioms(byteAt, RANGE, covered(skip)).findings.regions, [{ start: 0x1802, end: 0x1803, type: "dual-use" }]);
 });
 
+test("a BIT skip hides a 2-byte instruction: a $2c before a 3-byte instruction is no BIT skip", () => {
+  // $1800: LDA #$00 / BEQ $1806 / LDA #$2c / STA $8c2a: the runs enter $1806 through the branch and never execute $1804.
+  const { byteAt } = image({ 0x1800: [0xa9, 0x00, 0xf0, 0x02, 0xa9, 0x2c, 0x8d, 0x2a, 0x8c] });
+  const run = new Uint8Array(0x10000);
+  run[0x1800] = run[0x1802] = run[0x1806] = COVERAGE.ramExecute;
+  assert.equal(findIdioms(byteAt, RANGE, covered(run)).counts.bitSkips, 0);
+});
+
 test("the regions and the removals of the user and the LLM win over the idioms", () => {
   const nothingRemoved = { removedRegions: [], removedReference: () => false };
   // A code region of the LLM over a BIT skip: no dual-use region, no reference, and no entry point at the operand.
