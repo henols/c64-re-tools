@@ -216,16 +216,19 @@ export function droppedRanges(stages: Stages, entry: number, kept: readonly Addr
 }
 
 /**
- * The segments in the RAM under the I/O area in which the program executed
- * no code after its entry. The map gives a read there as an I/O read, so only
- * code that ran shows that the program uses that RAM.
+ * The parts of the segments in the RAM under the I/O area in which the
+ * program executed no code after its entry, without `shown`, the RAM that
+ * the VIC-II shows (vicRam). The map gives a read there as an I/O read, so
+ * only code that ran shows that the program uses that RAM. The VIC-II reads
+ * the RAM there, so a screen there is in use.
  */
-export function notExecutedUnderIo<T extends AddressRange>(segments: readonly T[], used: (address: number) => boolean): T[] {
-  return segments.filter((segment) => {
+export function notExecutedUnderIo<T extends AddressRange>(segments: readonly T[], used: (address: number) => boolean, shown: readonly AddressRange[]): T[] {
+  const notExecuted = segments.filter((segment) => {
     if (ioSide(segment.start) !== 1 || ioSide(segment.end) !== 1) return false;
     for (let address = segment.start; address <= segment.end; address++) if (used(address)) return false;
     return true;
   });
+  return withoutRanges(notExecuted, shown);
 }
 
 /** For each address, the last stage that wrote it, or -1. */

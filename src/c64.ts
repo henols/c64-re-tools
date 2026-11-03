@@ -194,6 +194,17 @@ export function d018Offsets(d018: number): { screen: number; characters: number;
 }
 
 /**
+ * The screen memory that the VIC-II reads, from its registers ($d000-$d02e)
+ * and the ports of CIA 2 ($dd00-$dd0f): the screen, and the bitmap in bitmap
+ * mode or else the charset.
+ */
+export function vicScreenMemory(vic: Uint8Array, cia2: Uint8Array): { screen: number; bitmap: number } | { screen: number; charset: number } {
+  const bank = vicBankBase(cia2[0]!, cia2[2]);
+  const offsets = d018Offsets(vic[0x18]!);
+  return { screen: bank + offsets.screen, ...((vic[0x11]! & 0x20) !== 0 ? { bitmap: bank + offsets.bitmap } : { charset: bank + offsets.characters }) };
+}
+
+/**
  * Converts text to the PETSCII bytes the C64 keyboard types after a reset
  * (upper case/graphics mode). Letters of either case type the unshifted key,
  * which shows as an upper-case letter. "\n" and "\r\n" type RETURN.

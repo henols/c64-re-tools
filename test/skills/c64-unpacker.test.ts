@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { inspect, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/lib/evidence.ts";
-import { removeStaleFiles } from "../../skills/c64-unpacker/scripts/lib/machine.ts";
+import { removeStaleFiles, vicRam } from "../../skills/c64-unpacker/scripts/lib/machine.ts";
 import { callReturn, captureSegments, droppedRanges, executedIn, notExecutedUnderIo, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
 import { COVERAGE } from "../../src/c64.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
@@ -323,8 +323,13 @@ test("a part of a leftover that the program uses after its entry is a segment; a
     { start: 0xd000, end: 0xdfff, writtenBy: 2 },
     { start: 0xe000, end: 0xffff, writtenBy: 2 },
   ]);
-  // No code ran in the RAM under the I/O area, and the map cannot show a read there: the capture names that segment.
-  assert.deepEqual(notExecutedUnderIo(segments, used), [{ start: 0xd000, end: 0xdfff, writtenBy: 2 }]);
+  // No code ran in the RAM under the I/O area, and the map cannot show a read there: the capture names that segment,
+  // without the screen at $dc00 that the VIC-II shows.
+  assert.deepEqual(notExecutedUnderIo(segments, used, [range(0xdc00, 0xdfe7), range(0xe000, 0xff3f)]), [
+    { start: 0xd000, end: 0xdbff, writtenBy: 2 },
+    { start: 0xdfe8, end: 0xdfff, writtenBy: 2 },
+  ]);
+  assert.deepEqual(notExecutedUnderIo(segments, used, [range(0xd000, 0xdfff)]), [], "a segment that the VIC-II shows all of");
   // Code at $c300 that the decruncher wrote and the program runs: the bytes of the decruncher there are a segment, the relocator at $c000 is not.
   map[0xc300] = COVERAGE.ramExecute;
   map[0xd100] = COVERAGE.ioExecute;
@@ -334,7 +339,28 @@ test("a part of a leftover that the program uses after its entry is a segment; a
     { start: 0xd000, end: 0xdfff, writtenBy: 2 },
     { start: 0xe000, end: 0xffff, writtenBy: 2 },
   ]);
-  assert.deepEqual(notExecutedUnderIo(segments, usedAfterEntry(map)), [], "code that ran under the I/O area shows that the program uses it");
+  assert.deepEqual(notExecutedUnderIo(segments, usedAfterEntry(map), []), [], "code that ran under the I/O area shows that the program uses it");
+});
+
+test("the RAM that the VIC-II shows is its screen, its bitmap or its charset in RAM, and the pointer and the data of each sprite that is on", () => {
+  /** The VIC-II registers and CIA 2 with the values of each register in `set`. */
+  const io = (set: Record<number, number>, dd00: number) => {
+    const vic = new Uint8Array(0x2f);
+    for (const [register, value] of Object.entries(set)) vic[Number(register)] = value;
+    return { vic, cia2: Uint8Array.from([dd00, 0xff, 0x3f, 0x00]) };
+  };
+  const memory = new Uint8Array(0x10000);
+  // The TBC loading stage of Bruce Lee: VIC bank 3, a hires bitmap at $e000 and its screen at $dc00, no sprite.
+  const loading = io({ 0x11: 0x3b, 0x18: 0x79 }, 0xc0);
+  assert.deepEqual(vicRam(loading, memory), [range(0xdc00, 0xdfe7), range(0xe000, 0xff3f)]);
+  // Sprites 0 and 7 on: each pointer at the end of the screen gives 64 data bytes in the bank.
+  memory[0xdff8] = 0x10;
+  memory[0xdfff] = 0x80;
+  loading.vic[0x15] = 0x81;
+  assert.deepEqual(vicRam(loading, memory).slice(2), [range(0xdff8, 0xdff8), range(0xc400, 0xc43f), range(0xdfff, 0xdfff), range(0xe000, 0xe03f)]);
+  // A text screen: the charset in RAM is shown, the character ROM at $1000-$1fff of VIC bank 0 is not RAM.
+  assert.deepEqual(vicRam(io({ 0x11: 0x1b, 0x18: 0x1c }, 0x97), memory), [range(0x0400, 0x07e7), range(0x3000, 0x37ff)]);
+  assert.deepEqual(vicRam(io({ 0x11: 0x1b, 0x18: 0x14 }, 0x97), memory), [range(0x0400, 0x07e7)]);
 });
 
 test("a capture entry that no stage wrote is in the loaded bytes: the range of the PRG is a segment, joined with the blocks that it touches", () => {

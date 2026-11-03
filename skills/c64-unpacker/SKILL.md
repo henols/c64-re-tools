@@ -193,7 +193,7 @@ Traps:
 - `captured`: true when the CPU got to `--until`. `pc` is that address.
 - `files`: each file that the command wrote, as `{out, bytes, sha256}`. `removed` names the segment files of an earlier capture that the new `image.json` does not list.
 - `segments` and `excluded`: the ranges of the segment files, and the ranges that `--exclude` removed. `loaded: true` marks a segment with the bytes that the program loaded.
-- `notExecutedUnderIo`: the segments in the RAM under the I/O area in which the program executed no code in the 250 frames after the entry. The memory map shows a read of this RAM as an I/O read. Thus the script cannot tell if the program reads these bytes. When no segment is of this type, or with `--range`, the body has no `notExecutedUnderIo`.
+- `notExecutedUnderIo`: parts of the segments in the RAM under the I/O area. In these segments, the program executed no code in the 250 frames after the entry. The memory map shows a read of this RAM as an I/O read. Thus the script cannot tell if the program reads these bytes. The VIC-II always reads RAM, also under the I/O area. Thus the parts do not hold the RAM that the VIC-II shows at the entry. This RAM is the screen, the bitmap or the charset, and the pointer and the data of each sprite that is on. When no part is of this type, or with `--range`, the body has no `notExecutedUnderIo`.
 - `dropped`: the ranges from `$0400` that the stages wrote and that no segment holds. The ranges of `excluded` are not in `dropped`. Each range is in a block that is not a segment because it holds the entry of a later stage. `writtenBy` is the last stage that wrote the range. `stageEntry` is the entry of the later stage. When the capture dropped no byte, or with `--range`, the body has no `dropped`.
 - `stages`: one item for each stage, as `stages` gives it.
 - `differsFromReset`: the count of bytes that are not as a clean C64 has them at READY.
@@ -219,7 +219,7 @@ If no stage wrote the capture entry, the program runs as it loaded. Then the ran
 
 A capture into a folder with an earlier capture removes only the segment files that the new `image.json` does not list. It keeps all other files.
 
-On `PASS`, `hint` tells you to disassemble the code at `pc`, and then to put `<out>/image.json` into the project knowledge. When the body has `dropped`, `hint` also gives the count of dropped bytes. When the body has `notExecutedUnderIo`, `hint` also names these segments.
+On `PASS`, `hint` tells you to disassemble the code at `pc`, and then to put `<out>/image.json` into the project knowledge. When the body has `dropped`, `hint` also gives the count of dropped bytes. When the body has `notExecutedUnderIo`, `hint` also names these parts.
 
 Traps:
 

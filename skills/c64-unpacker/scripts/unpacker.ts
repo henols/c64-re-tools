@@ -22,7 +22,7 @@ import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandS
 import { basicStart, inspect, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
 import { callReturn, captureSegments, droppedRanges, executedIn, mergeMaps, notExecutedUnderIo, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "./lib/stages.ts";
-import { entryStateFile, machineState, readyState, vectorsOf, writeCapture } from "./lib/machine.ts";
+import { entryStateFile, machineState, readyState, vectorsOf, vicRam, writeCapture } from "./lib/machine.ts";
 
 /** Written-then-executed bytes from this many on are unpacking, decrypting or relocating, not self-changing code. */
 const UNPACKED_BYTES = 256;
@@ -561,7 +561,7 @@ async function capture(
     const used = options.range === undefined ? await usedAfter(client) : undefined;
     const found = used === undefined ? [options.range!] : captureSegments(followed.stages, registers.pc, { loaded: { start: load, end: Math.min(0xffff, load + bytes.length - 3) }, used });
     const segments = withoutRanges(found, options.exclude);
-    const underIo = used === undefined ? [] : notExecutedUnderIo(segments, used).map(formatC64RangeFields);
+    const underIo = used === undefined ? [] : notExecutedUnderIo(segments, used, vicRam(state.io, memory)).map(formatC64RangeFields);
     // The written ranges that the leftover rule took out of the segments. A --range takes no rule.
     const dropped = (options.range === undefined ? droppedRanges(followed.stages, registers.pc, [...found, ...options.exclude]) : []).map((range) => ({
       ...formatC64RangeFields(range),

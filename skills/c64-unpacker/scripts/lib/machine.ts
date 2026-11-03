@@ -5,10 +5,11 @@
 import { readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-import { type AddressRange, formatC64Address, hexWord, prgOf } from "#src/c64.ts";
+import { type AddressRange, formatC64Address, hexWord, prgOf, vicBankBase, vicScreenMemory } from "#src/c64.ts";
 import { resetToReady } from "#src/host-client/entry-state.ts";
 import { writeRefusal, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { startScreenRanges } from "#src/knowledge/read.ts";
 import { projectRoot, resolveProjectPath } from "#src/project.ts";
 
 type Registers = Awaited<ReturnType<ViceSessionClient["registersGet"]>>;
@@ -45,6 +46,26 @@ export async function machineState(client: ViceSessionClient): Promise<MachineSt
   const [cia1, cia2] = (await client.cia("both")).chips.map(({ latchA, latchB, interruptMask }) => ({ latchA, latchB, interruptMask }));
   const romVectors = Buffer.from((await client.memoryRead({ address: 0xfffa, size: 6, space: "c64", view: "cpu" })).data, "hex");
   return { port, pages, io, cia: { cia1: cia1!, cia2: cia2! }, romVectors };
+}
+
+/**
+ * The RAM that the VIC-II shows in a machine state, from the VIC-II and CIA 2
+ * of `io`: the screen, the bitmap in bitmap mode or else the charset when it
+ * is RAM (startScreenRanges), and for each sprite that $d015 enables its
+ * pointer at the end of the screen and its 64 data bytes in `memory`. The
+ * VIC-II always reads RAM, also under the I/O area.
+ */
+export function vicRam(io: { vic: Uint8Array; cia2: Uint8Array }, memory: Uint8Array): AddressRange[] {
+  const shown = vicScreenMemory(io.vic, io.cia2);
+  const ranges = startScreenRanges(shown).map((part) => part.range);
+  const bank = vicBankBase(io.cia2[0]!, io.cia2[2]);
+  for (let sprite = 0; sprite < 8; sprite++) {
+    if ((io.vic[0x15]! & (1 << sprite)) === 0) continue;
+    const pointer = shown.screen + 0x3f8 + sprite;
+    const data = bank + memory[pointer]! * 64;
+    ranges.push({ start: pointer, end: pointer }, { start: data, end: data + 63 });
+  }
+  return ranges;
 }
 
 const word = (bytes: Buffer, offset: number) => formatC64Address(bytes[offset]! | (bytes[offset + 1]! << 8));
