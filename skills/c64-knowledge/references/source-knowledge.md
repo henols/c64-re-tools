@@ -7,7 +7,7 @@ This file gives the rules of the releases, the switches, the patches, the macros
 A release is one version of the program, for example the original or a crack. Record each release with `release <label> --file <file>`.
 
 - A label is upper case, for example `FIRESTAR`, `TBC` or `V2`.
-- `--file` is a PRG or the `image.json` of a capture. The project knowledge keeps the bytes of the release, and the path and the SHA-256 of the PRG. For an `image.json`, the bytes come from the capture, and the PRG is the file that the capture ran. After the write, the project does not need the file. A file can stay in `.c64-re-tools/local/`.
+- `--file` is a PRG or the `image.json` of a capture. The project knowledge keeps the bytes of the release, and the path and the SHA-256 of the program file. For an `image.json`, the bytes come from the capture, and the program file is the file that the capture ran. After the write, the project does not need the file. A file can stay in `.c64-re-tools/local/`.
 - The base release is the release whose bytes are the program of the knowledge. Record it with `--base`. The script refuses `--base` when the segments or the bytes of the file are not the program.
 - A space has one base release. Record the base release before the first switch.
 - To change the bytes of a release, record the release again with its new file.

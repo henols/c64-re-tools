@@ -16,13 +16,13 @@ import { WireFailure } from "#src/host-client/tools.ts";
 import { readPrg } from "#src/host-client/image.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
-import { sha256 } from "#src/knowledge/text.ts";
 import { PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
+import { projectRelative } from "#src/project.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
 import { basicStart, inspect, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
 import { callReturn, captureSegments, droppedRanges, executedIn, mergeMaps, notExecutedUnderIo, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "./lib/stages.ts";
-import { entryStateFile, machineState, readyState, vectorsOf, vicRam, writeCapture } from "./lib/machine.ts";
+import { capturedProgram, entryStateFile, machineState, readyState, vectorsOf, vicRam, writeCapture } from "./lib/machine.ts";
 
 /** Written-then-executed bytes from this many on are unpacking, decrypting or relocating, not self-changing code. */
 const UNPACKED_BYTES = 256;
@@ -571,14 +571,14 @@ async function capture(
     const vectors = vectorsOf(state, memory);
     // A clean machine at the READY prompt shows what the loader and the stages changed.
     const entry = entryStateFile(registers, state, vectors, await readyState(client));
+    const ran = capturedProgram(program);
     const { written, removed } = writeCapture(
       options.out,
       memory,
       segments,
       [],
       (files) => ({
-        // The PRG that the capture ran: a release of the capture cites it, as git ignores the capture in local/.
-        program: { file: program, sha256: sha256(bytes) },
+        ...(ran === undefined ? {} : { program: ran }),
         entry: formatC64Address(registers.pc),
         segments: segments.map((segment, index) => ({ ...formatC64RangeFields(segment), ...("writtenBy" in segment ? { writtenBy: segment.writtenBy } : {}), ...("loaded" in segment ? { loaded: true } : {}), file: files[index] })),
         ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(formatC64RangeFields) }),
@@ -640,8 +640,21 @@ const joined = (hints: Array<string | undefined>) => {
   const given = hints.filter((hint): hint is string => hint !== undefined);
   return given.length === 0 ? undefined : given.join(" ");
 };
-/** The folder that a capture writes when the agent follows the nextAction of stages: one for each program, by its file name without the extension. */
-const captureOut = (program: string) => `.c64-re-tools/local/capture/${basename(program, extname(program))}`;
+/**
+ * The folder that a capture writes when the agent follows the nextAction of
+ * stages: one for each program, by its path in the project without the
+ * extension, so programs with the same name in two folders get two folders.
+ * A program outside the project gets the folder of its file name.
+ */
+function captureOut(program: string): string {
+  let path: string;
+  try {
+    path = projectRelative(program);
+  } catch {
+    path = basename(program);
+  }
+  return `.c64-re-tools/local/capture/${path.slice(0, path.length - extname(path).length)}`;
+}
 
 /** inspect: the next step is a run of the program with trace. A program without a BASIC start needs --entry for it. */
 function inspected(call: Call) {

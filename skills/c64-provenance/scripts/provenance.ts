@@ -11,7 +11,7 @@
 import { basename } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
-import { type AddressRange, c64AddressOf, formatC64Address, formatC64Byte, formatC64Range, formatC64RangeFields, parseC64Address } from "#src/c64.ts";
+import { type AddressRange, c64AddressOf, formatC64Address, formatC64Byte, formatC64Range, formatC64RangeFields, parseC64Address, prgOf } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState, type EntryState } from "#src/host-client/entry-state.ts";
 import { readImage } from "#src/host-client/image.ts";
@@ -44,6 +44,7 @@ import {
   symbolSuppressed,
 } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, RELEASE_LABEL, SEMANTIC_ORIGINS } from "#src/knowledge/schema.ts";
+import { sha256 } from "#src/knowledge/text.ts";
 import { platformAddresses } from "#src/platform.ts";
 import { decodeProgram, leftoverInput } from "#src/program-code.ts";
 import { projectRoot } from "#src/project.ts";
@@ -92,8 +93,14 @@ function labeledRelease(label: string): { image: ReleaseImage; noState: string }
       throw new Refusal("not-found", `There is no release ${label} in the project knowledge. ${known}`, { hint: `Give a release label, knowledge, or the path of a file. For a file with the name ${label}, give ./${label}.` });
     }
     if (release.base) return knowledgeProgram(db);
-    const file = release.file === undefined ? "its file" : `its file ${release.file}`;
-    return { image: releaseImage(db, label)!, noState: `The knowledge keeps only the bytes of the release ${label}, not its entry state. To run the release, give ${file} in place of ${label}.` };
+    const image = releaseImage(db, label)!;
+    // A PRG with the bytes of the release runs in its place. The program file that a capture ran holds other bytes, for example packed ones.
+    const [segment] = image.segments;
+    const runs = release.file !== undefined && image.segments.length === 1 && release.sha256 === sha256(prgOf(segment!.start, Uint8Array.from({ length: segment!.end - segment!.start + 1 }, (_, offset) => image.byteAt(segment!.start + offset))));
+    const remedy = runs
+      ? `give its file ${release.file} in place of ${label}`
+      : `capture the unpacked program${release.file === undefined ? "" : ` of ${release.file}`} with its entry state, and give the image.json of that capture in place of ${label}`;
+    return { image, noState: `The knowledge keeps only the bytes of the release ${label}, not its entry state. To run the release, ${remedy}.` };
   });
 }
 

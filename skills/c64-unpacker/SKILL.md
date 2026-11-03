@@ -28,9 +28,9 @@ To get the command list, run the script with no arguments.
 | Run a program that is not a BASIC program at `$0801` | `trace releases/game.prg --entry '$c000'` |
 | Give input to an intro or a menu before the evidence starts | `trace releases/game.prg --steps .c64-re-tools/local/input.json` |
 | Find each stage and the entry of the unpacked program | `stages releases/game.prg` |
-| Capture the unpacked program at its entry | `capture releases/game.prg --until '$c000' --out .c64-re-tools/local/capture/game` |
-| Capture again without the bytes of a cracktro | `capture releases/game.prg --until '$c000' --out .c64-re-tools/local/capture/game --exclude '$a000-$a9ff'` |
-| Capture only one known range of the program | `capture releases/game.prg --until '$c000' --out .c64-re-tools/local/capture/game --range '$c000-$cfff'` |
+| Capture the unpacked program at its entry | `capture releases/game.prg --until '$c000' --out .c64-re-tools/local/capture/releases/game` |
+| Capture again without the bytes of a cracktro | `capture releases/game.prg --until '$c000' --out .c64-re-tools/local/capture/releases/game --exclude '$a000-$a9ff'` |
+| Capture only one known range of the program | `capture releases/game.prg --until '$c000' --out .c64-re-tools/local/capture/releases/game --range '$c000-$cfff'` |
 | Capture each part of a multi-load program | `loads releases/game.d64 --steps .c64-re-tools/local/parts.json --out .c64-re-tools/local/parts` |
 | Capture each part and the RAM of the disk drive | `loads releases/game.d64 --steps .c64-re-tools/local/parts.json --out .c64-re-tools/local/parts --drive` |
 
@@ -175,7 +175,7 @@ For `likely` and `unclear`, `nextAction` is `stages` with the same `--entry` and
 - `stages`: one item for each stage, with `stage`, `entry`, `frames`, `wrote` and `next`. `wrote` lists each block that the stage wrote, also a small block. `next` is the entry of the next stage.
 - `moreStages: true`: the script followed only the first stages. Then `hint` tells you to give a larger `--min-stage`.
 
-The `entry` of the last stage is usually the start of the program. `nextAction` is `capture` at that entry, with the same `--entry` and `--steps`. Its `--out` is a folder for each program: `.c64-re-tools/local/capture/<name>`, where `<name>` is the file name of the program without its extension. `hint` tells you to disassemble the code at that entry first.
+The `entry` of the last stage is usually the start of the program. `nextAction` is `capture` at that entry, with the same `--entry` and `--steps`. Its `--out` is a folder for each program: `.c64-re-tools/local/capture/<path>`, where `<path>` is the path of the program in the project without its extension. For a program outside the project, `<path>` is the file name of the program without its extension. `hint` tells you to disassemble the code at that entry first.
 
 Traps:
 
@@ -201,7 +201,7 @@ Traps:
 The folder `--out` gets these files:
 
 - `image.bin`: all 64 KiB of RAM at the entry. This RAM includes the RAM under the ROMs and the I/O area. A segment can be in the RAM under the I/O area at `$d000`-`$dfff`.
-- `image.json`: `program`, the entry, the segments, `excluded`, `dropped`, the vectors, the steps and the stages. `program` gives `file`, the path of the PRG that the capture ran, and `sha256`, the SHA-256 of that PRG. A release that the project knowledge records from `image.json` gets this path and this SHA-256. `writtenBy` of a segment tells the last stage that wrote into it. `steps` holds the steps of `--steps` with their default values. A steps file with these steps gives the same input to the program again. When the capture ran no steps, `image.json` has no `steps`.
+- `image.json`: `program`, the entry, the segments, `excluded`, `dropped`, the vectors, the steps and the stages. `program` gives `file`, the path in the project of the program file that the capture ran, and `sha256`, the SHA-256 of that file. A release that the project knowledge records from `image.json` gets this path and this SHA-256. For a program outside the project, `image.json` has no `program`. `writtenBy` of a segment tells the last stage that wrote into it. `steps` holds the steps of `--steps` with their default values. A steps file with these steps gives the same input to the program again. When the capture ran no steps, `image.json` has no `steps`.
 - One PRG for each segment.
 - `entry_state.json`: the registers, `$00` and `$01`, pages 0 to 3, the VIC, SID and CIA registers, the colour RAM, and the vectors. `io.colour` holds the 1000 colours at $d800. `cia` gives the CIA timer latches and interrupt masks. `differsFromReset` lists the bytes that are not as a clean C64 has them at READY. A rebuild must make these bytes the same, because the program can read them.
 
@@ -229,7 +229,7 @@ Traps:
 
 ### `loads <program>`
 
-`loads` runs a multi-load program with the steps file. Each `capture` step writes `<out>/<name>/` with `image.bin`, `image.json`, `entry_state.json` and a PRG for each segment. With `--drive`, it also writes `drive8.prg`: the drive RAM at `$0000`-`$07ff`.
+`loads` runs a multi-load program with the steps file. Each `capture` step writes `<out>/<name>/` with `image.bin`, `image.json`, `entry_state.json` and a PRG for each segment. `image.json` has `program`, as the one of `capture` has: the disk, tape, cartridge or PRG file that `loads` ran. With `--drive`, it also writes `drive8.prg`: the drive RAM at `$0000`-`$07ff`.
 
 A segment is a block of RAM from `$0400` that the program changed after the capture before. The first capture also has the program itself.
 

@@ -2,13 +2,14 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { inspect, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/lib/evidence.ts";
-import { removeStaleFiles, vicRam } from "../../skills/c64-unpacker/scripts/lib/machine.ts";
+import { capturedProgram, removeStaleFiles, vicRam } from "../../skills/c64-unpacker/scripts/lib/machine.ts";
 import { callReturn, captureSegments, droppedRanges, executedIn, notExecutedUnderIo, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
 import { COVERAGE } from "../../src/c64.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
@@ -413,6 +414,21 @@ test("a block with the code of a later intermediate stage is a leftover; the blo
   assert.deepEqual(captureSegments([...moved.slice(0, 2), { entry: 0x0801, wrote: [] }], 0x0801), [{ start: 0x0723, end: 0x449d, writtenBy: 1 }]);
   // At the second $0801: the code at $0111 and $0340 is loader code that nothing wrote over.
   assert.deepEqual(captureSegments(moved, 0x0801), [{ start: 0x0723, end: 0x5fff, writtenBy: 3 }]);
+});
+
+test("a capture names the program file that it ran by its path in the project, and no file outside the project", () => {
+  const root = join(project, "program");
+  mkdirSync(join(root, ".c64-re-tools"), { recursive: true });
+  mkdirSync(join(root, "releases"));
+  writeFileSync(join(root, "releases", "game.prg"), "game");
+  const cwd = process.cwd();
+  process.chdir(root);
+  try {
+    assert.deepEqual(capturedProgram("./releases/../releases/game.prg"), { file: "releases/game.prg", sha256: createHash("sha256").update("game").digest("hex") });
+    assert.equal(capturedProgram("../outside.prg"), undefined);
+  } finally {
+    process.chdir(cwd);
+  }
 });
 
 test("a capture again into its folder removes the segment PRGs and the drive RAM of the earlier capture, and no other file", { skip: process.platform === "win32" ? "a symbolic link needs extra rights on Windows" : false }, () => {

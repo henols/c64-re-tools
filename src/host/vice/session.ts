@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { formatC64Address, instructionLength } from "../../c64.ts";
+import { formatC64Address, instructionLength, spritePointer } from "../../c64.ts";
 import { matrixRows } from "../../c64-keys.ts";
 import { encodePng, type IndexedFrame } from "../../graphics.ts";
 import { accessedValue, instructionText, JAM_OPCODES, OPCODES, operandAddress } from "../../opcodes.ts";
@@ -1325,7 +1325,7 @@ export class ViceSession implements ViceSessionHandle {
     const cia2 = await this.#machine.readIo(0xdd00, 0x10);
     // Sprite pointers sit in the RAM the VIC-II reads, at the end of screen memory.
     const screen = decodeVicii(vic, cia2).screenAddress;
-    const pointers = Buffer.from(await this.#machine.readMemory({ address: screen + 0x3f8, size: 8, space: "c64", view: "ram" }), "hex");
+    const pointers = Buffer.from(await this.#machine.readMemory({ address: spritePointer(screen, 0), size: 8, space: "c64", view: "ram" }), "hex");
     const wanted = indexes.length === 0 ? [0, 1, 2, 3, 4, 5, 6, 7] : indexes;
     return wanted.map((index) => decodeSprite(index, vic, cia2, pointers));
   }

@@ -3,7 +3,7 @@
 // bank without side effects; the SID's write-only registers read back as
 // last written.
 
-import { d018Offsets, vicBankBase } from "../../c64.ts";
+import { spriteData, vicScreenMemory } from "../../c64.ts";
 import type { CiaState, SidState, SpriteState, ViciiMode, ViciiState } from "../../protocol/vice.ts";
 
 export function viciiMode(d011: number, d016: number): ViciiMode {
@@ -20,15 +20,12 @@ export function viciiMode(d011: number, d016: number): ViciiMode {
 export function decodeVicii(vic: Uint8Array, cia2: Uint8Array): ViciiState {
   const d011 = vic[0x11]!;
   const d016 = vic[0x16]!;
-  const offsets = d018Offsets(vic[0x18]!);
-  const mode = viciiMode(d011, d016);
-  const base = vicBankBase(cia2[0x00]!, cia2[0x02]!);
-  const bitmap = mode === "bitmap" || mode === "multicolor-bitmap";
+  const shown = vicScreenMemory(vic, cia2);
   return {
     rasterLine: ((d011 & 0x80) << 1) | vic[0x12]!,
-    mode,
-    screenAddress: base + offsets.screen,
-    graphicsAddress: base + (bitmap ? offsets.bitmap : offsets.characters),
+    mode: viciiMode(d011, d016),
+    screenAddress: shown.screen,
+    graphicsAddress: "bitmap" in shown ? shown.bitmap : shown.charset,
     scrollX: d016 & 0x07,
     scrollY: d011 & 0x07,
     borderColor: vic[0x20]! & 0x0f,
@@ -49,7 +46,7 @@ export function decodeSprite(index: number, vic: Uint8Array, cia2: Uint8Array, p
     expandX: bit(0x1d),
     expandY: bit(0x17),
     behindBackground: bit(0x1b),
-    dataAddress: vicBankBase(cia2[0x00]!, cia2[0x02]!) + pointers[index]! * 64,
+    dataAddress: spriteData(cia2, pointers[index]!),
   };
 }
 

@@ -45,7 +45,7 @@ To get the command list, run the script with no arguments.
 
 - `compare` takes two or more releases. A release is one of these:
   - `knowledge`: the program in the project knowledge.
-  - The label of a release in the project knowledge, for example `V2`. The base release is the program in the project knowledge. For another release, the project knowledge keeps only its bytes. Thus `--frames` cannot start it. To run that release, give its file. A label that is not a release gets error `not-found`, with the labels of the releases.
+  - The label of a release in the project knowledge, for example `V2`. The base release is the program in the project knowledge. For another release, the project knowledge keeps only its bytes. Thus `--frames` cannot start it. To run that release, give its PRG when the PRG holds the bytes of the release. Else, give the `image.json` of a capture of the release. The error tells you which file to give. A label that is not a release gets error `not-found`, with the labels of the releases.
   - A PRG file. The script puts it at its load address.
   - The `image.json` of a capture folder. Keep all files of the capture folder together. Without them, `--frames` cannot start the release.
 - Get a PRG out of a disk image before you compare it. The script refuses a disk image, a tape image and a cartridge image.

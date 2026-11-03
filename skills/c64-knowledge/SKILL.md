@@ -39,7 +39,7 @@ Commit the folder `.c64-re-tools/knowledge/` of the project with git.
 | Record the verdict of one comment of a check | `verdict 4711 '$2100' wrong --class callers --why 'JSR at $1f00 calls it too' --text 'Moves the player.'` |
 | Write all knowledge to one file | `export --out .c64-re-tools/local/knowledge.json` |
 | Find what the knowledge holds of the program | `program` |
-| Put a captured program into the knowledge | `image .c64-re-tools/local/capture/game/image.json` |
+| Put a captured program into the knowledge | `image .c64-re-tools/local/capture/releases/game/image.json` |
 | Put a PRG into the knowledge | `image releases/game.prg` |
 | Add the coverage of runs | `coverage .c64-re-tools/local/runs/rooms/room0.bin` |
 | Add the coverage of a recording | `coverage tests/recordings/walk` |
@@ -235,7 +235,7 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 ### `releases`
 
 - `body.releases` lists the releases, the base release first. Each item has `label`, `base`, `define`, `file` and `sha256`. `define` is the assembler define that builds the release.
-- `file` is the path of the PRG of the release, and `sha256` is the SHA-256 of that PRG. For a release from the `image.json` of a capture, the PRG is the file that the capture ran. Use them for the facts of a release, for example in a README. Do not calculate a SHA-256 yourself.
+- `file` is the path of the program file of the release, and `sha256` is the SHA-256 of that file. For a release from the `image.json` of a capture, this file is the program file that the capture ran. This file can hold packed bytes, or a disk with more parts. Use them for the facts of a release, for example in a README. Do not calculate a SHA-256 yourself.
 
 ### `macros`
 

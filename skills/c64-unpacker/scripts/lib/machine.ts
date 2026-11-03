@@ -5,12 +5,13 @@
 import { readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-import { type AddressRange, formatC64Address, hexWord, prgOf, vicBankBase, vicScreenMemory } from "#src/c64.ts";
+import { type AddressRange, formatC64Address, hexWord, prgOf, spriteData, spritePointer, vicScreenMemory } from "#src/c64.ts";
 import { resetToReady } from "#src/host-client/entry-state.ts";
-import { writeRefusal, writeReported, type Written } from "#src/host-client/transfer.ts";
+import { readProjectFile, writeRefusal, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { startScreenRanges } from "#src/knowledge/read.ts";
-import { projectRoot, resolveProjectPath } from "#src/project.ts";
+import { sha256 } from "#src/knowledge/text.ts";
+import { projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 
 type Registers = Awaited<ReturnType<ViceSessionClient["registersGet"]>>;
 
@@ -58,14 +59,29 @@ export async function machineState(client: ViceSessionClient): Promise<MachineSt
 export function vicRam(io: { vic: Uint8Array; cia2: Uint8Array }, memory: Uint8Array): AddressRange[] {
   const shown = vicScreenMemory(io.vic, io.cia2);
   const ranges = startScreenRanges(shown).map((part) => part.range);
-  const bank = vicBankBase(io.cia2[0]!, io.cia2[2]);
   for (let sprite = 0; sprite < 8; sprite++) {
     if ((io.vic[0x15]! & (1 << sprite)) === 0) continue;
-    const pointer = shown.screen + 0x3f8 + sprite;
-    const data = bank + memory[pointer]! * 64;
+    const pointer = spritePointer(shown.screen, sprite);
+    const data = spriteData(io.cia2, memory[pointer]!);
     ranges.push({ start: pointer, end: pointer }, { start: data, end: data + 63 });
   }
   return ranges;
+}
+
+/**
+ * The program file that a capture ran, for its image.json: the path in the
+ * project in one spelling, and the SHA-256 of the file. A release of the
+ * capture cites them, because git ignores the capture in local/. A file
+ * outside the project gives undefined: then a release cites the image.json.
+ */
+export function capturedProgram(path: string): { file: string; sha256: string } | undefined {
+  let file: string;
+  try {
+    file = projectRelative(path);
+  } catch {
+    return undefined;
+  }
+  return { file, sha256: sha256(readProjectFile(path).bytes) };
 }
 
 const word = (bytes: Buffer, offset: number) => formatC64Address(bytes[offset]! | (bytes[offset + 1]! << 8));
