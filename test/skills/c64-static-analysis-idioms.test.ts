@@ -58,10 +58,23 @@ test("an RTS dispatch on a word table is one rts-addresses region, and on adjace
 });
 
 test("an idiom whose bytes another idiom already holds is left out with its reason", () => {
-  // Two RTS dispatches on word tables: $1300-$1303 for the first, $1302-$1303 for the second.
-  const found = findIdioms(image({ 0x1000: [0xbd, 0x01, 0x13, 0x48, 0xbd, 0x00, 0x13, 0x48, 0x60], 0x1010: [0xbd, 0x03, 0x13, 0x48, 0xbd, 0x02, 0x13, 0x48, 0x60], 0x1300: [0xff, 0x14, 0xff, 0x15, 0x00, 0x00] }).byteAt, RANGE);
+  // Two RTS dispatches on the low bytes at $1200: the first with the high bytes at $1100, the second with the high bytes at $1300.
+  const found = findIdioms(image({ 0x1000: [0xbd, 0x00, 0x11, 0x48, 0xbd, 0x00, 0x12, 0x48, 0x60], 0x1010: [0xbd, 0x00, 0x13, 0x48, 0xbd, 0x00, 0x12, 0x48, 0x60], 0x1100: [0x14, 0x15, 0x00], 0x1200: [0xff, 0xff, 0x00], 0x1300: [0x16, 0x17, 0x00] }).byteAt, RANGE);
   assert.equal(found.counts.rtsTables, 1);
-  assert.deepEqual(found.leftOut, [{ start: 0x1302, end: 0x1303, kind: "rts-table", reason: "overlaps-idiom" }]);
+  assert.deepEqual(found.leftOut, [{ start: 0x1200, end: 0x1301, kind: "rts-table", reason: "overlaps-idiom" }]);
+});
+
+test("an RTS table ends before the table of another RTS dispatch, and before an entry that a run wrote", () => {
+  // Two RTS dispatches on word tables: $1300 for the first, $1302 for the second.
+  const two = findIdioms(image({ 0x1000: [0xbd, 0x01, 0x13, 0x48, 0xbd, 0x00, 0x13, 0x48, 0x60], 0x1010: [0xbd, 0x03, 0x13, 0x48, 0xbd, 0x02, 0x13, 0x48, 0x60], 0x1300: [0xff, 0x14, 0xff, 0x15, 0x00, 0x00] }).byteAt, RANGE);
+  assert.deepEqual(two.findings.regions, [{ start: 0x1300, end: 0x1301, type: "rts-addresses" }, { start: 0x1302, end: 0x1303, type: "rts-addresses" }]);
+  assert.deepEqual(two.findings.references.map((reference) => [reference.from, reference.to]), [[0x1008, 0x1500], [0x1018, 0x1600]]);
+  // One word table of three entries at $1300: a run wrote the low byte of the third entry.
+  const { byteAt } = image({ 0x1000: [0xbd, 0x01, 0x13, 0x48, 0xbd, 0x00, 0x13, 0x48, 0x60], 0x1300: [0xff, 0x14, 0xff, 0x15, 0xff, 0x16, 0x00, 0x00] });
+  const run = new Uint8Array(0x10000);
+  run[0x1304] = COVERAGE.ramRead | COVERAGE.ramWrite;
+  assert.deepEqual(findIdioms(byteAt, RANGE).findings.regions, [{ start: 0x1300, end: 0x1305, type: "rts-addresses" }]);
+  assert.deepEqual(findIdioms(byteAt, RANGE, covered(run)).findings.regions, [{ start: 0x1300, end: 0x1303, type: "rts-addresses" }]);
 });
 
 test("a second RTS dispatch through the same table adds its jump references, and a JMP run inside a table is left out once", () => {

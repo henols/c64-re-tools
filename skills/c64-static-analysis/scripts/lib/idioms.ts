@@ -5,7 +5,10 @@
 // gives its two start vectors as entry points. A self-modified opcode is one that one run wrote
 // and executed, in either order, since a coverage file holds no order:
 // a copier's writes in one run and their execution in another do not count. A table's length is not known statically: entries
-// count while each target is a plausible instruction in the program.
+// count while each target is a plausible instruction in the program. An RTS
+// table ends before the low or the high bytes of an RTS dispatch start, and
+// before an entry that a run wrote: there the program holds other bytes than
+// the dispatch reads.
 // The knowledge of the user and the LLM wins: an idiom gives no region, no
 // reference and no entry point where their region has another type or a
 // removal holds the bytes, and a table ends where their region ends. A BIT
@@ -119,6 +122,8 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
     }
     return false;
   };
+  /** True when a run wrote the byte at the address; never without coverage. */
+  const written = (address: number) => coverage !== undefined && (coverage[address]! & COVERAGE.ramWrite) !== 0;
   const regions: NormalizedFindings["regions"] = [];
   const references: NormalizedFindings["references"] = [];
   const entryPoints = new Set<number>();
@@ -146,47 +151,54 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
     }
   }
 
+  // RTS dispatches: LDA high,X / PHA / LDA low,X / PHA / RTS. A table is data: it ends where the decided range at its start ends.
+  const dispatches: Array<{ rts: number; low: number; high: number }> = [];
   for (let at = range.start; at + 8 <= range.end; at++) {
-    // RTS dispatch: LDA high,X / PHA / LDA low,X / PHA / RTS.
     if (LDA_INDEXED.has(byteAt(at)!) && byteAt(at + 3) === 0x48 && LDA_INDEXED.has(byteAt(at + 4)!) && byteAt(at + 7) === 0x48 && byteAt(at + 8) === 0x60) {
       const high = word(byteAt, at + 1)!;
       const low = word(byteAt, at + 5)!;
-      const interleaved = high === low + 1;
-      const step = interleaved ? 2 : 1;
-      // A table is data: it ends where the decided range at its start ends.
-      if (!fits(low, low, "bytes") || !fits(high, high, "bytes")) continue;
-      const lowRange = decidedAt(low);
-      const highRange = decidedAt(high);
-      const targets: number[] = [];
-      for (let index = 0; index < MAX_TABLE; index++) {
-        if (decidedAt(low + index * step) !== lowRange || decidedAt(high + index * step) !== highRange) break;
-        const lowByte = byteAt(low + index * step);
-        const highByte = byteAt(high + index * step);
-        if (lowByte === undefined || highByte === undefined) break;
-        const target = ((highByte << 8) | lowByte) + 1;
-        if (!plausible(byteAt, target, range)) break;
-        targets.push(target);
-      }
-      if (targets.length === 0) continue;
-      const n = targets.length;
-      const parts: Parameters<typeof addRegions>[1] = interleaved
-        ? [{ start: low, end: low + 2 * n - 1, type: "rts-addresses" }]
-        : low + n === high
-          ? [{ start: low, end: high + n - 1, type: "rts-addresses-split" }]
-          : [{ start: low, end: low + n - 1, type: "bytes" }, { start: high, end: high + n - 1, type: "bytes" }];
-      // Another dispatch through the same table: the table is recorded, and this RTS goes to its targets too.
-      const known = parts.every((part) => regions.some((region) => region.start === part.start && region.end === part.end && region.type === part.type));
-      if (!known) {
-        if (!addRegions("rts-table", parts)) continue;
-        counts.rtsTables++;
-      }
-      // A target in data of the user or the LLM, or a reference that they removed, gives no reference and no entry point.
-      for (const target of targets) {
-        const reference = { from: at + 8, to: target, kind: "jump" as const };
-        if (!mayBeCode(target) || decided.removedReference(reference)) continue;
-        references.push(reference);
-        entryPoints.add(target);
-      }
+      if (fits(low, low, "bytes") && fits(high, high, "bytes")) dispatches.push({ rts: at + 8, low, high });
+    }
+  }
+  // Where the low and the high bytes of each table start: a table ends before one of them.
+  const tableStarts = new Set(dispatches.flatMap(({ low, high }) => [low, high]));
+  for (const { rts, low, high } of dispatches) {
+    const interleaved = high === low + 1;
+    const step = interleaved ? 2 : 1;
+    const lowRange = decidedAt(low);
+    const highRange = decidedAt(high);
+    const targets: number[] = [];
+    for (let index = 0; index < MAX_TABLE; index++) {
+      const lowAt = low + index * step;
+      const highAt = high + index * step;
+      if (decidedAt(lowAt) !== lowRange || decidedAt(highAt) !== highRange) break;
+      if (index > 0 && (tableStarts.has(lowAt) || tableStarts.has(highAt))) break;
+      const lowByte = byteAt(lowAt);
+      const highByte = byteAt(highAt);
+      if (lowByte === undefined || highByte === undefined || written(lowAt) || written(highAt)) break;
+      const target = ((highByte << 8) | lowByte) + 1;
+      if (!plausible(byteAt, target, range)) break;
+      targets.push(target);
+    }
+    if (targets.length === 0) continue;
+    const n = targets.length;
+    const parts: Parameters<typeof addRegions>[1] = interleaved
+      ? [{ start: low, end: low + 2 * n - 1, type: "rts-addresses" }]
+      : low + n === high
+        ? [{ start: low, end: high + n - 1, type: "rts-addresses-split" }]
+        : [{ start: low, end: low + n - 1, type: "bytes" }, { start: high, end: high + n - 1, type: "bytes" }];
+    // Another dispatch through the same table: the table is recorded, and this RTS goes to its targets too.
+    const known = parts.every((part) => regions.some((region) => region.start === part.start && region.end === part.end && region.type === part.type));
+    if (!known) {
+      if (!addRegions("rts-table", parts)) continue;
+      counts.rtsTables++;
+    }
+    // A target in data of the user or the LLM, or a reference that they removed, gives no reference and no entry point.
+    for (const target of targets) {
+      const reference = { from: rts, to: target, kind: "jump" as const };
+      if (!mayBeCode(target) || decided.removedReference(reference)) continue;
+      references.push(reference);
+      entryPoints.add(target);
     }
   }
 
