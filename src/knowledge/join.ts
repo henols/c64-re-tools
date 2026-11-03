@@ -4,7 +4,8 @@
 // there; at an address that no batch owns, the first batch in the order given
 // wins. A name that a batch gave to an address, and that the join replaced
 // with the name of another batch, is replaced in that batch's operand
-// expressions and macro args too. The join writes no knowledge.
+// expressions and macro args too, and as a whole word in its comment texts.
+// The join writes no knowledge.
 
 import { replaceIdentifiers } from "./expression.ts";
 import { spaceOf } from "./schema.ts";
@@ -45,6 +46,9 @@ export interface JoinResult {
 }
 
 type Op<K extends BatchOperation["op"]> = Extract<BatchOperation, { op: K }>;
+
+/** A name as a whole word of a comment: a word after a letter, a digit, _, . or $ is part of another word or a number. */
+const WORD = /(?<![A-Za-z0-9_.$])\.?[A-Za-z_][A-Za-z0-9_]*/g;
 
 /** The value of a keyed write as text, to compare and report it. */
 function valueOf(op: BatchOperation): string {
@@ -134,6 +138,10 @@ export function joinBatches(batches: readonly Batch[]): JoinResult {
       return text;
     }
   };
+  const followWords = (batch: Batch, space: string, text: string) => {
+    const map = renamedIn.get(batch)!;
+    return map.size === 0 ? text : text.replace(WORD, (word) => map.get(`${space}|${word}`) ?? word);
+  };
 
   const comments = choose("comment", "comment", (write) => `${spaceOf(write)}|${write.address}|${write.placement}`, (write) => write.address);
   const operands = choose("operand", "operand", (write) => `${spaceOf(write)}|${write.address}`, (write) => write.address);
@@ -197,13 +205,14 @@ export function joinBatches(batches: readonly Batch[]): JoinResult {
     }
   }
   const kept = <T extends { batch: Batch; write: BatchOperation }>(map: Map<string, T>) => [...map.values()].map(({ write }) => write);
+  const commentWrites = [...comments.values()].map(({ batch, write }) => ({ ...write, text: followWords(batch, spaceOf(write), write.text) }));
   const operandWrites = [...operands.values()].map(({ batch, write }) => ({
     ...write,
     ...(write.symbol === undefined ? {} : { symbol: follow(batch, spaceOf(write), write.symbol) }),
     ...(write.expression === undefined ? {} : { expression: follow(batch, spaceOf(write), write.expression) }),
   }));
   return {
-    ops: [...removals, ...foreignRegions, ...ownRegions, ...kept(names), ...kept(comments), ...kept(modules), ...references, ...kept(macros), ...operandWrites, ...rest],
+    ops: [...removals, ...foreignRegions, ...ownRegions, ...kept(names), ...commentWrites, ...kept(modules), ...references, ...kept(macros), ...operandWrites, ...rest],
     choices,
     clashes,
     repeated,

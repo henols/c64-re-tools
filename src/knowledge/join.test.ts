@@ -67,7 +67,7 @@ test("join takes the first batch's write at an address that no batch owns, and r
   assert.equal(joined.choices[0]?.kept.file, "one.json");
 });
 
-test("join follows a replaced name into an expression and a macro arg, and keeps each space apart", () => {
+test("join follows a replaced name into an expression, a macro arg and the words of a comment, and keeps each space apart", () => {
   const owner: Batch = { file: "owner.json", owner: { start: 0x2000, end: 0x2fff }, ops: [{ op: "rename", address: 0x2000, name: "sprite_table" }] };
   const other: Batch = {
     file: "other.json",
@@ -75,12 +75,14 @@ test("join follows a replaced name into an expression and a macro arg, and keeps
       { op: "rename", address: 0x2000, name: "sprites" },
       { op: "operand", address: 0x0810, select: "expr", expression: ">(sprites+$40)" },
       { op: "use", start: 0x0820, end: 0x0825, macro: "set16", args: ["sprites", "$fb"] },
+      { op: "comment", address: 0x0810, placement: "side", text: "Copies sprites+1 to sprites_hi, not to .sprites." },
       { op: "rename", space: "drive8", address: 0x2000, name: "sprites" },
     ],
   };
   const joined = joinBatches([owner, other]);
   assert.deepEqual(joined.ops.find((write) => write.op === "operand"), { op: "operand", address: 0x0810, select: "expr", expression: ">(sprite_table+$40)" });
   assert.deepEqual(joined.ops.find((write) => write.op === "use"), { op: "use", start: 0x0820, end: 0x0825, macro: "set16", args: ["sprite_table", "$fb"] });
+  assert.deepEqual(joined.ops.find((write) => write.op === "comment"), { op: "comment", address: 0x0810, placement: "side", text: "Copies sprite_table+1 to sprites_hi, not to .sprites." }, "only the whole word changes");
   assert.deepEqual(
     joined.ops.filter((write) => write.op === "rename").map((write) => [(write as { space?: string }).space ?? "c64", (write as { name: string }).name]),
     [
