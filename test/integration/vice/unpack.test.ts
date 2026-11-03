@@ -5,6 +5,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -229,6 +230,7 @@ test("a capture at the last stage writes the image, its segments and the entry s
   const { status, json } = await unpack("capture", "staged.prg", "--until", "$4000", "--out", "unpacked/staged", "--steps", "press-key.json", "--timeout-frames", "400");
   assert.equal(status, 0, JSON.stringify(json));
   const image = JSON.parse(readFileSync(join(project, "unpacked", "staged", "image.json"), "utf8")) as Record<string, unknown>;
+  assert.deepEqual(image.program, { file: "staged.prg", sha256: createHash("sha256").update(stagedPrg).digest("hex") }, "the PRG that the capture ran");
   assert.equal(image.entry, "$4000");
   // Stage 1's own code at $c000 is loader code: only the program that it wrote is a segment.
   assert.deepEqual(image.segments, [{ start: "$4000", end: "$407f", writtenBy: 1, file: "segment-4000-407f.prg" }]);

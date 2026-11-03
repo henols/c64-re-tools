@@ -235,7 +235,7 @@ When a git merge left conflicts in the knowledge, each read body also has `confl
 ### `releases`
 
 - `body.releases` lists the releases, the base release first. Each item has `label`, `base`, `define`, `file` and `sha256`. `define` is the assembler define that builds the release.
-- `file` is the path of the file of the release, and `sha256` is the SHA-256 of that file. Use them for the facts of a release, for example in a README. Do not calculate a SHA-256 yourself.
+- `file` is the path of the PRG of the release, and `sha256` is the SHA-256 of that PRG. For a release from the `image.json` of a capture, the PRG is the file that the capture ran. Use them for the facts of a release, for example in a README. Do not calculate a SHA-256 yourself.
 
 ### `macros`
 
@@ -401,7 +401,7 @@ An operand expression tells the generated source how to write the operand of one
 
 ### `release <label>`
 
-- `body.release` gives the release, with its `define`, `file` and `sha256`. `body.bytes` gives the number of bytes of the file.
+- `body.release` gives the release, with its `define`, `file` and `sha256`. `body.bytes` gives the number of bytes of the release.
 - See "Releases" of `<skill>/references/source-knowledge.md`.
 
 ### `unrelease <label>`

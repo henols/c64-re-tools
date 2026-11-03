@@ -14,6 +14,7 @@ import { WireFailure } from "#src/host-client/tools.ts";
 import { readPrg } from "#src/host-client/image.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
+import { sha256 } from "#src/knowledge/text.ts";
 import { PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
 import { basicStart, inspect, writtenThenExecuted } from "./lib/evidence.ts";
@@ -574,6 +575,8 @@ async function capture(
       segments,
       [],
       (files) => ({
+        // The PRG that the capture ran: a release of the capture cites it, as git ignores the capture in local/.
+        program: { file: program, sha256: sha256(bytes) },
         entry: formatC64Address(registers.pc),
         segments: segments.map((segment, index) => ({ ...formatC64RangeFields(segment), ...("writtenBy" in segment ? { writtenBy: segment.writtenBy } : {}), ...("loaded" in segment ? { loaded: true } : {}), file: files[index] })),
         ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(formatC64RangeFields) }),
@@ -727,7 +730,7 @@ const COMMANDS: CommandSpec[] = [
   },
   {
     name: "capture",
-    summary: "Runs the program until the CPU gets to --until after the steps, and writes into --out: image.bin (64 KiB of RAM), image.json (the entry, the segments that the stages wrote, the written ranges that it dropped, the vectors, the steps, the stages), a PRG for each segment, and entry_state.json.",
+    summary: "Runs the program until the CPU gets to --until after the steps, and writes into --out: image.bin (64 KiB of RAM), image.json (the program file and its SHA-256, the entry, the segments that the stages wrote, the written ranges that it dropped, the vectors, the steps, the stages), a PRG for each segment, and entry_state.json.",
     subjects: [PROGRAM],
     options: {
       until: { kind: "address", value: "<address>", required: true, help: "the unpacked entry point" },

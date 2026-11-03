@@ -201,7 +201,7 @@ Traps:
 The folder `--out` gets these files:
 
 - `image.bin`: all 64 KiB of RAM at the entry. This RAM includes the RAM under the ROMs and the I/O area. A segment can be in the RAM under the I/O area at `$d000`-`$dfff`.
-- `image.json`: the entry, the segments, `excluded`, `dropped`, the vectors, the steps and the stages. `writtenBy` of a segment tells the last stage that wrote into it. `steps` holds the steps of `--steps` with their default values. A steps file with these steps gives the same input to the program again. When the capture ran no steps, `image.json` has no `steps`.
+- `image.json`: `program`, the entry, the segments, `excluded`, `dropped`, the vectors, the steps and the stages. `program` gives `file`, the path of the PRG that the capture ran, and `sha256`, the SHA-256 of that PRG. A release that the project knowledge records from `image.json` gets this path and this SHA-256. `writtenBy` of a segment tells the last stage that wrote into it. `steps` holds the steps of `--steps` with their default values. A steps file with these steps gives the same input to the program again. When the capture ran no steps, `image.json` has no `steps`.
 - One PRG for each segment.
 - `entry_state.json`: the registers, `$00` and `$01`, pages 0 to 3, the VIC, SID and CIA registers, the colour RAM, and the vectors. `io.colour` holds the 1000 colours at $d800. `cia` gives the CIA timer latches and interrupt masks. `differsFromReset` lists the bytes that are not as a clean C64 has them at READY. A rebuild must make these bytes the same, because the program can read them.
 

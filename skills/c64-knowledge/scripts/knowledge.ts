@@ -1025,7 +1025,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
   writeCommand(
     {
       name: "release",
-      summary: "Records a release of the program from its PRG or the image.json of its capture: the knowledge keeps the bytes of the release, and the path and the SHA-256 of the file. The base release is the one whose bytes are the program of the knowledge.",
+      summary: "Records a release of the program from its PRG or the image.json of its capture: the knowledge keeps the bytes of the release, and the path and the SHA-256 of the PRG. For an image.json, the PRG is the file that the capture ran. The base release is the one whose bytes are the program of the knowledge.",
       subjects: [{ name: "<label>", help: "the release label, for example FIRESTAR or V2" }],
       options: {
         file: { kind: "path", value: "<file>", help: "the PRG or image.json of the release. After the write, the knowledge does not need the file", required: true },
@@ -1039,12 +1039,13 @@ const WRITE_COMMANDS: CommandSpec[] = [
       const image = readImage(file);
       const commentText = call.string("comment");
       const base = call.flag("base");
+      // The image.json of a capture names the PRG that the capture ran: the release cites that file, as git ignores a capture in local/.
+      const cited = image.program ?? { file, sha256: sha256(readProjectFile(file).bytes) };
       // The base release has no bytes of its own: its bytes are the program.
       const request = {
         space: call.space,
         label: call.subject(0),
-        file,
-        sha256: sha256(readProjectFile(file).bytes),
+        ...cited,
         ...(base ? { base } : { rows: memoryRows(image.segments, image.byteAt) }),
         ...(commentText === undefined ? {} : { comment: commentText }),
       };

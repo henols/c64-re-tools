@@ -300,6 +300,17 @@ test("release, switch, patch, macro and use write the source knowledge, and swit
   writeFileSync(join(root, ".c64-re-tools", "local", "other.prg"), readFileSync(join(root, "other.prg")));
   assert.equal(knowledge(root, "release", "V2", "--file", ".c64-re-tools/local/other.prg").status, 0);
   assert.match(readFileSync(join(root, ".c64-re-tools", "knowledge", "release_memory.jsonl"), "utf8"), /"label":"V2","at":"\$8100","bytes":"e6fbd002e6fca9018d20d0"/);
+  // A capture in local/ names the PRG that it ran: the release cites that PRG, and takes its bytes from the capture.
+  const captured = join(root, ".c64-re-tools", "local", "capture");
+  mkdirSync(captured, { recursive: true });
+  const memory = Buffer.alloc(0x10000);
+  readFileSync(join(root, "other.prg")).copy(memory, 0x8100, 2);
+  writeFileSync(join(captured, "image.bin"), memory);
+  const programSha256 = createHash("sha256").update(readFileSync(join(root, "other.prg"))).digest("hex");
+  writeFileSync(join(captured, "image.json"), JSON.stringify({ program: { file: "other.prg", sha256: programSha256 }, entry: "$8100", segments: [{ start: "$8100", end: "$810a" }], image: "image.bin" }));
+  const fromCapture = knowledge(root, "release", "V3", "--file", ".c64-re-tools/local/capture/image.json").json as { release: Record<string, unknown>; bytes: number };
+  assert.deepEqual([fromCapture.release.file, fromCapture.release.sha256, fromCapture.bytes], ["other.prg", programSha256, 11]);
+  assert.match(readFileSync(join(root, ".c64-re-tools", "knowledge", "release_memory.jsonl"), "utf8"), /"label":"V3","at":"\$8100","bytes":"e6fbd002e6fca9018d20d0"/);
   assert.equal(knowledge(root, "switch", "CRACK", "--kind", "crack", "--comment", "A white border.").status, 0);
   assert.equal(knowledge(root, "switch", "FIX_BORDER", "--kind", "fix", "--releases", "V2").status, 0);
   writeFileSync(join(root, "crack.asm"), "  lda #1\n  sta $d020\n");
