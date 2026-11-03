@@ -16,7 +16,7 @@ import { C64RUN_PROTOCOL } from "../../src/native/c64run.ts";
 import { namesOf } from "../../skills/c64-testing/scripts/lib/scenario.ts";
 import { withWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
-import { importCoverage } from "../fixtures/program.ts";
+import { importCoverage, importImage } from "../fixtures/program.ts";
 import { readEnvelope } from "../kit.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-recording-"));
@@ -84,7 +84,7 @@ test("the coverage of a record file starts at the first input read, at the progr
 /**
  * A stand-in replay core for record: it answers each command with the machine
  * state, writes the files that record and coverage name, logs the commands,
- * and answers coverage status with `from`.
+ * and answers coverage status with `from`. A mark comes at the second marked.
  */
 function recordingCore(name: string, from: string): { path: string; log: string } {
   const path = join(project, name);
@@ -101,6 +101,7 @@ function recordingCore(name: string, from: string): { path: string; log: string 
       '    inputs|joy|key|write) echo "ok" ;;',
       '    record) [ "$rest" = off ] || : > "$rest"; echo "ok" ;;',
       '    sites) echo "ok unknown=0" ;;',
+      `    marked) if [ -e ${log}.marked ]; then echo "ok tick=990000 phase=00"; else : > ${log}.marked; echo "ok none"; fi ;;`,
       '    coverage) case "$rest" in',
       `        status) echo "${from}" ;;`,
       '        on*|off) echo "ok" ;;',
@@ -304,4 +305,21 @@ test("a record file names itself and the step of a key that the replay core does
     return assert.fail(`${name} is not refused`);
   };
   assert.equal(message("umlaut.json", { ...valid, steps: [{ frames: 10 }, { press: { keys: "ä" } }] }), 'record file umlaut.json: step 2: press.keys: the C64 keyboard has no key "ä"');
+});
+
+test("record gives the hint of replay when an event ran before the program came to the entry of the knowledge, where the loader of a rebuild jumps", { skip: process.platform === "win32" ? "the stand-in replay core is a shell script" : false }, () => {
+  writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
+  importImage(project, new Uint8Array(0x10000), { segments: [{ start: 0x0400, end: 0x04ff }], entry: 0x0400 });
+  // The crack screen of SAEGER waits for a key through the KERNAL: an event before the entry $0400.
+  const core = recordingCore("c64run-early", "ok from tick=982800 pc=1aed");
+  const run = spawnSync(process.execPath, [...process.execArgv, resolve(home, "skills/c64-testing/scripts/testing.ts"), "record", file("early.json", { name: "early", program: "game.prg", symbols: "none", steps: [{ write: { address: "$c000", data: "01" } }, { frames: 10 }] }), "--out", "tests/recordings/early"], {
+    cwd: project,
+    encoding: "utf8",
+    env: { ...process.env, C64RT_C64RUN: core.path },
+  });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const { envelope, json } = readEnvelope(run.stdout, run.status);
+  assert.equal((json as { result: string }).result, "PASS", "the recording replays on the reference");
+  assert.ok(readFileSync(core.log, "utf8").split("\n").includes("mark 0400"));
+  assert.ok(envelope.hint?.startsWith("step 1 ran before the program came to its entry $0400. A rebuild with a loader has no point for it."), envelope.hint);
 });
