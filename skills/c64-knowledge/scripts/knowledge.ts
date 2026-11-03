@@ -1333,12 +1333,11 @@ const CHECKS: CommandSpec = {
 /** join: the batches of agents that worked in parallel, as one list of writes. With --apply, it writes them as one revision. */
 const JOIN: CommandSpec = {
   name: "join",
-  summary: "Joins the batches of agents that worked in parallel into one list of writes, and shows it. With --apply, it writes the list as one revision, or nothing when one write is refused.",
+  summary: "Joins the batches of agents that worked in parallel into one list of writes, and shows it. One batch shows its own writes. With --apply, it writes the list as one revision, or nothing when one write is refused.",
   subjects: [{ name: "<batch>", help: 'a batch: a list of writes, or {"owner": {"start": "$1000", "end": "$1fff"}, "ops": [...]}', list: true }],
   options: { ...WRITE, apply: { kind: "flag", help: "write the joined writes to the project knowledge as one revision. Without it, the result only shows them" }, ...LIST },
   notes: "At an address in the owner range of a batch, its name, comment, operand and module win, and its regions come last. One name or one module file at two addresses writes nothing.",
   run: (call) => {
-    if (call.subjects.length < 2) throw new UsageError("join needs two or more batch files.");
     const batches: Batch[] = call.subjects.map((file) => {
       const value = readProjectJson(file);
       const shaped = Array.isArray(value) ? { ops: value } : (value as { owner?: unknown; ops?: unknown });

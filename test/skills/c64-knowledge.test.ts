@@ -325,7 +325,7 @@ test("release, switch, patch, macro and use write the source knowledge, and swit
   assert.equal((atOne(root, "$8103") as { macroUse: { text: string } }).macroUse.text, "+inc16 ptr");
 });
 
-test("join shows the batches of parallel agents as one list of writes, and with --apply writes it as one revision", () => {
+test("join shows one batch or the batches of parallel agents as one list of writes, and with --apply writes it as one revision", () => {
   const root = project();
   // The Bruce Lee run: each agent named its own range; batch b owns $1000-$1fff.
   writeFileSync(join(root, "a.json"), JSON.stringify({ owner: { start: "$0200", end: "$0fff" }, ops: [{ op: "rename", address: "$0400", name: "cold_start", kind: "routine" }, { op: "rename", address: "$1000", name: "draw_room_a" }] }));
@@ -339,6 +339,9 @@ test("join shows the batches of parallel agents as one list of writes, and with 
   assert.deepEqual(shown.choices, [{ what: "name", at: "$1000", kept: { file: "b.json", value: "draw_room (routine)" }, left: [{ file: "a.json", value: "draw_room_a" }] }]);
   assert.equal(joined.envelope.nextAction, `node ${script} join a.json b.json --apply --project ${root}`, "the next command writes the joined batches from any directory");
   assert.equal(existsSync(join(root, ".c64-re-tools")), false, "join without --apply writes no knowledge");
+  const one = knowledge(root, "join", "b.json");
+  assert.equal(one.status, 0, JSON.stringify(one.json));
+  assert.deepEqual(items(one.json.writes), [{ op: "rename", address: "$1000", name: "draw_room", kind: "routine" }, { op: "comment", address: "$1000", placement: "line", text: "Draws the room." }], "one batch, as one agent wrote it");
 
   const clash = knowledge(root, "join", "a.json", "c.json", "--apply");
   assert.equal(clash.status, 2);
