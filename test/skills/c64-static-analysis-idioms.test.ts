@@ -132,6 +132,17 @@ test("a BIT skip hides a 2-byte instruction: a $2c before a 3-byte instruction i
   assert.equal(findIdioms(byteAt, RANGE, covered(run)).counts.bitSkips, 0);
 });
 
+test("JMPs that a run wrote and never executed are no JMP table; JMPs that a run wrote and then executed are one", () => {
+  const { byteAt } = image({ 0x1400: [0x4c, 0x00, 0x15, 0x4c, 0x00, 0x16, 0x4c, 0x00, 0x17] });
+  // A run wrote a charset over the JMPs and read it.
+  const data = new Uint8Array(0x10000).fill(COVERAGE.ramRead | COVERAGE.ramWrite, 0x1400, 0x1409);
+  assert.equal(findIdioms(byteAt, RANGE, covered(data)).counts.jumpTables, 0);
+  // A run copied the JMPs there and executed them.
+  const code = new Uint8Array(0x10000).fill(COVERAGE.ramWrite, 0x1400, 0x1409);
+  code[0x1400] = code[0x1403] = code[0x1406] = COVERAGE.ramWrite | COVERAGE.ramExecute;
+  assert.deepEqual(findIdioms(byteAt, RANGE, covered(code)).findings.regions, [{ start: 0x1400, end: 0x1408, type: "jumps" }]);
+});
+
 test("the regions and the removals of the user and the LLM win over the idioms", () => {
   const nothingRemoved = { removedRegions: [], removedReference: () => false };
   // A code region of the LLM over a BIT skip: no dual-use region, no reference, and no entry point at the operand.

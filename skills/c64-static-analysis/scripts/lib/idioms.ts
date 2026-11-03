@@ -8,7 +8,8 @@
 // count while each target is a plausible instruction in the program. An RTS
 // table ends before the low or the high bytes of an RTS dispatch start, and
 // before an entry that a run wrote: there the program holds other bytes than
-// the dispatch reads.
+// the dispatch reads. A JMP table ends before a JMP that a run wrote and no run
+// executed: the program wrote other bytes over it.
 // The knowledge of the user and the LLM wins: an idiom gives no region, no
 // reference and no entry point where their region has another type or a
 // removal holds the bytes, and a table ends where their region ends. A BIT
@@ -203,9 +204,11 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
   }
 
   // JMP tables: at least three JMP abs in a row.
+  /** True when a run wrote the bytes of the JMP at the address and no run executed it: no table entry. Code that a run wrote and then executed stays. */
+  const overwritten = (jmp: number) => written(jmp) && written(jmp + 1) && written(jmp + 2) && (coverage![jmp]! & COVERAGE.ramExecute) === 0;
   for (let at = range.start; at + 3 * MIN_JUMPS - 1 <= range.end; at++) {
     let n = 0;
-    while (at + 3 * n + 2 <= range.end && byteAt(at + 3 * n) === 0x4c) n++;
+    while (at + 3 * n + 2 <= range.end && byteAt(at + 3 * n) === 0x4c && !overwritten(at + 3 * n)) n++;
     if (n < MIN_JUMPS) continue;
     // The JMPs inside the run are the same table: a run that is left out is left out once.
     const run = n;
