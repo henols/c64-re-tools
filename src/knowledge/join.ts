@@ -4,7 +4,10 @@
 // there; at an address that no batch owns, the first batch in the order given
 // wins. A name that a batch gave to an address, and that the join replaced
 // with the name of another batch, is replaced in that batch's operand
-// expressions and macro args too. The join writes no knowledge.
+// expressions, macro args, patch code and macro bodies too. In the comment
+// texts of the batch, and after a ; in its code, the name is replaced as a
+// whole word only when no English word can be the name: "the score" stays
+// prose. The join writes no knowledge.
 
 import { replaceIdentifiers } from "./expression.ts";
 import { spaceOf } from "./schema.ts";
@@ -45,6 +48,13 @@ export interface JoinResult {
 }
 
 type Op<K extends BatchOperation["op"]> = Extract<BatchOperation, { op: K }>;
+
+/** A name as a whole word of a comment: a word after a letter, a digit, _, . or $ is part of another word or a number. */
+const WORD = /(?<![A-Za-z0-9_.$])\.?[A-Za-z_][A-Za-z0-9_]*/g;
+/** A name that no English word is: with a dot first (a local label), an underscore, a digit, or a capital letter after a small one. */
+const NO_WORD = /^\.|[_0-9]|[a-z][A-Z]/;
+/** A string or a character of ACME, also one that the line ends before its quote: its text holds no name. */
+const QUOTED = /("(?:\\.|[^"\\])*"?|'(?:\\.|[^'\\])*'?)/;
 
 /** The value of a keyed write as text, to compare and report it. */
 function valueOf(op: BatchOperation): string {
@@ -134,6 +144,35 @@ export function joinBatches(batches: readonly Batch[]): JoinResult {
       return text;
     }
   };
+  /** The comment text of a batch with each name that it lost and that no English word is. */
+  const followWords = (batch: Batch, space: string, text: string) => {
+    const map = renamedIn.get(batch)!;
+    return map.size === 0 ? text : text.replace(WORD, (word) => (NO_WORD.test(word) ? (map.get(`${space}|${word}`) ?? word) : word));
+  };
+  /** ACME code of a batch with each name that it lost, outside strings and `kept` (the params of a macro), and its comments after a ; as followWords gives them. */
+  const followCode = (batch: Batch, space: string, code: string, kept: readonly string[] = []) => {
+    const map = renamedIn.get(batch)!;
+    if (map.size === 0) return code;
+    const name = (word: string) => (kept.includes(word) ? word : (map.get(`${space}|${word}`) ?? word));
+    return code
+      .split("\n")
+      .map((line) => {
+        // The parts at odd indexes are strings. A ; outside a string starts the comment of the line.
+        let comment = false;
+        return line
+          .split(QUOTED)
+          .map((part, index) => {
+            if (comment) return followWords(batch, space, part);
+            if (index % 2 === 1) return part;
+            const at = part.indexOf(";");
+            if (at === -1) return part.replace(WORD, name);
+            comment = true;
+            return part.slice(0, at).replace(WORD, name) + followWords(batch, space, part.slice(at));
+          })
+          .join("");
+      })
+      .join("\n");
+  };
 
   const comments = choose("comment", "comment", (write) => `${spaceOf(write)}|${write.address}|${write.placement}`, (write) => write.address);
   const operands = choose("operand", "operand", (write) => `${spaceOf(write)}|${write.address}`, (write) => write.address);
@@ -191,19 +230,28 @@ export function joinBatches(batches: readonly Batch[]): JoinResult {
         case "use":
           if (once(write)) rest.push({ ...write, args: (write.args ?? []).map((arg) => follow(batch, spaceOf(write), arg)) });
           break;
+        case "patch":
+          if (once(write)) rest.push({ ...write, code: followCode(batch, spaceOf(write), write.code), ...(write.comment === undefined ? {} : { comment: followWords(batch, spaceOf(write), write.comment) }) });
+          break;
         default:
           if (once(write)) rest.push(write);
       }
     }
   }
   const kept = <T extends { batch: Batch; write: BatchOperation }>(map: Map<string, T>) => [...map.values()].map(({ write }) => write);
+  const commentWrites = [...comments.values()].map(({ batch, write }) => ({ ...write, text: followWords(batch, spaceOf(write), write.text) }));
+  const macroWrites = [...macros.values()].map(({ batch, write }) => ({
+    ...write,
+    body: followCode(batch, spaceOf(write), write.body, write.params),
+    ...(write.comment === undefined ? {} : { comment: followWords(batch, spaceOf(write), write.comment) }),
+  }));
   const operandWrites = [...operands.values()].map(({ batch, write }) => ({
     ...write,
     ...(write.symbol === undefined ? {} : { symbol: follow(batch, spaceOf(write), write.symbol) }),
     ...(write.expression === undefined ? {} : { expression: follow(batch, spaceOf(write), write.expression) }),
   }));
   return {
-    ops: [...removals, ...foreignRegions, ...ownRegions, ...kept(names), ...kept(comments), ...kept(modules), ...references, ...kept(macros), ...operandWrites, ...rest],
+    ops: [...removals, ...foreignRegions, ...ownRegions, ...kept(names), ...commentWrites, ...kept(modules), ...references, ...macroWrites, ...operandWrites, ...rest],
     choices,
     clashes,
     repeated,

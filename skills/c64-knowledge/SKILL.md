@@ -63,6 +63,7 @@ Commit the folder `.c64-re-tools/knowledge/` of the project with git.
 | Write a macro | `macro inc16 --params dst --body-file inc16.asm` |
 | Write instructions as one use of a macro | `use '$1005-$100a' inc16 --args ptr` |
 | Do many writes as one revision | `apply .c64-re-tools/local/batch.json` |
+| Check the batch of one agent | `join batch.json` |
 | Show the batches of parallel agents as one list of writes | `join a.json b.json` |
 | Write the batches of parallel agents as one revision | `join a.json b.json --apply` |
 | Read the history of an address or a name | `history '$2100'` |
@@ -473,6 +474,7 @@ An operand expression tells the generated source how to write the operand of one
 ### `join <batch>...`
 
 - `join` joins the batches of agents that name the program at the same time. See "Batches of parallel agents" of `<skill>/references/batches.md`.
+- `join` also takes one batch. Then `writes` shows the writes of that batch, and `join` checks the batch as it checks more batches.
 - Without `--apply`, `join` writes no knowledge. `body` holds `writes`, `repeated` and `choices`. `writes` lists the joined writes. `choices` lists each place where the batches gave different values, with the value that stays.
 - Examine `choices` and `writes`. `nextAction` is the same `join` with `--apply`. Run it when the choices agree with your task.
 - With `--apply`, `join` writes the joined writes as one revision, or nothing when the knowledge refuses one write. Then `body` holds `revision`, `writes`, `replaced`, `repeated` and `choices`, as for `apply`.

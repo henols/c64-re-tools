@@ -356,6 +356,44 @@ export interface EntryPoint {
 }
 
 /**
+ * The mark of the replay core at the first opcode fetch at an entry. Give it after count-pc, which clears it. `after`
+ * comes after the point of each event, before its action: the events before the mark came are the first ones.
+ */
+async function markEntry(core: C64RunSession, entry: number) {
+  await core.command(`mark ${hexWord(entry)}`);
+  const marked = async () => {
+    const answer = /tick=(\d+) phase=([0-9a-f]+)/.exec(await core.command("marked"));
+    return answer === null ? undefined : { tick: Number(answer[1]), phase: answer[2]! };
+  };
+  let came: { tick: number; phase: string } | undefined;
+  let eventsBefore = 0;
+  return {
+    /** After the point of event `index` (0 is the first). */
+    async after(index: number): Promise<void> {
+      if (came !== undefined) return;
+      came = await marked();
+      if (came === undefined) eventsBefore = index + 1;
+    },
+    /** Where the program came to the entry, or undefined when it did not come to it. */
+    async end(): Promise<{ tick: number; phase: string; eventsBefore: number } | undefined> {
+      came ??= await marked();
+      return came === undefined ? undefined : { ...came, eventsBefore };
+    },
+  };
+}
+
+/**
+ * Why a rebuild with a loader cannot replay the events: the first of the events before the entry that is no runUntil
+ * to an address. A rebuild with a loader runs its loader there, so the event has no point in it.
+ */
+export function eventBeforeEntry(events: readonly RecordedEvent[], eventsBefore: number, entry: number): string | undefined {
+  const early = events.slice(0, eventsBefore).find((event) => !("pc" in event.key));
+  if (early === undefined) return undefined;
+  const what = early.step === undefined ? "the RESTORE of the play" : `step ${early.step}`;
+  return `${what} ran before the program came to its entry ${formatC64Address(entry)}. A rebuild with a loader has no point for it. Make the steps of the record file start after the entry`;
+}
+
+/**
  * A loader with a start screen that RUN starts waits for a key or a fire button that the recording does not have:
  * the rebuild goes on after the wait, as the check of the loader does. Gives the tick of the wait, a problem, or
  * undefined when the rebuild has no start screen.
@@ -502,18 +540,24 @@ export interface RecordOutcome {
   coverageFrom?: { tick: number; pc: number };
   /** Why the session did not complete (a runUntil that did not reach its target). */
   reason?: string;
+  /** With an entry: why a rebuild with a loader cannot replay the recording, as replay finds it on the reference. */
+  loaderProblem?: string;
 }
 
 /**
  * Plays the steps of a record file in the replay core and records the session.
  * `input` runs after the steps, with `restore` for a RESTORE press of the play;
- * a reason that it gives means no recording.
+ * a reason that it gives means no recording. With `entry`, the entry of the
+ * program where the loader of a rebuild jumps to, the outcome tells when the
+ * program did not come to it, or which event ran before it came to it, as
+ * replay finds it on the reference.
  */
 export async function record(
   core: C64RunSession,
   file: RecordFile,
   workspace: Workspace,
   input?: (core: C64RunSession, restore: () => Promise<string | undefined>) => Promise<string | undefined>,
+  entry?: number,
 ): Promise<RecordOutcome> {
   const prg = readProjectFile(file.program).bytes;
   const same = (address: number) => address;
@@ -532,6 +576,7 @@ export async function record(
   await core.command(`inputs ${inputsArgument(file.inputs)}`);
   await core.command(`record ${reads}`);
   await countAt(core, targets);
+  const mark = entry === undefined ? undefined : await markEntry(core, entry);
   await startProgram(core, prg, file.load);
   // From READY on: the start of the C64 itself is never in the map.
   await core.command(COVERAGE_COMMANDS.get(file.coverage) ?? `coverage on-pc ${hexWord(parseC64Address(file.coverage))}`);
@@ -551,6 +596,7 @@ export async function record(
       const reached = await core.status(`run-pc ${pc} ${tick + action.runUntil.timeoutFrames * PAL_FRAME_CYCLES} ${count}`);
       if (reached.word !== "reached") return `the program did not reach ${address} within ${action.runUntil.timeoutFrames} frames`;
       events.push({ ...(step === undefined ? {} : { step }), action, key: { pc: address, count } });
+      await mark?.after(events.length - 1);
       return undefined;
     }
     const busiest = afterEvent ? undefined : busiestSite(await core.command("sites"));
@@ -563,6 +609,7 @@ export async function record(
       return `the program did not read its input again within ${READ_WAIT_FRAMES} frames. This step runs at the next input read. Put a runUntil step to an address before it: that step needs no input read`;
     }
     events.push({ ...(step === undefined ? {} : { step }), action, key });
+    await mark?.after(events.length - 1);
     return doAction(core, action, at);
   };
   for (const [index, step] of file.steps.entries()) {
@@ -607,6 +654,13 @@ export async function record(
     return failed === undefined ? undefined : "RESTORE: " + failed;
   };
   if (input !== undefined && reason === undefined) reason = await input(core, restore);
+  const came = await mark?.end();
+  const loaderProblem =
+    entry === undefined
+      ? undefined
+      : came === undefined
+        ? `the program did not come to its entry ${formatC64Address(entry)} in the session, where the loader of a rebuild jumps. Make the session go on until the program runs from its entry`
+        : eventBeforeEntry(events, came.eventsBefore, entry);
   const end = await core.status("status");
   const sites = (await core.command("sites")).split(" ").slice(2).map((entry): RecordedSite => {
     const [where, reads, kind] = entry.split(":");
@@ -636,6 +690,7 @@ export async function record(
     coverage: readFileSync(coverage),
     ...(from === null ? {} : { coverageFrom: { tick: Number(from[1]), pc: Number.parseInt(from[2]!, 16) } }),
     ...(reason === undefined ? {} : { reason }),
+    ...(loaderProblem === undefined ? {} : { loaderProblem }),
   };
 }
 
@@ -719,7 +774,7 @@ export async function replaySide(
   if (options.compare !== undefined && options.handover === undefined) await startSampling(options.compare);
   const targets = recording.events.flatMap((event) => ("pc" in event.key ? [at.code(event.key.pc)] : []));
   await countAt(core, targets);
-  if (options.entry !== undefined) await core.command(`mark ${hexWord(options.entry)}`);
+  const mark = options.entry === undefined ? undefined : await markEntry(core, options.entry);
   await startProgram(core, prg, recording.load);
   const base = reference ? recording.ticks : recording.ticks * REBUILD_TIME_FACTOR;
   let limit = base;
@@ -759,14 +814,6 @@ export async function replaySide(
       }
     }
   }
-  // The reference with an entry: the events before the mark at the entry came.
-  let eventsBefore = 0;
-  let entryTick: number | undefined;
-  let entryPhase = "";
-  const marked = async () => {
-    const answer = /tick=(\d+) phase=([0-9a-f]+)/.exec(await core.command("marked"));
-    if (answer !== null) [entryTick, entryPhase] = [Number(answer[1]), answer[2]!];
-  };
   for (const [index, event] of (problem === undefined ? recording.events : []).entries()) {
     const what = event.step === undefined ? "the RESTORE of the play" : "step " + event.step;
     let key = event.key;
@@ -781,10 +828,8 @@ export async function replaySide(
       problem = "the program did not come to the point of " + what;
       break;
     }
-    if (options.entry !== undefined && entryTick === undefined) {
-      await marked();
-      if (entryTick === undefined) eventsBefore = index + 1;
-    }
+    // The reference with an entry: the events before the mark at the entry came.
+    await mark?.after(index);
     // At the point of a runUntil to an address, its target is reached.
     if (!("pc" in event.key)) problem = await doAction(core, event.action, at);
     if (problem !== undefined) {
@@ -804,8 +849,8 @@ export async function replaySide(
     lines = readFileSync(samples, "utf8").split("\n").filter((line) => line !== "");
   }
   let entryPoint: EntryPoint | undefined;
-  if (options.entry !== undefined && entryTick === undefined) await marked();
-  if (entryTick !== undefined) {
+  const came = await mark?.end();
+  if (came !== undefined) {
     const counts = new Map<string, number>();
     for (const event of recording.events) {
       if (!("pc" in event.key) || counts.has(event.key.pc)) continue;
@@ -813,8 +858,8 @@ export async function replaySide(
       if (before !== null) counts.set(event.key.pc, Number(before[1]));
     }
     // A checkpoint at the first fetch at the entry has the tick of the mark. The rebuild starts its checkpoints after that fetch.
-    const after = lines.filter((line) => Number(line.split(" ")[0]) > entryTick!);
-    entryPoint = { tick: entryTick, phase: entryPhase, counts, eventsBefore, samplesBefore: lines.length - after.length };
+    const after = lines.filter((line) => Number(line.split(" ")[0]) > came.tick);
+    entryPoint = { ...came, counts, samplesBefore: lines.length - after.length };
     lines = after;
   }
   return {

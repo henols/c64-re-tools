@@ -321,6 +321,11 @@ export function programImage(db: DatabaseSync | undefined, space: Space = DEFAUL
   return image;
 }
 
+/** The entry of the program of a space, without its bytes; undefined when the knowledge has none. */
+export function programEntry(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): number | undefined {
+  return (db?.prepare("SELECT address FROM current_entries WHERE space = ?").get(space) as { address: number } | undefined)?.address;
+}
+
 /** The program of a space for a tool; refused with the way to put it in when the knowledge has none. */
 export function requireProgram(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): ProgramImage {
   const image = programImage(db, space);

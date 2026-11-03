@@ -19,7 +19,7 @@ import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { UsageError } from "#src/script.ts";
-import { firstDifference, loaderEntry, mover, parseStateItem, pinLines, readRecording, replaySide, siteMap, type Comparison, type ReplayResult, type ReplaySubject } from "./recording.ts";
+import { eventBeforeEntry, firstDifference, loaderEntry, mover, parseStateItem, pinLines, readRecording, replaySide, siteMap, type Comparison, type ReplayResult, type ReplaySubject } from "./recording.ts";
 import { cachedNames } from "./scenario.ts";
 
 const MAX_STATE_ITEMS = 16;
@@ -155,11 +155,8 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
       const at = formatC64Address(loader.reference);
       if (entered === undefined) return result("INCONCLUSIVE", "reference", { reason: `the reference never came to ${at}, where the loader of the rebuild jumps` });
       // An event before the entry has no point in a rebuild with a loader. A runUntil to an address there does nothing, and the rebuild leaves it out.
-      const early = recording.events.slice(0, entered.eventsBefore).find((event) => !("pc" in event.key));
-      if (early !== undefined) {
-        const what = early.step === undefined ? "the RESTORE of the play" : `step ${early.step}`;
-        return result("INCONCLUSIVE", "reference", { reason: `${what} ran before the program came to its entry ${at}. A rebuild with a loader has no point for it. Make the steps of the record file start after the entry` });
-      }
+      const early = eventBeforeEntry(recording.events, entered.eventsBefore, loader.reference);
+      if (early !== undefined) return result("INCONCLUSIVE", "reference", { reason: early });
       handover = { entry: loader.entry, reference: entered };
     }
 
