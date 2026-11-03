@@ -8,7 +8,7 @@ import { Refusal } from "../errors.ts";
 import { COVERAGE } from "../c64.ts";
 import { indexPath, openForRead, textPath, withWrite } from "./database.ts";
 import { coverageRuns, listSpaces } from "./read.ts";
-import { addCoverage, analyzedBytes, coverageAccess, memoryRows, programCoverage, programImage, releaseCode, setImage, type ImageRequest } from "./program.ts";
+import { addCoverage, analyzedBytes, coverageAccess, isProgram, memoryRows, programCoverage, programImage, releaseCode, setImage, type ImageRequest } from "./program.ts";
 import { revision as revisionChanges } from "./history.ts";
 import { revert, setRelease } from "./write.ts";
 
@@ -375,4 +375,17 @@ test("the bytes of a release in a range are patch code as !byte lines; the base 
   } finally {
     db.close();
   }
+});
+
+test("an image with segments that touch is the program that the knowledge keeps as one range; another byte or another range is not", () => {
+  const root = project();
+  // A capture that joins no segment over a bound of the I/O area.
+  const captured = image([{ start: 0x0800, end: 0xcfff }, { start: 0xd000, end: 0xdfff }, { start: 0xe000, end: 0xffff }]);
+  withWrite((db) => setImage(db, llm, captured), root);
+  const program = fromText(root).image!;
+  assert.deepEqual(program.segments, [{ start: 0x0800, end: 0xffff }]);
+  assert.equal(isProgram(program, captured), true);
+  assert.equal(isProgram(program, image(captured.segments, 1)), false, "another byte");
+  assert.equal(isProgram(program, image([{ start: 0x0800, end: 0xcfff }, { start: 0xe000, end: 0xffff }])), false, "a gap");
+  assert.equal(isProgram(program, image([{ start: 0x0801, end: 0xffff }])), false, "another start");
 });

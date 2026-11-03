@@ -18,7 +18,7 @@ import { OPERAND_SELECTS, operandText, type OperandSelect } from "#src/knowledge
 import { historyAt, historyNamed, historyOfMacro, historyOfSwitch, revision, revisionCounts, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { addCoverage, coverageAccess, coverageRangeCounts, memoryRows, operandImages as programImages, programCoverage, programImage, releaseCode, requireProgram, setImage, type ImageRequest, type ProgramImage } from "#src/knowledge/program.ts";
+import { addCoverage, coverageAccess, coverageRangeCounts, isProgram, memoryRows, operandImages as programImages, programCoverage, programImage, releaseCode, requireProgram, setImage, type ImageRequest, type ProgramImage } from "#src/knowledge/program.ts";
 import { coloursOfCapture, startScreenOfCapture, startScreenOfStage } from "#src/knowledge/start-screen.ts";
 import {
   at,
@@ -1050,12 +1050,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       };
       return (db) => {
         if (base) {
-          const program = requireProgram(db, call.space);
-          const same = JSON.stringify(program.segments) === JSON.stringify(image.segments) && program.segments.every((segment) => {
-            for (let address = segment.start; address <= segment.end; address++) if (program.byteAt(address) !== image.byteAt(address)) return false;
-            return true;
-          });
-          if (!same) throw new Refusal("invalid-input", `The bytes of ${file} are not the program of the knowledge. Give --base only to the release whose file image put into the knowledge.`);
+          if (!isProgram(requireProgram(db, call.space), image)) throw new Refusal("invalid-input", `The bytes of ${file} are not the program of the knowledge. Give --base only to the release whose file image put into the knowledge.`);
         }
         const bytes = image.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0);
         return { ...shown(setRelease(db, context, request), "release", release), bytes };
