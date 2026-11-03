@@ -64,17 +64,31 @@ test("an idiom whose bytes another idiom already holds is left out with its reas
   assert.deepEqual(found.leftOut, [{ start: 0x1200, end: 0x1301, kind: "rts-table", reason: "overlaps-idiom" }]);
 });
 
-test("an RTS table ends before the table of another RTS dispatch, and before an entry that a run wrote", () => {
-  // Two RTS dispatches on word tables: $1300 for the first, $1302 for the second.
-  const two = findIdioms(image({ 0x1000: [0xbd, 0x01, 0x13, 0x48, 0xbd, 0x00, 0x13, 0x48, 0x60], 0x1010: [0xbd, 0x03, 0x13, 0x48, 0xbd, 0x02, 0x13, 0x48, 0x60], 0x1300: [0xff, 0x14, 0xff, 0x15, 0x00, 0x00] }).byteAt, RANGE);
-  assert.deepEqual(two.findings.regions, [{ start: 0x1300, end: 0x1301, type: "rts-addresses" }, { start: 0x1302, end: 0x1303, type: "rts-addresses" }]);
-  assert.deepEqual(two.findings.references.map((reference) => [reference.from, reference.to]), [[0x1008, 0x1500], [0x1018, 0x1600]]);
-  // One word table of three entries at $1300: a run wrote the low byte of the third entry.
+test("an RTS table ends before the table of another RTS dispatch, but not one entry in", () => {
+  // Two RTS dispatches on word tables: $1300 for the first, $1304 for the second.
+  const two = findIdioms(image({ 0x1000: [0xbd, 0x01, 0x13, 0x48, 0xbd, 0x00, 0x13, 0x48, 0x60], 0x1010: [0xbd, 0x05, 0x13, 0x48, 0xbd, 0x04, 0x13, 0x48, 0x60], 0x1300: [0xff, 0x14, 0xff, 0x15, 0xff, 0x16, 0xff, 0x17, 0x00, 0x00] }).byteAt, RANGE);
+  assert.deepEqual(two.findings.regions, [{ start: 0x1300, end: 0x1303, type: "rts-addresses" }, { start: 0x1304, end: 0x1307, type: "rts-addresses" }]);
+  assert.deepEqual(two.findings.references.map((reference) => [reference.from, reference.to]), [[0x1008, 0x1500], [0x1008, 0x1600], [0x1018, 0x1700], [0x1018, 0x1800]]);
+  // A dispatch on the separate tables at $1100 and $1200, and one that reads them from the second entry (LDA $1101,X / LDA $1201,X): one table, both RTS go to its targets.
+  const view = findIdioms(image({ 0x1000: [0xbd, 0x00, 0x11, 0x48, 0xbd, 0x00, 0x12, 0x48, 0x60], 0x1010: [0xbd, 0x01, 0x11, 0x48, 0xbd, 0x01, 0x12, 0x48, 0x60], 0x1100: [0x14, 0x15, 0x16, 0x00], 0x1200: [0xff, 0xff, 0xff, 0x00] }).byteAt, RANGE);
+  assert.deepEqual(view.findings.regions, [{ start: 0x1100, end: 0x1102, type: "bytes" }, { start: 0x1200, end: 0x1202, type: "bytes" }]);
+  assert.deepEqual(view.findings.references.map((reference) => [reference.from, reference.to]), [[0x1008, 0x1500], [0x1008, 0x1600], [0x1008, 0x1700], [0x1018, 0x1600], [0x1018, 0x1700]]);
+  // A pattern on the bytes at $1202 and $1203 gives no plausible target ($ffff + 1): it does not end the table at $1200.
+  const noTarget = findIdioms(image({ 0x1000: [0xbd, 0x00, 0x11, 0x48, 0xbd, 0x00, 0x12, 0x48, 0x60], 0x1010: [0xbd, 0x03, 0x12, 0x48, 0xbd, 0x02, 0x12, 0x48, 0x60], 0x1100: [0x14, 0x15, 0x16, 0x17, 0x00], 0x1200: [0xff, 0xff, 0xff, 0xff, 0x00] }).byteAt, RANGE);
+  assert.deepEqual(noTarget.findings.regions, [{ start: 0x1100, end: 0x1103, type: "bytes" }, { start: 0x1200, end: 0x1203, type: "bytes" }]);
+});
+
+test("an RTS table ends before an entry that a run wrote, unless a run wrote its first entry too", () => {
+  // One word table of three entries at $1300.
   const { byteAt } = image({ 0x1000: [0xbd, 0x01, 0x13, 0x48, 0xbd, 0x00, 0x13, 0x48, 0x60], 0x1300: [0xff, 0x14, 0xff, 0x15, 0xff, 0x16, 0x00, 0x00] });
+  assert.deepEqual(findIdioms(byteAt, RANGE).findings.regions, [{ start: 0x1300, end: 0x1305, type: "rts-addresses" }]);
+  // A run wrote the low byte of the third entry.
   const run = new Uint8Array(0x10000);
   run[0x1304] = COVERAGE.ramRead | COVERAGE.ramWrite;
-  assert.deepEqual(findIdioms(byteAt, RANGE).findings.regions, [{ start: 0x1300, end: 0x1305, type: "rts-addresses" }]);
   assert.deepEqual(findIdioms(byteAt, RANGE, covered(run)).findings.regions, [{ start: 0x1300, end: 0x1303, type: "rts-addresses" }]);
+  // An unpacker wrote the whole table before the dispatch.
+  const unpacked = new Uint8Array(0x10000).fill(COVERAGE.ramWrite, 0x1000, 0x1400);
+  assert.deepEqual(findIdioms(byteAt, RANGE, covered(unpacked)).findings.regions, [{ start: 0x1300, end: 0x1305, type: "rts-addresses" }]);
 });
 
 test("a second RTS dispatch through the same table adds its jump references, and a JMP run inside a table is left out once", () => {
@@ -124,23 +138,30 @@ test("a $2c in an instruction that a run executed is its operand, not a BIT skip
   assert.deepEqual(findIdioms(byteAt, RANGE, covered(skip)).findings.regions, [{ start: 0x1802, end: 0x1803, type: "dual-use" }]);
 });
 
-test("a BIT skip hides a 2-byte instruction: a $2c before a 3-byte instruction is no BIT skip", () => {
+test("a BIT skip hides whole instructions: a $2c before a 3-byte instruction is no BIT skip, a $2c before two 1-byte instructions is one", () => {
   // $1800: LDA #$00 / BEQ $1806 / LDA #$2c / STA $8c2a: the runs enter $1806 through the branch and never execute $1804.
   const { byteAt } = image({ 0x1800: [0xa9, 0x00, 0xf0, 0x02, 0xa9, 0x2c, 0x8d, 0x2a, 0x8c] });
   const run = new Uint8Array(0x10000);
   run[0x1800] = run[0x1802] = run[0x1806] = COVERAGE.ramExecute;
   assert.equal(findIdioms(byteAt, RANGE, covered(run)).counts.bitSkips, 0);
+  // $1800: BIT $e8e8 skips INX / INX ; $1810: JSR $1801 enters it.
+  const inx = findIdioms(image({ 0x1800: [0x2c, 0xe8, 0xe8], 0x1810: [0x20, 0x01, 0x18] }).byteAt, RANGE);
+  assert.deepEqual([inx.findings.regions, inx.findings.references], [[{ start: 0x1801, end: 0x1802, type: "dual-use" }], [{ from: 0x1810, to: 0x1801, kind: "call" }]]);
 });
 
-test("JMPs that a run wrote and never executed are no JMP table; JMPs that a run wrote and then executed are one", () => {
-  const { byteAt } = image({ 0x1400: [0x4c, 0x00, 0x15, 0x4c, 0x00, 0x16, 0x4c, 0x00, 0x17] });
+test("JMPs that a run wrote and never executed are no JMP table, unless a run wrote and then executed a JMP of the table", () => {
+  const { byteAt } = image({ 0x1400: [0x4c, 0x00, 0x15, 0x4c, 0x00, 0x16, 0x4c, 0x00, 0x17, 0x4c, 0x00, 0x18] });
   // A run wrote a charset over the JMPs and read it.
-  const data = new Uint8Array(0x10000).fill(COVERAGE.ramRead | COVERAGE.ramWrite, 0x1400, 0x1409);
+  const data = new Uint8Array(0x10000).fill(COVERAGE.ramRead | COVERAGE.ramWrite, 0x1400, 0x140c);
   assert.equal(findIdioms(byteAt, RANGE, covered(data)).counts.jumpTables, 0);
-  // A run copied the JMPs there and executed them.
-  const code = new Uint8Array(0x10000).fill(COVERAGE.ramWrite, 0x1400, 0x1409);
-  code[0x1400] = code[0x1403] = code[0x1406] = COVERAGE.ramWrite | COVERAGE.ramExecute;
-  assert.deepEqual(findIdioms(byteAt, RANGE, covered(code)).findings.regions, [{ start: 0x1400, end: 0x1408, type: "jumps" }]);
+  // An unpacker wrote the JMPs, and the runs executed only the first and the third.
+  const code = new Uint8Array(0x10000).fill(COVERAGE.ramWrite, 0x1400, 0x140c);
+  code[0x1400] = code[0x1406] = COVERAGE.ramWrite | COVERAGE.ramExecute;
+  assert.deepEqual(findIdioms(byteAt, RANGE, covered(code)).findings.regions, [{ start: 0x1400, end: 0x140b, type: "jumps" }]);
+  // A run wrote data over the last JMP of a table that no run wrote.
+  const tail = new Uint8Array(0x10000).fill(COVERAGE.ramWrite, 0x1409, 0x140c);
+  tail[0x1400] = COVERAGE.ramExecute;
+  assert.deepEqual(findIdioms(byteAt, RANGE, covered(tail)).findings.regions, [{ start: 0x1400, end: 0x1408, type: "jumps" }]);
 });
 
 test("the regions and the removals of the user and the LLM win over the idioms", () => {

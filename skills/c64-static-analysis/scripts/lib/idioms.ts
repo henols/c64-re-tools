@@ -6,15 +6,20 @@
 // and executed, in either order, since a coverage file holds no order:
 // a copier's writes in one run and their execution in another do not count. A table's length is not known statically: entries
 // count while each target is a plausible instruction in the program. An RTS
-// table ends before the low or the high bytes of an RTS dispatch start, and
-// before an entry that a run wrote: there the program holds other bytes than
-// the dispatch reads. A JMP table ends before a JMP that a run wrote and no run
-// executed: the program wrote other bytes over it.
+// table ends before the low or the high bytes of another RTS dispatch start,
+// but not one entry in: a table of one entry is no dispatch, so there the
+// other dispatch reads the same table with an index one higher. An RTS table
+// also ends before an entry that a run wrote when no run wrote its first
+// entry: there the program holds other bytes than the dispatch reads. A JMP
+// table ends before a JMP that a run wrote and no run executed, when no run
+// executed a JMP of the table that a run wrote: the program wrote other bytes
+// over it. A coverage map holds no order, so the writes of an unpacker or a
+// copier, which write the whole table before its use, tell nothing.
 // The knowledge of the user and the LLM wins: an idiom gives no region, no
 // reference and no entry point where their region has another type or a
 // removal holds the bytes, and a table ends where their region ends. A BIT
-// skip hides a 2-byte instruction in its operand bytes. A $2c in an
-// instruction that a run executed is an operand, not a BIT.
+// skip hides whole instructions in its 2 operand bytes: one of 2 bytes or two
+// of 1 byte. A $2c in an instruction that a run executed is an operand, not a BIT.
 
 import { COVERAGE, instructionLength, type ReferenceKind } from "#src/c64.ts";
 import type { NormalizedFindings } from "#src/knowledge/import.ts";
@@ -125,6 +130,8 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
   };
   /** True when a run wrote the byte at the address; never without coverage. */
   const written = (address: number) => coverage !== undefined && (coverage[address]! & COVERAGE.ramWrite) !== 0;
+  /** True when a run executed an instruction at the address; never without coverage. */
+  const executed = (address: number) => coverage !== undefined && (coverage[address]! & COVERAGE.ramExecute) !== 0;
   const regions: NormalizedFindings["regions"] = [];
   const references: NormalizedFindings["references"] = [];
   const entryPoints = new Set<number>();
@@ -161,24 +168,36 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
       if (fits(low, low, "bytes") && fits(high, high, "bytes")) dispatches.push({ rts: at + 8, low, high });
     }
   }
-  // Where the low and the high bytes of each table start: a table ends before one of them.
-  const tableStarts = new Set(dispatches.flatMap(({ low, high }) => [low, high]));
+  /** The target of the entry with these bytes, or undefined when a byte is outside the program. */
+  const targetAt = (lowAt: number, highAt: number) => {
+    const lowByte = byteAt(lowAt);
+    const highByte = byteAt(highAt);
+    return lowByte === undefined || highByte === undefined ? undefined : ((highByte << 8) | lowByte) + 1;
+  };
+  // Where the low and the high bytes of each table start whose first entry is a plausible target: a table ends before one of them.
+  const tableStarts = new Set(dispatches.flatMap(({ low, high }) => {
+    const target = targetAt(low, high);
+    return target !== undefined && plausible(byteAt, target, range) ? [low, high] : [];
+  }));
+  // The lowest table first: a dispatch that reads it from a later entry then finds it recorded.
+  dispatches.sort((a, b) => a.low - b.low);
+  const rtsRegions: Array<{ start: number; end: number }> = [];
   for (const { rts, low, high } of dispatches) {
     const interleaved = high === low + 1;
     const step = interleaved ? 2 : 1;
     const lowRange = decidedAt(low);
     const highRange = decidedAt(high);
+    // A run that wrote the first entry wrote the table before its use.
+    const writesTell = !written(low) && !written(high);
     const targets: number[] = [];
     for (let index = 0; index < MAX_TABLE; index++) {
       const lowAt = low + index * step;
       const highAt = high + index * step;
       if (decidedAt(lowAt) !== lowRange || decidedAt(highAt) !== highRange) break;
-      if (index > 0 && (tableStarts.has(lowAt) || tableStarts.has(highAt))) break;
-      const lowByte = byteAt(lowAt);
-      const highByte = byteAt(highAt);
-      if (lowByte === undefined || highByte === undefined || written(lowAt) || written(highAt)) break;
-      const target = ((highByte << 8) | lowByte) + 1;
-      if (!plausible(byteAt, target, range)) break;
+      if (index > 1 && (tableStarts.has(lowAt) || tableStarts.has(highAt))) break;
+      if (writesTell && (written(lowAt) || written(highAt))) break;
+      const target = targetAt(lowAt, highAt);
+      if (target === undefined || !plausible(byteAt, target, range)) break;
       targets.push(target);
     }
     if (targets.length === 0) continue;
@@ -188,10 +207,11 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
       : low + n === high
         ? [{ start: low, end: high + n - 1, type: "rts-addresses-split" }]
         : [{ start: low, end: low + n - 1, type: "bytes" }, { start: high, end: high + n - 1, type: "bytes" }];
-    // Another dispatch through the same table: the table is recorded, and this RTS goes to its targets too.
-    const known = parts.every((part) => regions.some((region) => region.start === part.start && region.end === part.end && region.type === part.type));
+    // Another dispatch through the same table, or from a later entry of it: the table is recorded, and this RTS goes to its targets too.
+    const known = parts.every((part) => rtsRegions.some((region) => region.start <= part.start && part.end <= region.end));
     if (!known) {
       if (!addRegions("rts-table", parts)) continue;
+      rtsRegions.push(...parts);
       counts.rtsTables++;
     }
     // A target in data of the user or the LLM, or a reference that they removed, gives no reference and no entry point.
@@ -204,11 +224,16 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
   }
 
   // JMP tables: at least three JMP abs in a row.
-  /** True when a run wrote the bytes of the JMP at the address and no run executed it: no table entry. Code that a run wrote and then executed stays. */
-  const overwritten = (jmp: number) => written(jmp) && written(jmp + 1) && written(jmp + 2) && (coverage![jmp]! & COVERAGE.ramExecute) === 0;
+  const writtenJmp = (jmp: number) => written(jmp) && written(jmp + 1) && written(jmp + 2);
   for (let at = range.start; at + 3 * MIN_JUMPS - 1 <= range.end; at++) {
     let n = 0;
-    while (at + 3 * n + 2 <= range.end && byteAt(at + 3 * n) === 0x4c && !overwritten(at + 3 * n)) n++;
+    while (at + 3 * n + 2 <= range.end && byteAt(at + 3 * n) === 0x4c) n++;
+    // A JMP that a run wrote and then executed: the code that wrote the table put it there.
+    const jmps = Array.from({ length: n }, (_, index) => at + 3 * index);
+    if (!jmps.some((jmp) => writtenJmp(jmp) && executed(jmp))) {
+      const stale = jmps.findIndex((jmp) => writtenJmp(jmp) && !executed(jmp));
+      if (stale !== -1) n = stale;
+    }
     if (n < MIN_JUMPS) continue;
     // The JMPs inside the run are the same table: a run that is left out is left out once.
     const run = n;
@@ -226,15 +251,24 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
     at += 3 * run - 1;
   }
 
-  // BIT skips: BIT abs ($2c) whose operand bytes are a 2-byte instruction that a JMP, a JSR or the coverage enters.
+  // BIT skips: BIT abs ($2c) whose operand bytes are whole instructions that a JMP, a JSR or the coverage enters.
   // A $2c in an executed instruction is its operand; the BIT is code and its operand bytes are dual-use.
+  /** True when the 2 operand bytes of the BIT at the address are one instruction of 2 bytes or two of 1 byte, with no JAM. */
+  const hidesInstructions = (bit: number) => {
+    let next = bit + 1;
+    while (next < bit + 3) {
+      if (!plausible(byteAt, next, range)) return false;
+      next += instructionLength(byteAt(next)!);
+    }
+    return next === bit + 3;
+  };
   const entered = new Set<number>();
   for (let at = range.start; at + 2 <= range.end; at++) {
     if (byteAt(at) === 0x4c || byteAt(at) === 0x20) entered.add(word(byteAt, at + 1)!);
   }
   if (coverage !== undefined) for (let address = range.start; address <= range.end; address++) if ((coverage[address]! & COVERAGE.ramExecute) !== 0) entered.add(address);
   for (let at = range.start; at + 2 <= range.end; at++) {
-    if (byteAt(at) !== 0x2c || !entered.has(at + 1) || !plausible(byteAt, at + 1, range) || instructionLength(byteAt(at + 1)!) !== 2 || inExecutedOperand(at)) continue;
+    if (byteAt(at) !== 0x2c || !entered.has(at + 1) || !hidesInstructions(at) || inExecutedOperand(at)) continue;
     if (!fits(at, at, "code") || !fits(at + 1, at + 2, "dual-use")) continue;
     if (!addRegions("bit-skip", [{ start: at + 1, end: at + 2, type: "dual-use" }])) continue;
     counts.bitSkips++;
