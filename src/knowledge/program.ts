@@ -328,12 +328,13 @@ const STATE_PAGES = ["$0000", "$0100", "$0200", "$0300"] as const;
  * $0002-$03ff of the entry state (the zero page, the stack and the system
  * pages hold code and data that the loader left). $0000 and $0001 are the
  * CPU port, not memory. A segment byte wins over a state byte. `segments`
- * are the ranges that hold these bytes. The analyzers read this memory, and
- * the listing of the knowledge shows it.
+ * are the ranges that hold these bytes, and `fromState` the ranges of the
+ * state pages in them: none when the state has no page. The analyzers read
+ * this memory, and the listing of the knowledge shows it.
  */
-export function entryMemory(image: ProgramImage): Pick<ProgramImage, "segments" | "memory" | "byteAt"> {
+export function entryMemory(image: ProgramImage): Pick<ProgramImage, "segments" | "memory" | "byteAt"> & { fromState: AddressRange[] } {
   const memory = new Uint8Array(image.memory);
-  const held = [...image.segments];
+  const fromState: AddressRange[] = [];
   const pages = image.state?.pages;
   STATE_PAGES.forEach((page, index) => {
     const hex = typeof pages === "object" && pages !== null ? (pages as Record<string, unknown>)[page] : undefined;
@@ -343,9 +344,9 @@ export function entryMemory(image: ProgramImage): Pick<ProgramImage, "segments" 
       const address = index * 0x100 + offset;
       if (address >= 2 && !inRanges(image.segments, address)) memory[address] = byte;
     });
-    if (index * 0x100 + bytes.length > 2) held.push({ start: Math.max(index * 0x100, 2), end: index * 0x100 + bytes.length - 1 });
+    if (index * 0x100 + bytes.length > 2) fromState.push({ start: Math.max(index * 0x100, 2), end: index * 0x100 + bytes.length - 1 });
   });
-  return { segments: mergeRanges(held), memory, byteAt: (address) => memory[address]! };
+  return { segments: mergeRanges([...image.segments, ...fromState]), fromState: mergeRanges(fromState), memory, byteAt: (address) => memory[address]! };
 }
 
 /**

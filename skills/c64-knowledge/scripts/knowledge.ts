@@ -855,7 +855,7 @@ const READ_COMMANDS: CommandSpec[] = [
       const body = out !== undefined ? { lines: lines.length, ...writeReported(out, lines.map((line) => `${line}\n`).join(""), { what: "--out" }) } : { lines: list(call, lines, (line) => line, "a larger --max-listed, a smaller <range>, or --out <file> for all lines") };
       // A range outside the program has no lines: the hint names the ranges that have them.
       if (memory.segments.some((part) => rangesOverlap(part, range))) return body;
-      const held = `${memory.segments.map(formatC64Range).join(", ")}${image.state === undefined ? "" : " (the segments, and $0002-$03ff of the entry state)"}`;
+      const held = `${memory.segments.map(formatC64Range).join(", ")}${memory.fromState.length === 0 ? "" : ` (the segments, and ${memory.fromState.map(formatC64Range).join(", ")} of the entry state)`}`;
       return reply(body, { hint: `The range ${formatC64Range(range)} is outside the program. The program has bytes only in ${held}. Give a range in one of them.` });
     },
   ),

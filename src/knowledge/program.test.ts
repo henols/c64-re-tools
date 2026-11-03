@@ -122,6 +122,12 @@ test("analyzed bytes hold the entry-state pages below the segments, without the 
   const program = fromText(root).image!;
   const { bytes, kind } = analyzedBytes(program);
   assert.deepEqual(entryMemory(program).segments, [{ start: 0x0002, end: 0x0410 }], "the memory with bytes: the state pages from $0002, joined with the segment");
+  assert.deepEqual(entryMemory(program).fromState, [{ start: 0x0002, end: 0x03ff }]);
+  // An entry state without pages, or with page hex that is not hex, adds no memory.
+  for (const pages of [undefined, { $0000: "zz" }]) {
+    const noPages = { ...fromText(root).image!, state: { registers: { pc: "$0400" }, ...(pages === undefined ? {} : { pages }) } };
+    assert.deepEqual([entryMemory(noPages).segments, entryMemory(noPages).fromState], [[{ start: 0x03ff, end: 0x0410 }], []]);
+  }
   assert.equal(kind, "flat64k");
   assert.equal(bytes[0x0080], 0x60, "the RTS of the entry state");
   assert.deepEqual([bytes[0x0000], bytes[0x0001]], [0, 0], "the CPU port is no memory");
