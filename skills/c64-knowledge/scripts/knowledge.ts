@@ -18,7 +18,7 @@ import { OPERAND_SELECTS, operandText, type OperandSelect } from "#src/knowledge
 import { historyAt, historyNamed, historyOfMacro, historyOfSwitch, revision, revisionCounts, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { addCoverage, coverageAccess, coverageRangeCounts, memoryRows, operandImages as programImages, programCoverage, programImage, releaseCode, requireProgram, setImage, type ImageRequest, type ProgramImage } from "#src/knowledge/program.ts";
+import { addCoverage, coverageAccess, coverageRangeCounts, isProgram, memoryRows, operandImages as programImages, programCoverage, programImage, releaseCode, requireProgram, setImage, type ImageRequest, type ProgramImage } from "#src/knowledge/program.ts";
 import { coloursOfCapture, startScreenOfCapture, startScreenOfStage } from "#src/knowledge/start-screen.ts";
 import {
   at,
@@ -1025,7 +1025,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
   writeCommand(
     {
       name: "release",
-      summary: "Records a release of the program from its PRG or the image.json of its capture: the knowledge keeps the bytes of the release, and the path and the SHA-256 of the file. The base release is the one whose bytes are the program of the knowledge.",
+      summary: "Records a release of the program from its PRG or the image.json of its capture: the knowledge keeps the bytes of the release, and the path and the SHA-256 of the program file. For an image.json, the program file is the file that the capture ran. The base release is the one whose bytes are the program of the knowledge.",
       subjects: [{ name: "<label>", help: "the release label, for example FIRESTAR or V2" }],
       options: {
         file: { kind: "path", value: "<file>", help: "the PRG or image.json of the release. After the write, the knowledge does not need the file", required: true },
@@ -1039,23 +1039,19 @@ const WRITE_COMMANDS: CommandSpec[] = [
       const image = readImage(file);
       const commentText = call.string("comment");
       const base = call.flag("base");
+      // The image.json of a capture names the program file that the capture ran: the release cites that file, as git ignores a capture in local/.
+      const cited = image.program === undefined ? { file, sha256: sha256(readProjectFile(file).bytes) } : { file: knowledgePath(image.program.file, `The program of ${file}`), sha256: image.program.sha256 };
       // The base release has no bytes of its own: its bytes are the program.
       const request = {
         space: call.space,
         label: call.subject(0),
-        file,
-        sha256: sha256(readProjectFile(file).bytes),
+        ...cited,
         ...(base ? { base } : { rows: memoryRows(image.segments, image.byteAt) }),
         ...(commentText === undefined ? {} : { comment: commentText }),
       };
       return (db) => {
         if (base) {
-          const program = requireProgram(db, call.space);
-          const same = JSON.stringify(program.segments) === JSON.stringify(image.segments) && program.segments.every((segment) => {
-            for (let address = segment.start; address <= segment.end; address++) if (program.byteAt(address) !== image.byteAt(address)) return false;
-            return true;
-          });
-          if (!same) throw new Refusal("invalid-input", `The bytes of ${file} are not the program of the knowledge. Give --base only to the release whose file image put into the knowledge.`);
+          if (!isProgram(requireProgram(db, call.space), image)) throw new Refusal("invalid-input", `The bytes of ${file} are not the program of the knowledge. Give --base only to the release whose file image put into the knowledge.`);
         }
         const bytes = image.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0);
         return { ...shown(setRelease(db, context, request), "release", release), bytes };

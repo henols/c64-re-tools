@@ -34,6 +34,8 @@ test("the VIC-II state decodes from its registers", () => {
   });
   // In bitmap mode the graphics address is the bitmap base: bit 3 of $d018.
   assert.equal(decodeVicii(vic({ 0x11: 0x3b, 0x18: 0x18 }), cia2).graphicsAddress, 0xa000);
+  // The VIC-II reads the bitmap also in an invalid mode with ECM and BMM.
+  assert.equal(decodeVicii(vic({ 0x11: 0x7b, 0x18: 0x18 }), cia2).graphicsAddress, 0xa000);
 });
 
 test("a sprite decodes position, flags, colour and data address", () => {

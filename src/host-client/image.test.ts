@@ -46,13 +46,15 @@ test("a PRG has the extension .prg in any letter case or no extension; every oth
   assert.throws(() => readImage("README.md"), { code: "invalid-input", message: /^README\.md is not an image\.json of an unpacked program or a PRG: a PRG has the extension \.prg or no extension, not \.md\./ });
 });
 
-test("a JSON value that is no object, as the file or as a segment or a stage, is no image.json", () => {
+test("a JSON value that is no object, as the file or as a segment, a stage or the program, is no image.json", () => {
   writeFileSync("image.bin", Buffer.alloc(0x10000));
   for (const [text, message] of [
     ["null", /it is not a JSON object/],
     ["[]", /it is not a JSON object/],
     [JSON.stringify({ image: "image.bin", segments: [null] }), /segment 1 is not an object/],
     [JSON.stringify({ image: "image.bin", segments: [{ start: "$0400", end: "$04ff" }], stages: [7] }), /stage 1 is not an object/],
+    [JSON.stringify({ image: "image.bin", segments: [{ start: "$0400", end: "$04ff" }], program: "game.prg" }), /its program is not an object/],
+    [JSON.stringify({ image: "image.bin", segments: [{ start: "$0400", end: "$04ff" }], program: { file: "game.prg" } }), /its program has no file and SHA-256/],
   ] as const) {
     writeFileSync("bad.json", text);
     assert.throws(() => readImage("bad.json"), { code: "invalid-input", message }, text);

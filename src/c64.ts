@@ -194,6 +194,27 @@ export function d018Offsets(d018: number): { screen: number; characters: number;
 }
 
 /**
+ * The screen memory that the VIC-II reads, from its registers ($d000-$d02e)
+ * and the ports of CIA 2 ($dd00-$dd0f): the screen, and the bitmap in bitmap
+ * mode or else the charset.
+ */
+export function vicScreenMemory(vic: Uint8Array, cia2: Uint8Array): { screen: number; bitmap: number } | { screen: number; charset: number } {
+  const bank = vicBankBase(cia2[0]!, cia2[2]);
+  const offsets = d018Offsets(vic[0x18]!);
+  return { screen: bank + offsets.screen, ...((vic[0x11]! & 0x20) !== 0 ? { bitmap: bank + offsets.bitmap } : { charset: bank + offsets.characters }) };
+}
+
+/** The address of the pointer of a sprite (0-7): the last 8 bytes of the 1 KiB of screen memory. */
+export function spritePointer(screen: number, sprite: number): number {
+  return screen + 0x3f8 + sprite;
+}
+
+/** The address of the 64 data bytes of a sprite, from its pointer value and the bank that the ports of CIA 2 ($dd00-$dd0f) select. */
+export function spriteData(cia2: Uint8Array, pointer: number): number {
+  return vicBankBase(cia2[0]!, cia2[2]) + pointer * 64;
+}
+
+/**
  * Converts text to the PETSCII bytes the C64 keyboard types after a reset
  * (upper case/graphics mode). Letters of either case type the unshifted key,
  * which shows as an upper-case letter. "\n" and "\r\n" type RETURN.
