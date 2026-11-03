@@ -2,14 +2,17 @@
 // runs in its own emulator, and each differing range gets its first access
 // (read, write, execute or none) and whether its bytes changed by the end.
 // Watchpoints and range breakpoints stop the run at an access; the coverage
-// map then tells which range and which access it was.
+// map then tells which range and which access it was, and the CPU history
+// tells which instruction made a read and a write.
 
 import { type AddressRange, COVERAGE, EXECUTE, instructionLength, READ, WRITE } from "#src/c64.ts";
+import { isRefusal } from "#src/errors.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
 import { startAtEntry, type EntryState } from "#src/host-client/entry-state.ts";
 import { runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { knowledgeAt } from "#src/knowledge/names.ts";
+import { isStore } from "#src/opcodes.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 
@@ -28,12 +31,29 @@ export type Start =
 
 const MAX_WATCH = 256;
 
-/** The first access that coverage flags show; a read-modify-write reads first. */
-export function accessOf(flags: number): FirstAccess {
+/**
+ * The first access that coverage flags show. A read and a write at one stop
+ * are of the instruction that made the access (`opcode`, when the CPU history
+ * gives it): an indexed store makes a dummy read before its write, and a
+ * read-modify-write reads first. Without the instruction, the read is first.
+ */
+export function accessOf(flags: number, opcode?: number): FirstAccess {
   if ((flags & EXECUTE) !== 0) return "execute";
+  if ((flags & READ) !== 0 && (flags & WRITE) !== 0 && opcode !== undefined && isStore(opcode)) return "write";
   if ((flags & READ) !== 0) return "read";
   if ((flags & WRITE) !== 0) return "write";
   return "none";
+}
+
+/** The opcode of the last instruction in the CPU history, or undefined when the session gives no history (after a JAM, or none since a restore). */
+async function lastOpcode(client: ViceSessionClient): Promise<number | undefined> {
+  try {
+    const [entry] = (await client.cpuHistory({ limit: 1, space: "c64" })).entries;
+    return entry === undefined ? undefined : Buffer.from(entry.bytes, "hex")[0];
+  } catch (error) {
+    if (isRefusal(error) && error.code === "operation-failed") return undefined;
+    throw error;
+  }
 }
 
 /** Starts the release; returns why it did not start, or undefined. */
@@ -81,11 +101,14 @@ export async function watchRelease(
    * After a stop: the ranges that the coverage shows accessed get their first
    * access, and lose their points. VICE marks only the opcode byte of an
    * executed instruction, so an instruction that starts up to two bytes before
-   * a range, or in it, executes its operand bytes too.
+   * a range, or in it, executes its operand bytes too. A stop at a watchpoint
+   * comes after the instruction that made the access, so at a stop (`atPoint`)
+   * the last entry of the CPU history is that instruction.
    */
-  const settle = async (): Promise<boolean> => {
+  const settle = async (atPoint = true): Promise<boolean> => {
     const map = await readCoverage(client);
     let found = false;
+    let instruction: Promise<number | undefined> | undefined;
     for (const [index, ids] of points) {
       const range = ranges[index]!;
       let flags = 0;
@@ -98,7 +121,8 @@ export async function watchRelease(
         }
       }
       if (accessOf(flags) === "none") continue;
-      first[index] = accessOf(flags);
+      const both = (flags & READ) !== 0 && (flags & WRITE) !== 0;
+      first[index] = accessOf(flags, atPoint && both ? await (instruction ??= lastOpcode(client)) : undefined);
       for (const point of ids) {
         if (point.kind === "watch") await client.watchpoint({ action: "remove", id: point.id });
         else await client.breakpoint({ action: "remove", id: point.id });
@@ -138,7 +162,7 @@ export async function watchRelease(
     await runActionStep(client, step, at);
   }
   await runFrames(run.frames);
-  if (points.size > 0) await settle();
+  if (points.size > 0) await settle(false);
 
   const accesses: RangeAccess[] = [];
   for (const [index, range] of ranges.entries()) {
