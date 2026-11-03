@@ -6,6 +6,8 @@
 // writes the memory into the project. "loads" captures each part of a
 // multi-load program. No native unpack tool is used.
 
+import { basename, extname } from "node:path";
+
 import { type AddressRange, COVERAGE, EXECUTE, formatC64Address, formatC64Range, formatC64RangeFields, inRanges, parseC64Address } from "#src/c64.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { IO_RAM, markIoRamWrites, readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
@@ -638,8 +640,8 @@ const joined = (hints: Array<string | undefined>) => {
   const given = hints.filter((hint): hint is string => hint !== undefined);
   return given.length === 0 ? undefined : given.join(" ");
 };
-/** The folder that a capture writes when the agent follows the nextAction of stages. */
-const CAPTURE_OUT = ".c64-re-tools/local/capture";
+/** The folder that a capture writes when the agent follows the nextAction of stages: one for each program, by its file name without the extension. */
+const captureOut = (program: string) => `.c64-re-tools/local/capture/${basename(program, extname(program))}`;
 
 /** inspect: the next step is a run of the program with trace. A program without a BASIC start needs --entry for it. */
 function inspected(call: Call) {
@@ -667,7 +669,7 @@ function staged(call: Call, { output, failed }: { output: Record<string, unknown
   const more = output.moreStages === true ? `The script followed only the first ${MAX_STAGES} stages. Give a larger --min-stage, so that small stages join.` : undefined;
   return reply(result, {
     hint: joined([more, `Disassemble the code at ${last}, the entry of the last stage. Make sure that it is the start of the program and not a second unpacker. Then capture at that address.`]),
-    nextAction: call.next("capture", call.subject(0), "--until", last, "--out", CAPTURE_OUT, ...sameStart(call)),
+    nextAction: call.next("capture", call.subject(0), "--until", last, "--out", captureOut(call.subject(0)), ...sameStart(call)),
   });
 }
 

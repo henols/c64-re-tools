@@ -39,7 +39,7 @@ Commit the folder `.c64-re-tools/knowledge/` of the project with git.
 | Record the verdict of one comment of a check | `verdict 4711 '$2100' wrong --class callers --why 'JSR at $1f00 calls it too' --text 'Moves the player.'` |
 | Write all knowledge to one file | `export --out .c64-re-tools/local/knowledge.json` |
 | Find what the knowledge holds of the program | `program` |
-| Put a captured program into the knowledge | `image .c64-re-tools/local/capture/image.json` |
+| Put a captured program into the knowledge | `image .c64-re-tools/local/capture/game/image.json` |
 | Put a PRG into the knowledge | `image releases/game.prg` |
 | Add the coverage of runs | `coverage .c64-re-tools/local/runs/rooms/room0.bin` |
 | Add the coverage of a recording | `coverage tests/recordings/walk` |

@@ -28,9 +28,9 @@ To get the command list, run the script with no arguments.
 | Run a program that is not a BASIC program at `$0801` | `trace releases/game.prg --entry '$c000'` |
 | Give input to an intro or a menu before the evidence starts | `trace releases/game.prg --steps .c64-re-tools/local/input.json` |
 | Find each stage and the entry of the unpacked program | `stages releases/game.prg` |
-| Capture the unpacked program at its entry | `capture releases/game.prg --until '$c000' --out .c64-re-tools/local/capture` |
-| Capture again without the bytes of a cracktro | `capture releases/game.prg --until '$c000' --out .c64-re-tools/local/capture --exclude '$a000-$a9ff'` |
-| Capture only one known range of the program | `capture releases/game.prg --until '$c000' --out .c64-re-tools/local/capture --range '$c000-$cfff'` |
+| Capture the unpacked program at its entry | `capture releases/game.prg --until '$c000' --out .c64-re-tools/local/capture/game` |
+| Capture again without the bytes of a cracktro | `capture releases/game.prg --until '$c000' --out .c64-re-tools/local/capture/game --exclude '$a000-$a9ff'` |
+| Capture only one known range of the program | `capture releases/game.prg --until '$c000' --out .c64-re-tools/local/capture/game --range '$c000-$cfff'` |
 | Capture each part of a multi-load program | `loads releases/game.d64 --steps .c64-re-tools/local/parts.json --out .c64-re-tools/local/parts` |
 | Capture each part and the RAM of the disk drive | `loads releases/game.d64 --steps .c64-re-tools/local/parts.json --out .c64-re-tools/local/parts --drive` |
 
@@ -175,7 +175,7 @@ For `likely` and `unclear`, `nextAction` is `stages` with the same `--entry` and
 - `stages`: one item for each stage, with `stage`, `entry`, `frames`, `wrote` and `next`. `wrote` lists each block that the stage wrote, also a small block. `next` is the entry of the next stage.
 - `moreStages: true`: the script followed only the first stages. Then `hint` tells you to give a larger `--min-stage`.
 
-The `entry` of the last stage is usually the start of the program. `nextAction` is `capture` at that entry, into `.c64-re-tools/local/capture`, with the same `--entry` and `--steps`. `hint` tells you to disassemble the code at that entry first.
+The `entry` of the last stage is usually the start of the program. `nextAction` is `capture` at that entry, with the same `--entry` and `--steps`. Its `--out` is a folder for each program: `.c64-re-tools/local/capture/<name>`, where `<name>` is the file name of the program without its extension. `hint` tells you to disassemble the code at that entry first.
 
 Traps:
 
