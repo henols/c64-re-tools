@@ -43,6 +43,7 @@ When more agents name the program at the same time, give each agent one range of
 `join` makes one list of writes from the batches:
 
 - At an address in the owner range of a batch, the name, the comment, the operand and the module of that batch stay. At an address that no batch owns, the first batch in the command stays.
-- A batch can give an address a name that `join` replaces. Then `join` also replaces that name in the operand expressions, the macro arguments and the comments of that batch. In a comment, `join` replaces only the full word. For example, a replaced `x_pos` does not change `x_pos_hi`.
+- A batch can give an address a name that `join` replaces. Then `join` also replaces that name in the operand expressions, the macro arguments, the patch code, the macro bodies and the comments of that batch. In a comment, `join` replaces only the full word. For example, a replaced `x_pos` does not change `x_pos_hi`.
+- A name with no underscore, no digit and no capital letter after a small letter can be an English word, for example `score`. `join` does not replace this name in a comment, because the comment can use the word as text.
 - The regions of the owner come after the regions of the other batches. Thus the regions of the owner stay where they overlap.
 - A name from a batch stays when another batch removes the symbol at that address.

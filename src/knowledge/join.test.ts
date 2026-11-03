@@ -68,26 +68,55 @@ test("join takes the first batch's write at an address that no batch owns, and r
 });
 
 test("join follows a replaced name into an expression, a macro arg and the words of a comment, and keeps each space apart", () => {
-  const owner: Batch = { file: "owner.json", owner: { start: 0x2000, end: 0x2fff }, ops: [{ op: "rename", address: 0x2000, name: "sprite_table" }] };
+  const owner: Batch = { file: "owner.json", owner: { start: 0x2000, end: 0x2fff }, ops: [{ op: "rename", address: 0x2000, name: "sprite_table" }, { op: "rename", address: 0x2100, name: "player_score" }] };
   const other: Batch = {
     file: "other.json",
     ops: [
-      { op: "rename", address: 0x2000, name: "sprites" },
-      { op: "operand", address: 0x0810, select: "expr", expression: ">(sprites+$40)" },
-      { op: "use", start: 0x0820, end: 0x0825, macro: "set16", args: ["sprites", "$fb"] },
-      { op: "comment", address: 0x0810, placement: "side", text: "Copies sprites+1 to sprites_hi, not to .sprites." },
-      { op: "rename", space: "drive8", address: 0x2000, name: "sprites" },
+      { op: "rename", address: 0x2000, name: "sprite_list" },
+      { op: "rename", address: 0x2100, name: "score" },
+      { op: "operand", address: 0x0810, select: "expr", expression: ">(sprite_list+$40)" },
+      { op: "use", start: 0x0820, end: 0x0825, macro: "set16", args: ["sprite_list", "$fb"] },
+      { op: "comment", address: 0x0810, placement: "side", text: "Copies sprite_list+1 to sprite_list_hi, not to .sprite_list, and adds 10 to the score." },
+      { op: "rename", space: "drive8", address: 0x2000, name: "sprite_list" },
     ],
   };
   const joined = joinBatches([owner, other]);
   assert.deepEqual(joined.ops.find((write) => write.op === "operand"), { op: "operand", address: 0x0810, select: "expr", expression: ">(sprite_table+$40)" });
   assert.deepEqual(joined.ops.find((write) => write.op === "use"), { op: "use", start: 0x0820, end: 0x0825, macro: "set16", args: ["sprite_table", "$fb"] });
-  assert.deepEqual(joined.ops.find((write) => write.op === "comment"), { op: "comment", address: 0x0810, placement: "side", text: "Copies sprite_table+1 to sprites_hi, not to .sprites." }, "only the whole word changes");
+  assert.deepEqual(
+    joined.ops.find((write) => write.op === "comment"),
+    { op: "comment", address: 0x0810, placement: "side", text: "Copies sprite_table+1 to sprite_list_hi, not to .sprite_list, and adds 10 to the score." },
+    "only the whole word changes, and a name that is an English word stays in prose",
+  );
   assert.deepEqual(
     joined.ops.filter((write) => write.op === "rename").map((write) => [(write as { space?: string }).space ?? "c64", (write as { name: string }).name]),
     [
       ["c64", "sprite_table"],
-      ["drive8", "sprites"],
+      ["c64", "player_score"],
+      ["drive8", "sprite_list"],
     ],
   );
+});
+
+test("join follows a replaced name into patch code and a macro body outside strings and params, and into their comments", () => {
+  const owner: Batch = { file: "owner.json", owner: { start: 0x1000, end: 0x1fff }, ops: [{ op: "rename", address: 0x1000, name: "draw_room" }, { op: "rename", address: 0x1100, name: "player_score" }] };
+  const other: Batch = {
+    file: "other.json",
+    ops: [
+      { op: "rename", address: 0x1000, name: "draw_room_a" },
+      { op: "rename", address: 0x1100, name: "score" },
+      { op: "patch", start: 0x0900, end: 0x0902, switch: "FIX", code: '  jsr draw_room_a ; calls draw_room_a for the score\n  !text "draw_room_a;"\n  inc score', comment: "Skips draw_room_a and the score." },
+      { op: "macro", name: "add_score", params: ["score"], body: "  lda score\n  jsr draw_room_a", comment: "Adds to the score, then calls draw_room_a." },
+    ],
+  };
+  const joined = joinBatches([owner, other]);
+  assert.deepEqual(joined.ops.find((write) => write.op === "patch"), {
+    op: "patch",
+    start: 0x0900,
+    end: 0x0902,
+    switch: "FIX",
+    code: '  jsr draw_room ; calls draw_room for the score\n  !text "draw_room_a;"\n  inc player_score',
+    comment: "Skips draw_room and the score.",
+  });
+  assert.deepEqual(joined.ops.find((write) => write.op === "macro"), { op: "macro", name: "add_score", params: ["score"], body: "  lda score\n  jsr draw_room", comment: "Adds to the score, then calls draw_room." });
 });
