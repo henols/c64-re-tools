@@ -16,7 +16,7 @@ import type { StartScreenRow } from "./knowledge/read.ts";
 import { START_SCREEN_CONTINUE, START_SCREEN_FILE, START_SCREEN_WAIT, startScreenPlan, startScreenValues, type StartScreenPlan } from "./knowledge/start-screen.ts";
 import { largestFree, packParts, type PackedLoader, placePieces } from "./loader.ts";
 import type { ToolContext } from "./native/run.ts";
-import { type AssembledSymbol, symbolValues } from "./native/types.ts";
+import { type AssembledSymbol, requiredLabel, symbolValues } from "./native/types.ts";
 
 /** Bytes at an address. */
 export interface StagePart {
@@ -370,11 +370,7 @@ export async function packStage(loader: Uint8Array, stage: StageBytes, row: Star
   const build = async (source: string) => {
     const built = await assembleStage(source);
     const labels = symbolValues(built.symbols);
-    const label = (name: string) => {
-      const value = labels.get(name);
-      if (value === undefined) throw new Refusal("operation-failed", `The build of ${STAGE_FILE} has no ${name} label. This is a defect of the script.`);
-      return value;
-    };
+    const label = (name: string) => requiredLabel(labels, name, `The build of ${STAGE_FILE}`);
     return { program: built.program, symbols: [...built.symbols], label };
   };
   // The size of the show code does not depend on its address: one build without a stash and without the parts gives it.

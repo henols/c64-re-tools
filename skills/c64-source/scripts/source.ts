@@ -35,7 +35,7 @@ import { assemble, symbolsFileText } from "#src/native/acme.ts";
 import { PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { decodeProgram, leftoverInput, reachInput } from "#src/program-code.ts";
 import { localToolContext } from "#src/native/local.ts";
-import { type AssembledSymbol, type Diagnostic, symbolValues } from "#src/native/types.ts";
+import { type AssembledSymbol, type Diagnostic, requiredLabel, symbolValues } from "#src/native/types.ts";
 import { decode as decodeRegister, describeAddress, platformNames, platformNamesFor, romUseOfProgram } from "#src/platform.ts";
 import { ensureLocal, generatedDirectory, LOCAL_DIRECTORY, newProjectFolder, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { generatedReferences } from "#src/reference-pages.ts";
@@ -902,11 +902,7 @@ async function buildLoader(
     throw new WireFailure("operation-failed", `The assembled loader does not have the planned layout${wrongPacking === undefined ? "" : ` (${wrongPacking.what})`}. This is a defect of the script.`);
   }
   const labels = symbolValues(loaderBuilt.symbols ?? []);
-  const labelValue = (name: string) => {
-    const value = labels.get(name);
-    if (value === undefined) throw new WireFailure("operation-failed", `The assembled loader has no ${name} label. This is a defect of the script.`);
-    return value;
-  };
+  const labelValue = (name: string) => requiredLabel(labels, name, "The assembled loader");
   const jump = labelValue(LOADER_JUMP);
   const wrong = simulate(memory, loader.copies, expected);
   if (wrong !== undefined) throw new WireFailure("operation-failed", `The simulated loader writes a wrong byte at ${formatC64Address(wrong)}. This is a defect of the script.`);

@@ -38,6 +38,13 @@ export const symbolValue = (symbol: AssembledSymbol): number => (symbol.kind ===
 /** The value of each symbol, by name. */
 export const symbolValues = (symbols: readonly AssembledSymbol[]): Map<string, number> => new Map(symbols.map((symbol) => [symbol.name, symbolValue(symbol)]));
 
+/** The value of a label that the script itself put into a build (`what`, for example "The assembled loader"): a label that `labels` (symbolValues) does not have is a defect of the script. */
+export function requiredLabel(labels: ReadonlyMap<string, number>, name: string, what: string): number {
+  const value = labels.get(name);
+  if (value === undefined) throw new Refusal("operation-failed", `${what} has no ${name} label. This is a defect of the script.`);
+  return value;
+}
+
 export interface AcmeResult {
   assembled: boolean;
   /** Present when assembled: where the program loads. The program bytes are the one attachment that assemble returns. */
