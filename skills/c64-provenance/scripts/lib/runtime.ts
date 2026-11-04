@@ -6,7 +6,6 @@
 // tells which instruction made a read and a write.
 
 import { type AddressRange, COVERAGE, EXECUTE, instructionLength, READ, WRITE } from "#src/c64.ts";
-import { isRefusal } from "#src/errors.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
 import { startAtEntry, type EntryState } from "#src/host-client/entry-state.ts";
@@ -14,7 +13,7 @@ import { runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { knowledgeAt } from "#src/knowledge/names.ts";
 import { isStore } from "#src/opcodes.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
-import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { lastOpcode, readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 
 export type FirstAccess = "read" | "write" | "execute" | "none";
 
@@ -43,17 +42,6 @@ export function accessOf(flags: number, opcode?: number): FirstAccess {
   if ((flags & READ) !== 0) return "read";
   if ((flags & WRITE) !== 0) return "write";
   return "none";
-}
-
-/** The opcode of the last instruction in the CPU history, or undefined when the session gives no history (after a JAM, or none since a restore). */
-async function lastOpcode(client: ViceSessionClient): Promise<number | undefined> {
-  try {
-    const [entry] = (await client.cpuHistory({ limit: 1, space: "c64" })).entries;
-    return entry === undefined ? undefined : Buffer.from(entry.bytes, "hex")[0];
-  } catch (error) {
-    if (isRefusal(error) && error.code === "operation-failed") return undefined;
-    throw error;
-  }
 }
 
 /** Starts the release; returns why it did not start, or undefined. */

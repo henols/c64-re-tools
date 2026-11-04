@@ -14,9 +14,10 @@ import { IO_RAM, markIoRamWrites, readCoverage, writtenBlocks } from "#src/host-
 import { readActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { MAX_WATCH_SIZE, WireFailure } from "#src/host-client/tools.ts";
 import { readPrg } from "#src/host-client/image.ts";
-import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { lastOpcode, readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
 import { PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
+import { isStore } from "#src/opcodes.ts";
 import { projectRelative } from "#src/project.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type OptionSpec } from "#src/script.ts";
 import { basicStart, inspect, writtenThenExecuted } from "./lib/evidence.ts";
@@ -533,12 +534,15 @@ async function usedAfter(client: ViceSessionClient): Promise<(address: number) =
  * reads of I/O registers (a raster wait, an interrupt acknowledge) do not stop the run.
  */
 const RAM_UNDER_IO = { kind: "memory", address: 0x0001, operator: "eq", value: 0, mask: 0x03, space: "c64", view: "cpu" } as const;
+/** The most stops at a store that the RAM check runs on after: a guard, as the emulator gives the dummy read of a store to a watchpoint only on request. */
+const MAX_STORE_STOPS = 256;
 
 /**
  * Runs the program on from its entry for the frames of usedAfter, with read watchpoints that stop only at a read of
  * the RAM under the I/O area, and gives the ranges that the program read there as RAM. The memory map gives each of
  * these reads as an I/O read. The first read of a range removes the watchpoints of the range, so the run stops at most
- * once for each range. The machine then goes back to the entry.
+ * once for each range. A stop comes after the instruction that made the access: an indexed store reads its address
+ * before it writes it, and that read is no read of the program, so the run goes on. The machine then goes back to the entry.
  */
 async function readAsRam<T extends AddressRange>(client: ViceSessionClient, ranges: readonly T[]): Promise<T[]> {
   await client.snapshot({ action: "save", name: ENTRY_SNAPSHOT });
@@ -555,11 +559,17 @@ async function readAsRam<T extends AddressRange>(client: ViceSessionClient, rang
     // The frames end where the frames of usedAfter end.
     const anchor = await rasterAt(client);
     let left = AFTER_ENTRY_FRAMES;
+    let storeStops = 0;
     while (left > 0 && read.size < ranges.length) {
       const run = await client.execution({ action: "advance-frames", count: left, space: "c64", anchor });
       left -= run.advancedFrames ?? 0;
       const index = run.pointId === undefined ? undefined : points.get(run.pointId);
       if (run.stopReason !== "watchpoint" || index === undefined) break;
+      const opcode = await lastOpcode(client);
+      if (opcode !== undefined && isStore(opcode)) {
+        if (++storeStops > MAX_STORE_STOPS) break;
+        continue;
+      }
       read.add(index);
       for (const [id, of] of [...points]) {
         if (of !== index) continue;

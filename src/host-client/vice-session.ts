@@ -1,6 +1,7 @@
 // The long-lived Host Runtime connection an MCP process owns: one connection,
 // one VICE. Exposes C64-domain operations only.
 
+import { isRefusal } from "../errors.ts";
 import { ProtocolError, WireFailure, type VideoStandard } from "../protocol/messages.ts";
 import { MAX_MEMORY_READ, traceHitsFromAttachment, validateViceResult, type TraceResult, type Breakpoint, type BreakpointParams, type PointRemoved, type Watchpoint, type WatchpointParams, type ExecutionParams, type ExecutionResult, type JoystickState, type MachineStatus, type PressResult, type MemmapRange, type MemoryWriteParams, type ProfileEntry, type RegisterValues, type ResetMode, type RunState, type RunTarget, type RunUntilResult, type MemoryReadParams, type MemoryReadResult, type Registers, type Space, type ViceOperation, type ViceOperations } from "../protocol/vice.ts";
 import type { KeyTap } from "../c64-keys.ts";
@@ -338,6 +339,20 @@ export class ViceSessionClient {
 /** The file of a path in the project folder, or in `root` when it is given. */
 function projectFile(params: { path: string; root?: string }) {
   return readProjectFile(params.path, params.root === undefined ? { what: "path" } : { root: params.root, what: "path" });
+}
+
+/**
+ * The opcode of the last instruction in the CPU history of the C64: at a stop at a watchpoint, the instruction that made
+ * the access. Undefined when the session gives no history (after a JAM, or none since a restore).
+ */
+export async function lastOpcode(client: Pick<ViceSessionClient, "cpuHistory">): Promise<number | undefined> {
+  try {
+    const [entry] = (await client.cpuHistory({ limit: 1, space: "c64" })).entries;
+    return entry === undefined ? undefined : Buffer.from(entry.bytes, "hex")[0];
+  } catch (error) {
+    if (isRefusal(error) && error.code === "operation-failed") return undefined;
+    throw error;
+  }
 }
 
 /** Reads `size` bytes from `address` of a space (the C64 when not given) in reads of at most 4 KiB, in one view: up to all 64 KiB. */
