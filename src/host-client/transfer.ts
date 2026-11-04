@@ -229,7 +229,13 @@ export function readSourceTree(sourceRoot: string, includes: readonly string[], 
       // The path as given.
     }
     if (!isInside(project, real)) throw outside;
-    if (statSync(real, { throwIfNoEntry: false })?.isDirectory() !== true) throw missing(folder);
+    let isFolder: boolean;
+    try {
+      isFolder = statSync(real, { throwIfNoEntry: false })?.isDirectory() === true;
+    } catch (error) {
+      throw new WireFailure("invalid-input", `The include folder ${folder} cannot be read: the file system refuses it (${(error as NodeJS.ErrnoException).code ?? "an error"}). Give an include folder inside the project folder that you can read.`);
+    }
+    if (!isFolder) throw missing(folder);
     return { folder, real };
   });
   let top = source;

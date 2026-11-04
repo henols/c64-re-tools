@@ -91,13 +91,6 @@ export function requireFields(action: string, given: Record<string, unknown>, al
   }
 }
 
-/** Checks the fields that go with out: the fields of `notWithOut` only without it. */
-export function requireOut(given: { out?: unknown } & Record<string, unknown>, notWithOut: readonly string[]): void {
-  for (const field of notWithOut) {
-    if (given.out !== undefined && given[field] !== undefined) throw new WireFailure("invalid-input", `${field} is not used with out.`);
-  }
-}
-
 /** A tool result that carries content blocks (for example an image) beside its structured result. */
 export class ToolOutput<T> {
   readonly structured: T;

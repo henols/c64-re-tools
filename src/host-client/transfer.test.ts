@@ -137,6 +137,9 @@ test("a source tree starts at the lowest folder of the source root and its inclu
   // A missing absolute include folder through a link to the project folder, for example /tmp to /private/tmp on macOS, is missing, not outside.
   symlinkSync(project, join(sandbox, "linked-project"));
   assert.throws(() => readSourceTree("game/src", [join(sandbox, "linked-project", "game", "nope")], { root: project }), failsWith("not-found"));
+  // An include folder that the file system refuses, here a link to itself, is a refusal that names it.
+  symlinkSync(join(game, "loop"), join(game, "loop"));
+  assert.throws(() => readSourceTree("game/src", ["../loop"], { root: project }), (error: unknown) => failsWith("invalid-input")(error) && (error as Error).message.startsWith("The include folder ../loop cannot be read"));
   for (const folder of ["../nope", "boot.asm", "../empty"]) {
     if (folder === "../empty") mkdirSync(join(game, "empty"));
     assert.throws(() => readSourceTree("game/src", [folder], { root: project }), (error: unknown) => failsWith("not-found")(error) && (error as Error).message.startsWith(`There is no include folder ${folder} with files in the project folder.`));

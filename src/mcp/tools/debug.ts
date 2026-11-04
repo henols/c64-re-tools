@@ -10,7 +10,7 @@ import { readCoverage } from "../../host-client/coverage.ts";
 import { readMemoryInParts } from "../../host-client/vice-session.ts";
 import { linesText, OutInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, Byte, SpaceInput, TOOL_INPUTS } from "../inputs.ts";
-import { AddressOutput, ConditionOutput, defineTool, HexData, requireFields, requireOut, showCondition, toCondition } from "../server.ts";
+import { AddressOutput, ConditionOutput, defineTool, HexData, requireFields, showCondition, toCondition } from "../server.ts";
 import { spaced } from "./memory.ts";
 
 /** No default here: a filled-in default would count as a field the other actions refuse. */
@@ -472,7 +472,7 @@ const c64Memmap = defineTool({
         ...basicRomFlaw(romInBasicArea(map, start)),
       };
     }
-    requireOut(fields, ["maxRanges"]);
+    if (fields.out !== undefined && fields.maxRanges !== undefined) throw new WireFailure("invalid-input", "maxRanges is not used with out.");
     requireFields("read", fields, ["start", "end", "maxRanges", "out"]);
     if (file !== undefined) {
       const map = await readCoverage(session, start, end);
