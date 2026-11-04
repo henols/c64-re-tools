@@ -568,7 +568,7 @@ async function capture(
     const vectors = vectorsOf(state, memory);
     // A clean machine at the READY prompt shows what the loader and the stages changed.
     const entry = entryStateFile(registers, state, vectors, await readyState(client));
-    const ran = capturedProgram(program);
+    const ran = capturedProgram(program, bytes);
     const { written, removed } = writeCapture(
       options.out,
       memory,

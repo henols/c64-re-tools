@@ -188,6 +188,9 @@ export function captureSegments(
   const joined = { start: loaded.start, end: loaded.end, loaded: true as const };
   const apart = segments.filter((segment) => {
     if (segment.end + 1 < joined.start || segment.start > joined.end + 1) return true;
+    // A segment that only touches the PRG joins it as a block joins a block: never across a bound of the I/O area.
+    if (segment.start === joined.end + 1 && ioSide(segment.start) !== ioSide(joined.end)) return true;
+    if (segment.end + 1 === joined.start && ioSide(segment.end) !== ioSide(joined.start)) return true;
     joined.start = Math.min(joined.start, segment.start);
     joined.end = Math.max(joined.end, segment.end);
     return false;

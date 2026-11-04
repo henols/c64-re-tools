@@ -372,6 +372,11 @@ test("a capture entry that no stage wrote is in the loaded bytes: the range of t
     { start: 0xc000, end: 0xc0ff, writtenBy: 0 },
   ]);
   assert.deepEqual(captureSegments([{ entry: 0x8000, wrote: [range(0xa000, 0xa0ff)] }], 0x81ff, { loaded: range(0x0801, 0x9fff) }), [{ start: 0x0801, end: 0xa0ff, loaded: true }], "a block that touches the loaded range joins it");
+  // The RAM under the I/O area stays a segment of its own, also next to the loaded range.
+  assert.deepEqual(captureSegments([{ entry: 0x8000, wrote: [range(0xd000, 0xdfff)] }], 0x81ff, { loaded: range(0x0801, 0xcfff) }), [
+    { start: 0x0801, end: 0xcfff, loaded: true },
+    { start: 0xd000, end: 0xdfff, writtenBy: 0 },
+  ]);
   // A written block holds the entry: the loaded bytes are the packer, not a segment.
   assert.deepEqual(captureSegments([{ entry: 0x080d, wrote: [range(0xc000, 0xc0ff)] }], 0xc000, { loaded: range(0x0801, 0x0fff) }), [{ start: 0xc000, end: 0xc0ff, writtenBy: 0 }]);
 });
@@ -424,8 +429,9 @@ test("a capture names the program file that it ran by its path in the project, a
   const cwd = process.cwd();
   process.chdir(root);
   try {
-    assert.deepEqual(capturedProgram("./releases/../releases/game.prg"), { file: "releases/game.prg", sha256: createHash("sha256").update("game").digest("hex") });
-    assert.equal(capturedProgram("../outside.prg"), undefined);
+    // The SHA-256 is of the bytes that ran.
+    assert.deepEqual(capturedProgram("./releases/../releases/game.prg", Buffer.from("game")), { file: "releases/game.prg", sha256: createHash("sha256").update("game").digest("hex") });
+    assert.equal(capturedProgram("../outside.prg", Buffer.from("game")), undefined);
   } finally {
     process.chdir(cwd);
   }

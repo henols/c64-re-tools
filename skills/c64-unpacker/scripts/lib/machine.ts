@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 import { type AddressRange, formatC64Address, hexWord, prgOf, spriteData, spritePointer, vicScreenMemory } from "#src/c64.ts";
 import { resetToReady } from "#src/host-client/entry-state.ts";
-import { readProjectFile, writeRefusal, writeReported, type Written } from "#src/host-client/transfer.ts";
+import { writeRefusal, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { MAX_WATCH_SIZE } from "#src/host-client/tools.ts";
 import { lastOpcode, readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { startScreenRanges } from "#src/knowledge/read.ts";
@@ -72,18 +72,18 @@ export function vicRam(io: { vic: Uint8Array; cia2: Uint8Array }, memory: Uint8A
 
 /**
  * The program file that a capture ran, for its image.json: the path in the
- * project in one spelling, and the SHA-256 of the file. A release of the
+ * project in one spelling, and the SHA-256 of `bytes`, the bytes that ran. A release of the
  * capture cites them, because git ignores the capture in local/. A file
  * outside the project gives undefined: then a release cites the image.json.
  */
-export function capturedProgram(path: string): { file: string; sha256: string } | undefined {
+export function capturedProgram(path: string, bytes: Uint8Array): { file: string; sha256: string } | undefined {
   let file: string;
   try {
     file = projectRelative(path);
   } catch {
     return undefined;
   }
-  return { file, sha256: sha256(readProjectFile(path).bytes) };
+  return { file, sha256: sha256(bytes) };
 }
 
 const word = (bytes: Buffer, offset: number) => formatC64Address(bytes[offset]! | (bytes[offset + 1]! << 8));
