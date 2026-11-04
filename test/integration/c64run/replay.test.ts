@@ -341,11 +341,21 @@ test("a tick key after the entry comes as far from the entry in a rebuild whose 
 });
 
 test("a rebuild with a loader lists where the reference at its entry differs from the entry state of the knowledge", { skip, timeout: 120_000 }, () => {
+  // A project of its own: the knowledge of this test reaches no other test.
+  const own = join(project, "entry-state");
+  mkdirSync(join(own, ".c64-re-tools"), { recursive: true });
+  const game = quietAt(0xc000).subarray(2);
+  for (const [name, built, loader] of [["reference", unpacked(game, 1), false], ["rebuild", unpacked(game, 2), true]] as const) {
+    writeFileSync(join(own, `${name}.prg`), built.prg);
+    writeFileSync(join(own, `${name}.json`), JSON.stringify(loader ? { ...quietSymbols(0xc000), c64_source_loader_jump: built.jump } : quietSymbols(0xc000)));
+  }
+  writeFileSync(join(own, "record.json"), JSON.stringify({ name: "entry state", program: "reference.prg", symbols: "reference.json", steps: [{ frames: 40 }] }));
+  assert.equal(script("record", ["record.json", "--out", "tests/recordings/entry-state"], own).result.recorded, true);
   // The knowledge: the game at its entry $c000 with zero pages 0-3. The reference there has the pointers of BASIC, the jiffy clock and more.
   const page = "00".repeat(0x100);
   const state = { registers: { pc: "$c000", a: 0, x: 0, y: 0, sp: 0xf6, flags: {} }, cpuPort: { $00: 0x2f, $01: 0x37 }, pages: { $0000: page, $0100: page, $0200: page, $0300: page } };
-  importImage(handover, new Uint8Array(0x10000), { segments: [{ start: 0xc000, end: 0xc01c }], entry: 0xc000, state });
-  const replayed = handoverReplay("handover", "rebuild");
+  importImage(own, new Uint8Array(0x10000), { segments: [{ start: 0xc000, end: 0xc01c }], entry: 0xc000, state });
+  const replayed = script("replay", ["tests/recordings/entry-state", "--checkpoint", "tick", "--state", "$c100:3", "--rebuild", "rebuild.prg", "--symbols", "rebuild.json"], own).result;
   assert.equal(replayed.result, "PASS", JSON.stringify(replayed));
   const differs = (replayed.entryStateDiffers as Array<{ start: string; end: string }>).map(({ start, end }) => [Number.parseInt(start.slice(1), 16), Number.parseInt(end.slice(1), 16)] as const);
   assert.ok(differs.some(([start, end]) => start <= 0x2b && end >= 0x2c), "the start of the BASIC text differs");

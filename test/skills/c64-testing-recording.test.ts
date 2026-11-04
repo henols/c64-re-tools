@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
-import { ENTRY_DURING_INPUT, entryStateCheck, entryStateDiffers, firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
+import { ENTRY_DURING_INPUT, entryStateCheck, entryStateDiffers, firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, siteMap, trackKeys } from "../../skills/c64-testing/scripts/lib/recording.ts";
 import { rebuildNames, replay, replayAll } from "../../skills/c64-testing/scripts/lib/replay.ts";
 import { Refusal } from "../../src/errors.ts";
 import { C64RUN_PROTOCOL } from "../../src/native/c64run.ts";
@@ -359,10 +359,10 @@ test("record lists where the program at the entry of the knowledge differs from 
   assert.deepEqual([json.result, json.entryStateDiffers], ["PASS", [{ start: "$00f5", end: "$00f6" }, { start: "$028c", end: "$028c" }]], JSON.stringify(json));
 });
 
-test("the entry state check leaves out $0000-$0001, the KERNAL bytes that change by time alone and the free stack below the higher stack pointer", () => {
+test("the entry state check leaves out $0000-$0001, the bytes that time or the start path sets and the free stack below the higher stack pointer", () => {
   const ram = new Uint8Array(0x400);
-  // The jiffy clock and the cursor blink change by time; the keyboard scan ($91, $cb, $f5/$f6, $028c) changes with the input.
-  for (const address of [0x0000, 0x0001, 0x0091, 0x00a1, 0x00cb, 0x00cd, 0x00ce, 0x00cf, 0x00f5, 0x00f6, 0x0150, 0x01f6, 0x01f7, 0x0287, 0x028c, 0x03ff]) ram[address] = 1;
+  // The jiffy clock and the cursor blink change by time, $ac/$ad by the start path; the keyboard scan ($91, $cb, $f5/$f6, $028c) changes with the input.
+  for (const address of [0x0000, 0x0001, 0x0091, 0x00a1, 0x00ac, 0x00ad, 0x00cb, 0x00cd, 0x00ce, 0x00cf, 0x00f5, 0x00f6, 0x0150, 0x01f6, 0x01f7, 0x0287, 0x028c, 0x03ff]) ram[address] = 1;
   const loader = { sp: 0xf0, byteAt: () => 0 };
   assert.deepEqual(entryStateDiffers({ sp: 0xf6, ram }, loader), [
     { start: 0x0091, end: 0x0091 },
@@ -382,4 +382,17 @@ test("the entry state is compared when the program came to its entry after a pre
   assert.deepEqual(entryStateCheck({ sp: 0xf6, ram, tick: 2000 }, presses, loader), { entryStateDiffers: [{ start: "$00f5", end: "$00f6" }] });
   assert.deepEqual(entryStateCheck({ sp: 0xf6, ram, tick: 1500 }, presses, loader), { entryState: ENTRY_DURING_INPUT });
   assert.deepEqual(entryStateCheck({ sp: 0xf6, ram: new Uint8Array(0x400), tick: 2000 }, presses, loader), {});
+});
+
+test("the key input of a record spans from a key down while no key is down to the key up that leaves none, from any source", async () => {
+  // A stand-in core: each status is 100 cycles later.
+  let tick = 0;
+  const core = { command: async () => "ok", status: async () => ({ tick: (tick += 100) }) } as unknown as Parameters<typeof trackKeys>[0];
+  const tracked = trackKeys(core);
+  // A key of the play, RESTORE (ff) while it is down, then a joystick and a frame that are no key, then a key held at the end.
+  for (const text of ["key 81 down", "key ff down", "key 81 up", "joy 0 10", "frame", "key ff up", "key 82 down"]) await tracked.core.command(text);
+  assert.deepEqual(tracked.spans(5000), [
+    { from: 100, to: 400 },
+    { from: 500, to: 5000 },
+  ]);
 });

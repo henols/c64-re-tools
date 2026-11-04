@@ -137,8 +137,11 @@ export interface Recording {
   /** The cycles of the session, and the state hash at its end (RAM from $0002 and colour RAM). */
   ticks: number;
   hash: string;
-  /** The cycles of each press step, from its first key down to the end of its frames; none without a press step. */
-  presses?: TickSpan[];
+  /**
+   * The cycles of the key input: each press step, from its first key down to the end of its frames, and each time
+   * that keys were down, from the steps, the play or a RESTORE. None without a key.
+   */
+  keys?: TickSpan[];
 }
 
 /** The cycles from `from` up to `to`. */
@@ -283,8 +286,8 @@ export function readRecording(folder: string): Recording {
     checkState(compare.state, where);
     if (compare.pin !== undefined) checkState(compare.pin, where, "pin");
   }
-  if (value.presses !== undefined && (!Array.isArray(value.presses) || !value.presses.every((span) => isObject(span) && isInteger(span.from, 0, Number.MAX_SAFE_INTEGER) && isInteger(span.to, 0, Number.MAX_SAFE_INTEGER)))) {
-    fail(`presses must be a list of { from, to } cycles. ${remedy}`);
+  if (value.keys !== undefined && (!Array.isArray(value.keys) || !value.keys.every((span) => isObject(span) && isInteger(span.from, 0, Number.MAX_SAFE_INTEGER) && isInteger(span.to, 0, Number.MAX_SAFE_INTEGER)))) {
+    fail(`keys must be a list of { from, to } cycles. ${remedy}`);
   }
   (value.events as unknown[]).forEach((event, index) => {
     const at = `event ${index + 1}`;
@@ -436,14 +439,17 @@ export function loaderEntryState(db: DatabaseSync | undefined, entry: number): L
 }
 
 /**
- * The bytes of the KERNAL that its interrupt and its screen editor change by time alone, not by the input. The start of
- * a program takes another time in the emulator of a capture than in the replay core, so these bytes differ also with
- * the same input, and no new capture makes them the same. The bytes of the keyboard scan ($91, $c5, $cb, $f5/$f6,
- * $028b/$028c) change with the input, and the entry state check compares them.
+ * The bytes that the entry state check does not compare: the bytes of the KERNAL that its interrupt and its screen
+ * editor change by time alone, and the bytes that the start of the program sets in another way in the emulator of a
+ * capture than in the replay core. These bytes differ also with the same input, and no new capture makes them the
+ * same. The bytes of the keyboard scan ($91, $c5, $cb, $f5/$f6, $028b/$028c) change with the input, and the check
+ * compares them.
  */
-const TIME_BYTES: readonly AddressRange[] = [
+const UNCOMPARED_BYTES: readonly AddressRange[] = [
   // The jiffy clock: each interrupt counts it up.
   { start: 0x00a0, end: 0x00a2 },
+  // The load of the emulator sets them to the start of the BASIC text; the start of the replay core puts the program into RAM without them.
+  { start: 0x00ac, end: 0x00ad },
   // $cd: the interrupts to the next blink of the cursor. $ce: the character under the cursor at the last blink.
   // $cf: the blink phase. A key that the editor takes ends the blink at the phase that the time gave.
   { start: 0x00cd, end: 0x00cf },
@@ -454,24 +460,58 @@ const TIME_BYTES: readonly AddressRange[] = [
 /**
  * Where a program at its entry differs from the entry state that the loader of a rebuild writes: the ranges of $0002-$03ff
  * with other bytes. The free part of the stack page, from $0100 up to the stack pointer of either state, holds no state,
- * and the KERNAL bytes that change by time alone (TIME_BYTES) are not compared.
+ * and the bytes of UNCOMPARED_BYTES are not compared.
  */
 export function entryStateDiffers(program: EntryRam, loader: LoaderEntryState): AddressRange[] {
   const free = 0x0100 + Math.max(program.sp, loader.sp);
-  const compared = (address: number) => address >= 0x0002 && address <= 0x03ff && (address < 0x0100 || address > free) && !inRanges(TIME_BYTES, address);
+  const compared = (address: number) => address >= 0x0002 && address <= 0x03ff && (address < 0x0100 || address > free) && !inRanges(UNCOMPARED_BYTES, address);
   return rangesWhere((address) => compared(address) && program.ram[address] !== loader.byteAt(address));
 }
 
-/** The note in place of the entry state check when the program came to its entry during a press step. */
-export const ENTRY_DURING_INPUT = "not compared: the program came to its entry during a press step of the record file";
+/**
+ * The core with the spans of the key input: from a key down while no key is down to the key up that leaves no key
+ * down. `spans` closes a span that is still open at `end`.
+ */
+export function trackKeys(core: C64RunSession): { core: C64RunSession; spans: (end: number) => TickSpan[] } {
+  const down = new Set<string>();
+  const spans: TickSpan[] = [];
+  let since: number | undefined;
+  const command = async (text: string, limitMs?: number): Promise<string> => {
+    const answer = await core.command(text, limitMs);
+    const key = /^key ([0-9a-f]+) (down|up)$/.exec(text);
+    if (key !== null) {
+      const tick = (await core.status("status")).tick;
+      if (key[2] === "down") {
+        if (down.size === 0) since = tick;
+        down.add(key[1]!);
+      } else if (down.delete(key[1]!) && down.size === 0) {
+        spans.push({ from: since!, to: tick });
+        since = undefined;
+      }
+    }
+    return answer;
+  };
+  // The methods of the core keep the core as `this`: its fields are private.
+  const tracked = new Proxy(core, {
+    get: (target, name) => {
+      if (name === "command") return command;
+      const value: unknown = Reflect.get(target, name, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  return { core: tracked, spans: (end) => (since === undefined ? [...spans] : [...spans, { from: since, to: end }]) };
+}
+
+/** The note in place of the entry state check when the program came to its entry during the key input. */
+export const ENTRY_DURING_INPUT = "not compared: the program came to its entry during the key input of the session";
 
 /**
  * The entry state check of a program at its entry (`tick`) against the entry state that the loader writes: the
  * differing ranges, or nothing when all bytes are the same. A capture stops at the first arrival after its steps, so
- * at an entry during a press step it holds a later state, which no new capture changes: then only the note.
+ * at an entry during the key input (`keys`) it holds a later state, which no new capture changes: then only the note.
  */
-export function entryStateCheck(program: EntryRam & { tick: number }, presses: readonly TickSpan[], loader: LoaderEntryState): { entryStateDiffers?: Array<{ start: string; end: string }>; entryState?: string } {
-  if (presses.some((span) => program.tick >= span.from && program.tick < span.to)) return { entryState: ENTRY_DURING_INPUT };
+export function entryStateCheck(program: EntryRam & { tick: number }, keys: readonly TickSpan[], loader: LoaderEntryState): { entryStateDiffers?: Array<{ start: string; end: string }>; entryState?: string } {
+  if (keys.some((span) => program.tick >= span.from && program.tick < span.to)) return { entryState: ENTRY_DURING_INPUT };
   const differs = entryStateDiffers(program, loader);
   return differs.length === 0 ? {} : { entryStateDiffers: differs.map(formatC64RangeFields) };
 }
@@ -515,10 +555,8 @@ async function startProgram(core: C64RunSession, prg: Uint8Array, load: boolean)
   const end = start + prg.length - 2;
   if (!load && start !== 0x0801) throw new Refusal("invalid-input", `the program loads at ${formatC64Address(start)}, not at $0801 with a BASIC start line: give load true and a registers step that starts it`);
   await core.write(start, prg.subarray(2));
-  // The pointers that the load of the emulator sets, as a LOAD does: the end of the program and of the variables, and
-  // the start of the BASIC text in $ac/$ad. A capture in the emulator keeps them in its entry state.
+  // The pointers that LOAD sets: the end of the program and of the variables.
   for (const pointer of [0x2d, 0x2f, 0x31, 0xae]) await core.write(pointer, Uint8Array.of(end & 0xff, end >> 8));
-  await core.write(0xac, await core.peek(0x2b, 2));
   if (!load) {
     await core.write(0x0277, Uint8Array.from([0x52, 0x55, 0x4e, 0x0d]));
     await core.write(0x00c6, Uint8Array.of(4));
@@ -640,12 +678,15 @@ export interface RecordOutcome {
  * replay finds it on the reference.
  */
 export async function record(
-  core: C64RunSession,
+  session: C64RunSession,
   file: RecordFile,
   workspace: Workspace,
   input?: (core: C64RunSession, restore: () => Promise<string | undefined>) => Promise<string | undefined>,
   entry?: number,
 ): Promise<RecordOutcome> {
+  // Every key goes through the key command of the core: a press step, the play and a RESTORE.
+  const tracked = trackKeys(session);
+  const core = tracked.core;
   const prg = readProjectFile(file.program).bytes;
   const same = (address: number) => address;
   const at = sideAddresses(namesOf(file.symbols), "reference", { code: same, data: same });
@@ -668,7 +709,7 @@ export async function record(
   // From READY on: the start of the C64 itself is never in the map.
   await core.command(COVERAGE_COMMANDS.get(file.coverage) ?? `coverage on-pc ${hexWord(parseC64Address(file.coverage))}`);
   const events: RecordedEvent[] = [];
-  const presses: TickSpan[] = [];
+  const pressSteps: TickSpan[] = [];
   const masks = [0, 0];
   let reason: string | undefined;
   let afterEvent = false;
@@ -723,7 +764,7 @@ export async function record(
         // Frames ran: the next RESTORE is no event right after an event.
         afterEvent = false;
       }
-      presses.push({ from: start, to: (await core.status("status")).tick });
+      pressSteps.push({ from: start, to: (await core.status("status")).tick });
       if (reason !== undefined) {
         reason = `step ${index + 1}: RESTORE: ${reason}`;
         break;
@@ -752,6 +793,7 @@ export async function record(
         ? `the program did not come to its entry ${formatC64Address(entry)} in the session, where the loader of a rebuild jumps. Make the session go on until the program runs from its entry`
         : eventBeforeEntry(events, came.eventsBefore, entry);
   const end = await core.status("status");
+  const keys = [...pressSteps, ...tracked.spans(end.tick)].sort((a, b) => a.from - b.from);
   const sites = (await core.command("sites")).split(" ").slice(2).map((entry): RecordedSite => {
     const [where, reads, kind] = entry.split(":");
     const [site, addr] = where!.split("/");
@@ -773,7 +815,7 @@ export async function record(
     sites,
     ticks: end.tick,
     hash: end.hash,
-    ...(presses.length === 0 ? {} : { presses }),
+    ...(keys.length === 0 ? {} : { keys }),
   };
   return {
     recording,
