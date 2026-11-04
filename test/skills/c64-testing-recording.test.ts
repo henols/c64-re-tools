@@ -359,13 +359,17 @@ test("record lists where the program at the entry of the knowledge differs from 
   assert.deepEqual([json.result, json.entryStateDiffers], ["PASS", [{ start: "$00f5", end: "$00f6" }, { start: "$028c", end: "$028c" }]], JSON.stringify(json));
 });
 
-test("the entry state check leaves out $0000-$0001, the jiffy clock and the free stack below the higher stack pointer", () => {
+test("the entry state check leaves out $0000-$0001, the KERNAL bytes that change by time alone and the free stack below the higher stack pointer", () => {
   const ram = new Uint8Array(0x400);
-  for (const address of [0x0000, 0x0001, 0x00a1, 0x00f5, 0x00f6, 0x0150, 0x01f6, 0x01f7, 0x03ff]) ram[address] = 1;
+  // The jiffy clock and the cursor blink change by time; the keyboard scan ($91, $cb, $f5/$f6, $028c) changes with the input.
+  for (const address of [0x0000, 0x0001, 0x0091, 0x00a1, 0x00cb, 0x00cd, 0x00ce, 0x00cf, 0x00f5, 0x00f6, 0x0150, 0x01f6, 0x01f7, 0x0287, 0x028c, 0x03ff]) ram[address] = 1;
   const loader = { sp: 0xf0, byteAt: () => 0 };
   assert.deepEqual(entryStateDiffers({ sp: 0xf6, ram }, loader), [
+    { start: 0x0091, end: 0x0091 },
+    { start: 0x00cb, end: 0x00cb },
     { start: 0x00f5, end: 0x00f6 },
     { start: 0x01f7, end: 0x01f7 },
+    { start: 0x028c, end: 0x028c },
     { start: 0x03ff, end: 0x03ff },
   ]);
 });

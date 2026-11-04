@@ -424,17 +424,30 @@ export function loaderEntryState(db: DatabaseSync | undefined, entry: number): L
   return { sp: parseEntryState(image.state, "the entry state of the knowledge").sp, byteAt: entryMemory(image).byteAt };
 }
 
-/** The jiffy clock of the KERNAL: it counts the time from power-on, which the start of the program in each emulator sets, not the input. */
-const JIFFY_CLOCK: AddressRange = { start: 0x00a0, end: 0x00a2 };
+/**
+ * The bytes of the KERNAL that its interrupt and its screen editor change by time alone, not by the input. The start of
+ * a program takes another time in the emulator of a capture than in the replay core, so these bytes differ also with
+ * the same input, and no new capture makes them the same. The bytes of the keyboard scan ($91, $c5, $cb, $f5/$f6,
+ * $028b/$028c) change with the input, and the entry state check compares them.
+ */
+const TIME_BYTES: readonly AddressRange[] = [
+  // The jiffy clock: each interrupt counts it up.
+  { start: 0x00a0, end: 0x00a2 },
+  // $cd: the interrupts to the next blink of the cursor. $ce: the character under the cursor at the last blink.
+  // $cf: the blink phase. A key that the editor takes ends the blink at the phase that the time gave.
+  { start: 0x00cd, end: 0x00cf },
+  // The colour under the cursor at the last blink.
+  { start: 0x0287, end: 0x0287 },
+];
 
 /**
  * Where a program at its entry differs from the entry state that the loader of a rebuild writes: the ranges of $0002-$03ff
  * with other bytes. The free part of the stack page, from $0100 up to the stack pointer of either state, holds no state,
- * and the jiffy clock is not compared.
+ * and the KERNAL bytes that change by time alone (TIME_BYTES) are not compared.
  */
 export function entryStateDiffers(program: EntryRam, loader: LoaderEntryState): AddressRange[] {
   const free = 0x0100 + Math.max(program.sp, loader.sp);
-  const compared = (address: number) => address >= 0x0002 && address <= 0x03ff && (address < 0x0100 || address > free) && !inRanges([JIFFY_CLOCK], address);
+  const compared = (address: number) => address >= 0x0002 && address <= 0x03ff && (address < 0x0100 || address > free) && !inRanges(TIME_BYTES, address);
   return rangesWhere((address) => compared(address) && program.ram[address] !== loader.byteAt(address));
 }
 
