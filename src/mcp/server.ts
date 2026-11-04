@@ -128,7 +128,7 @@ export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z
 export const ConditionOutput = z
   .discriminatedUnion("kind", [
     z.object({ kind: z.literal("register"), register: z.enum(CONDITION_REGISTERS), operator: z.enum(COMPARISONS), value: Byte }),
-    z.object({ kind: z.literal("memory"), address: AddressOutput, operator: z.enum(COMPARISONS), value: Byte, space: z.enum(SPACES), view: z.enum(MEMORY_VIEWS), mask: Byte.optional() }),
+    z.object({ kind: z.literal("memory"), address: AddressOutput, operator: z.enum(COMPARISONS), value: Byte, space: z.enum(SPACES), view: z.enum(MEMORY_VIEWS) }),
     z.object({ kind: z.literal("raster"), line: z.number().int().min(0), cycle: z.number().int().min(0).optional() }),
   ])
   .describe("the condition given at add");
