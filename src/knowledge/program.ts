@@ -7,7 +7,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
 import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, formatC64Range, inRanges, mergeRanges, prgOf, rangesWhere } from "../c64.ts";
-import { COVERAGE_KINDS, DEFAULT_SPACE, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
+import { COVERAGE_KINDS, DEFAULT_SPACE, inSpace, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
 import { coverageRuns } from "./read.ts";
 import { sha256 } from "./text.ts";
 import { checkAddress, checkSpace, write, type Evidence, type OperandImage, type WriteContext } from "./write.ts";
@@ -363,8 +363,7 @@ export function programEntry(db: DatabaseSync | undefined, space: Space = DEFAUL
 export function requireProgram(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): ProgramImage {
   const image = programImage(db, space);
   if (image !== undefined) return image;
-  const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
-  throw new Refusal("not-found", `The knowledge has no program${where}. Put the program into the project knowledge${where}: a PRG, or the image.json of a capture.`);
+  throw new Refusal("not-found", `The knowledge has no program${inSpace(space)}. Put the program into the project knowledge${inSpace(space)}: a PRG, or the image.json of a capture.`);
 }
 
 /** The pages of an entry state: $0000-$03ff as the capture wrote them, 256 bytes as hex for each page. */
@@ -467,7 +466,7 @@ const PATCH_LINE_BYTES = 8;
 export function releaseCode(db: DatabaseSync | undefined, label: string, start: number, end: number, space: Space = DEFAULT_SPACE): string {
   const range = formatC64Range({ start, end });
   const release = db?.prepare("SELECT base FROM current_releases WHERE space = ? AND label = ?").get(space, label) as { base: number } | undefined;
-  if (release === undefined) throw new Refusal("not-found", `There is no release ${label}${space === DEFAULT_SPACE ? "" : ` in ${space}`}. Record it first with its file.`);
+  if (release === undefined) throw new Refusal("not-found", `There is no release ${label}${inSpace(space)}. Record it first with its file.`);
   if (release.base === 1) throw new Refusal("invalid-input", `${label} is the base release: its bytes are the program, and a patch holds the bytes of the other state. Give the release that has the other bytes in ${range}.`);
   const image = releaseImage(db, label, space)!;
   for (let address = start; address <= end; address++) {

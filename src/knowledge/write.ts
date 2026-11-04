@@ -52,7 +52,7 @@ import {
   type SwitchRow,
   type SymbolRow,
 } from "./read.ts";
-import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MEMORY_ROW, MODULE_FILE, DEFAULT_SPACE, spaceOf, GENERATED_FILES, GENERATED_FOLDERS, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, LEFTOVERS_SWITCH, START_SCREEN_MODES, START_SCREEN_SWITCH, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, POINTER_KIND, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type Origin, type RegionType, type Space, type StartScreenMode, type SwitchKind, type SymbolKind } from "./schema.ts";
+import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MEMORY_ROW, MODULE_FILE, DEFAULT_SPACE, spaceOf, inSpace, spaceOption, GENERATED_FILES, GENERATED_FOLDERS, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, LEFTOVERS_SWITCH, START_SCREEN_MODES, START_SCREEN_SWITCH, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, POINTER_KIND, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type Origin, type RegionType, type Space, type StartScreenMode, type SwitchKind, type SymbolKind } from "./schema.ts";
 import { newRevisionId, rowId, sqlName, TABLES, tableSpec } from "./text.ts";
 
 type Raw = Record<string, unknown>;
@@ -806,11 +806,6 @@ function checkInImage(image: OperandImage, start: number, end: number, what: str
 
 type PatchRequest = InSpace & { start: number; end: number; switch: string; code: string; comment?: string };
 
-/** A space other than the C64 in a message: " in <space>". */
-const inSpace = (space: Space) => (space === DEFAULT_SPACE ? "" : ` in ${space}`);
-/** The option of a command for a space other than the C64: " --space <space>". */
-const spaceOption = (space: Space) => (space === DEFAULT_SPACE ? "" : ` --space ${space}`);
-
 function checkSwitchName(name: unknown, what = "A switch name"): void {
   if (typeof name !== "string" || !SWITCH_NAME.test(name)) {
     throw new Refusal("invalid-input", `${what} is an upper-case letter, then 1 to 31 upper-case letters, digits or underscores, for example PROTECTION.`);
@@ -1534,10 +1529,10 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
     // The coverage maps that the knowledge has follow the revert, also when no coverage range changes.
     const maps = (runs: CoverageRun[]) => JSON.stringify(runs.filter((run) => only === undefined || run.space === only).map((run) => [run.name, run.sha256, run.space, run.revision]));
     if (maps(coverageRuns(db, restored)) !== maps(coverageRuns(db))) change.id();
-    const inSpace = only === undefined ? "" : " AND space = ?";
+    const spaceWhere = only === undefined ? "" : " AND space = ?";
     const spaceArgs = only === undefined ? [] : [only];
-    const at = `valid_from_revision <= ? AND (valid_to_revision IS NULL OR valid_to_revision > ?)${inSpace}`;
-    const current = `valid_to_revision IS NULL${inSpace}`;
+    const at = `valid_from_revision <= ? AND (valid_to_revision IS NULL OR valid_to_revision > ?)${spaceWhere}`;
+    const current = `valid_to_revision IS NULL${spaceWhere}`;
     // A row is the same when all its values are the same.
     for (const spec of TABLES) {
       const columns = spec.fields.map((field) => field.column);

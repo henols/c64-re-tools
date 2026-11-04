@@ -62,7 +62,7 @@ import {
   type SwitchRow,
   type SymbolRow,
 } from "#src/knowledge/read.ts";
-import { ANALYZERS, COMMENT_PLACEMENTS, DEFAULT_SPACE, EVIDENCE_KINDS, isSemantic, ORIGINS, REGION_TYPES, RELEASE_DEFINE, SEMANTIC_ORIGINS, START_SCREEN_MODES, SWITCH_KINDS, SYMBOL_KINDS, type Origin, type StartScreenMode, type SwitchKind } from "#src/knowledge/schema.ts";
+import { ANALYZERS, COMMENT_PLACEMENTS, DEFAULT_SPACE, EVIDENCE_KINDS, inSpace, isSemantic, ORIGINS, REGION_TYPES, RELEASE_DEFINE, SEMANTIC_ORIGINS, spaceOption, START_SCREEN_MODES, SWITCH_KINDS, SYMBOL_KINDS, type Origin, type StartScreenMode, type SwitchKind } from "#src/knowledge/schema.ts";
 import {
   addReference,
   applyBatch,
@@ -393,8 +393,7 @@ function evidenceOf(value: string, space: string): Evidence {
   // A coverage map is evidence by the name that coverage imported it with: the latest import into the space of the write.
   if (kind === "coverage") {
     const run = withRead((db) => coverageRuns(db).filter((item) => item.name === ref && item.space === space).at(-1));
-    const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
-    if (run === undefined) throw new UsageError(`--evidence coverage:${given} names no coverage map of the knowledge${where}. Import the map with coverage${space === DEFAULT_SPACE ? "" : ` --space ${space}`} first.`);
+    if (run === undefined) throw new UsageError(`--evidence coverage:${given} names no coverage map of the knowledge${inSpace(space)}. Import the map with coverage${spaceOption(space)} first.`);
     return { kind, ref, sha256: run.sha256, ...(run.space === DEFAULT_SPACE ? {} : { space: run.space }) };
   }
   const bytes = readProjectFile(ref).bytes;
@@ -1054,7 +1053,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       };
       return (db) => {
         if (base) {
-          if (!isProgram(requireProgram(db, call.space), image)) throw new Refusal("invalid-input", `The bytes of ${file} are not the program of the knowledge${call.space === DEFAULT_SPACE ? "" : ` in ${call.space}`}. Give --base only to the release whose file image put into the knowledge.`);
+          if (!isProgram(requireProgram(db, call.space), image)) throw new Refusal("invalid-input", `The bytes of ${file} are not the program of the knowledge${inSpace(call.space)}. Give --base only to the release whose file image put into the knowledge.`);
         }
         const bytes = image.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0);
         return { ...shown(setRelease(db, context, request), "release", release), bytes };
@@ -1380,7 +1379,7 @@ const JOIN: CommandSpec = {
     const joined = joinBatches(batches);
     const choice = (item: JoinChoice) => ({ ...item, at: typeof item.at === "number" ? formatC64Address(item.at) : item.at, ...(item.space === DEFAULT_SPACE ? { space: undefined } : {}) });
     if (joined.clashes.length > 0) {
-      const clash = (item: JoinClash) => `${item.what} ${item.value} at ${item.places.map((place) => `${formatC64Address(place.address)} (${place.file})`).join(" and ")}${item.space === DEFAULT_SPACE ? "" : ` in ${item.space}`}`;
+      const clash = (item: JoinClash) => `${item.what} ${item.value} at ${item.places.map((place) => `${formatC64Address(place.address)} (${place.file})`).join(" and ")}${inSpace(item.space)}`;
       throw new Refusal("conflict", `The batches give one ${joined.clashes.map(clash).join(", one ")}. Nothing was written. Give each name and each module file one address in the batches, then join again.`);
     }
     const shown = { repeated: joined.repeated, choices: joined.choices.map(choice) };
