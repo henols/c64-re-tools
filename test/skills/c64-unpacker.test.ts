@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { inspect, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/lib/evidence.ts";
-import { capturedProgram, removeStaleFiles, vicRam } from "../../skills/c64-unpacker/scripts/lib/machine.ts";
+import { capturedProgram, readAsRam, removeStaleFiles, vicRam } from "../../skills/c64-unpacker/scripts/lib/machine.ts";
 import { callReturn, captureSegments, droppedRanges, executedIn, notExecutedUnderIo, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
 import { COVERAGE } from "../../src/c64.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
@@ -447,4 +447,43 @@ test("a capture again into its folder removes the segment PRGs and the drive RAM
     process.chdir(cwd);
   }
   assert.deepEqual(readdirSync(folder).sort(), ["SEGMENT-2000-2FFF.PRG", "entry_state.json", "image.bin", "image.json", "notes.txt", "segment-1000-1fff.prg", "segment-1000-1fff.prg.bak", "segment-3000-3fff.prg"]);
+});
+
+/**
+ * A stand-in emulator for the RAM check: each run stops at a watchpoint with the next of `stops` (the range index and the
+ * opcode in the CPU history), and after the last one runs all frames. With "stores", each run stops at a store.
+ */
+function ramCheckClient(stops: Array<{ range: number; opcode: number }> | "stores") {
+  const ranges = new Map<number, number>();
+  let next = 0;
+  let last = 0;
+  const client = {
+    snapshot: async () => ({}),
+    observe: async () => ({ timing: { rasterLine: 0, rasterCycle: 0 } }),
+    watchpoint: async (params: { action: string; address?: number; id?: number }) => {
+      if (params.action === "add") {
+        const id = ranges.size + 1;
+        ranges.set(id, params.address! < 0xd200 ? 0 : 1);
+        return { id };
+      }
+      return { removed: true, id: params.id };
+    },
+    execution: async () => {
+      const stop = stops === "stores" ? { range: 1, opcode: 0x9d } : stops[next++];
+      if (stop === undefined) return { state: "stopped", advancedFrames: 250, stopReason: "frames" };
+      last = stop.opcode;
+      const id = [...ranges].find(([, range]) => range === stop.range)![0];
+      return { state: "stopped", advancedFrames: 0, stopReason: "watchpoint", pointId: id };
+    },
+    cpuHistory: async () => ({ entries: [{ bytes: last.toString(16).padStart(2, "0") }] }),
+  };
+  return client as unknown as Parameters<typeof readAsRam>[0];
+}
+
+test("the RAM check under the I/O area takes no stop after a store as a read, and gives the ranges as not decided when the stores end the check", async () => {
+  const ranges = [{ start: 0xd000, end: 0xd0ff }, { start: 0xd200, end: 0xd3ff }];
+  // STA $d300,X, then LDA $d080: only the load is a read.
+  assert.deepEqual(await readAsRam(ramCheckClient([{ range: 1, opcode: 0x9d }, { range: 0, opcode: 0xad }]), ranges, 250), { read: [ranges[0]], undecided: [] });
+  // Stores only: the guard ends the check, and no range counts as not read.
+  assert.deepEqual(await readAsRam(ramCheckClient("stores"), ranges, 250), { read: [], undecided: ranges });
 });

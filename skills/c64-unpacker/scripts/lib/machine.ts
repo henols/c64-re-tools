@@ -8,9 +8,11 @@ import { join } from "node:path";
 import { type AddressRange, formatC64Address, hexWord, prgOf, spriteData, spritePointer, vicScreenMemory } from "#src/c64.ts";
 import { resetToReady } from "#src/host-client/entry-state.ts";
 import { readProjectFile, writeRefusal, writeReported, type Written } from "#src/host-client/transfer.ts";
-import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { MAX_WATCH_SIZE } from "#src/host-client/tools.ts";
+import { lastOpcode, readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { startScreenRanges } from "#src/knowledge/read.ts";
 import { sha256 } from "#src/knowledge/text.ts";
+import { isStore } from "#src/opcodes.ts";
 import { projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 
 type Registers = Awaited<ReturnType<ViceSessionClient["registersGet"]>>;
@@ -194,4 +196,72 @@ export function writeCapture(
   // A capture again into the folder: the files of the earlier capture that image.json no longer lists go.
   const removed = removeStaleFiles(folder, [...files, ...other.map((file) => file.name)]);
   return { written, files, removed };
+}
+
+/**
+ * The CPU reads the RAM under the I/O area when bits 0 and 1 of $01 (LORAM and HIRAM) are clear; else a read there gives
+ * an I/O register or the character ROM. As the condition of a watchpoint, the emulator tests it at each read, so the
+ * reads of I/O registers (a raster wait, an interrupt acknowledge) do not stop the run.
+ */
+const RAM_UNDER_IO = { kind: "memory", address: 0x0001, operator: "eq", value: 0, mask: 0x03, space: "c64", view: "cpu" } as const;
+/** The most stops at a store that the RAM check runs on after: a guard, as the emulator gives the dummy read of a store to a watchpoint only on request. */
+const MAX_STORE_STOPS = 256;
+const RAM_CHECK_SNAPSHOT = "capture-ram-reads";
+
+/**
+ * Runs the program on from where it is for `frames` frames, with read watchpoints that stop only at a read of the RAM
+ * under the I/O area, and gives the ranges that the program read there as RAM. The memory map gives each of these
+ * reads as an I/O read. The first read of a range removes the watchpoints of the range, so the run stops at most once
+ * for each range. A stop comes after the instruction that made the access: an indexed store reads its address before
+ * it writes it, and that read is no read of the program, so the run goes on. After MAX_STORE_STOPS such stops the
+ * check ends: the ranges without a read are then `undecided`, not unread. The machine then goes back to where it was.
+ */
+export async function readAsRam<T extends AddressRange>(
+  client: Pick<ViceSessionClient, "snapshot" | "watchpoint" | "observe" | "execution" | "cpuHistory">,
+  ranges: readonly T[],
+  frames: number,
+): Promise<{ read: T[]; undecided: T[] }> {
+  await client.snapshot({ action: "save", name: RAM_CHECK_SNAPSHOT });
+  // The watchpoint ids of each range: a watchpoint covers at most MAX_WATCH_SIZE bytes.
+  const points = new Map<number, number>();
+  const read = new Set<number>();
+  let complete = true;
+  try {
+    for (const [index, range] of ranges.entries()) {
+      for (let address = range.start; address <= range.end; address += MAX_WATCH_SIZE) {
+        const size = Math.min(MAX_WATCH_SIZE, range.end - address + 1);
+        points.set((await client.watchpoint({ action: "add", address, size, access: "read", space: "c64", condition: RAM_UNDER_IO })).id, index);
+      }
+    }
+    // The frames end at the raster position where the check starts, after a stop too.
+    const { timing } = await client.observe({ timing: true });
+    const anchor = { line: timing!.rasterLine, cycle: timing!.rasterCycle };
+    let left = frames;
+    let storeStops = 0;
+    while (left > 0 && read.size < ranges.length) {
+      const run = await client.execution({ action: "advance-frames", count: left, space: "c64", anchor });
+      left -= run.advancedFrames ?? 0;
+      const index = run.pointId === undefined ? undefined : points.get(run.pointId);
+      if (run.stopReason !== "watchpoint" || index === undefined) break;
+      const opcode = await lastOpcode(client);
+      if (opcode !== undefined && isStore(opcode)) {
+        if (++storeStops > MAX_STORE_STOPS) {
+          complete = false;
+          break;
+        }
+        continue;
+      }
+      read.add(index);
+      for (const [id, of] of [...points]) {
+        if (of !== index) continue;
+        await client.watchpoint({ action: "remove", id });
+        points.delete(id);
+      }
+    }
+  } finally {
+    for (const id of points.keys()) await client.watchpoint({ action: "remove", id });
+    await client.snapshot({ action: "restore", name: RAM_CHECK_SNAPSHOT });
+    await client.snapshot({ action: "remove", name: RAM_CHECK_SNAPSHOT });
+  }
+  return { read: ranges.filter((_, index) => read.has(index)), undecided: complete ? [] : ranges.filter((_, index) => !read.has(index)) };
 }
