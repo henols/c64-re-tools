@@ -14,7 +14,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { Refusal } from "#src/errors.ts";
 import { type AddressRange, c64AddressOf, COVERAGE, formatC64Address, formatC64RangeFields, hexWord, inRanges, parseC64Address, rangesWhere } from "#src/c64.ts";
 import { keyTaps, type KeyTap } from "#src/c64-keys.ts";
-import { parseEntryState, READY_FRAMES } from "#src/host-client/entry-state.ts";
+import { READY_FRAMES } from "#src/host-client/entry-state.ts";
 import { ACTION_STEP_KINDS, checkActionStep, keyboardBytes, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { isInteger, isObject } from "#src/host-client/tools.ts";
 import { readProjectFile, readProjectJson, type Written } from "#src/host-client/transfer.ts";
@@ -425,17 +425,27 @@ export function eventBeforeEntry(events: readonly RecordedEvent[], eventsBefore:
 /** The memory that the loader of a rebuild writes at an entry: $0002-$03ff of the program of the knowledge at its entry, and its stack pointer. */
 export interface LoaderEntryState {
   sp: number;
+  /** The parts of $0002-$03ff that the loader writes. */
+  written: AddressRange[];
   byteAt: (address: number) => number;
 }
 
+/** Pages 0-3 without the CPU port: the memory of the entry state check. */
+const LOW_PAGES: AddressRange = { start: 0x0002, end: 0x03ff };
+
 /**
  * The entry state of the knowledge at `entry`, as the loader of a rebuild writes it ($0002-$03ff: the segments there,
- * else the pages of the entry state). Undefined when the knowledge has no entry state, or one at another entry.
+ * and the pages that the entry state has). Undefined when the knowledge has no entry state, one at another entry, one
+ * without a stack pointer, or when the loader writes nothing of $0002-$03ff.
  */
 export function loaderEntryState(db: DatabaseSync | undefined, entry: number): LoaderEntryState | undefined {
   const image = programImage(db);
   if (image?.state === undefined || image.entry !== entry) return undefined;
-  return { sp: parseEntryState(image.state, "the entry state of the knowledge").sp, byteAt: entryMemory(image).byteAt };
+  const sp = isObject(image.state.registers) ? image.state.registers.sp : undefined;
+  if (!isInteger(sp, 0, 0xff)) return undefined;
+  const memory = entryMemory(image);
+  const written = memory.segments.flatMap((segment) => (segment.end < LOW_PAGES.start || segment.start > LOW_PAGES.end ? [] : [{ start: Math.max(segment.start, LOW_PAGES.start), end: Math.min(segment.end, LOW_PAGES.end) }]));
+  return written.length === 0 ? undefined : { sp, written, byteAt: memory.byteAt };
 }
 
 /**
@@ -464,7 +474,7 @@ const UNCOMPARED_BYTES: readonly AddressRange[] = [
  */
 export function entryStateDiffers(program: EntryRam, loader: LoaderEntryState): AddressRange[] {
   const free = 0x0100 + Math.max(program.sp, loader.sp);
-  const compared = (address: number) => address >= 0x0002 && address <= 0x03ff && (address < 0x0100 || address > free) && !inRanges(UNCOMPARED_BYTES, address);
+  const compared = (address: number) => inRanges(loader.written, address) && (address < 0x0100 || address > free) && !inRanges(UNCOMPARED_BYTES, address);
   return rangesWhere((address) => compared(address) && program.ram[address] !== loader.byteAt(address));
 }
 

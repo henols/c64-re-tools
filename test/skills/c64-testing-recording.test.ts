@@ -9,12 +9,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
-import { ENTRY_DURING_INPUT, entryStateCheck, entryStateDiffers, firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, siteMap, trackKeys } from "../../skills/c64-testing/scripts/lib/recording.ts";
+import { ENTRY_DURING_INPUT, entryStateCheck, entryStateDiffers, firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, loaderEntryState, siteMap, trackKeys } from "../../skills/c64-testing/scripts/lib/recording.ts";
 import { rebuildNames, replay, replayAll } from "../../skills/c64-testing/scripts/lib/replay.ts";
 import { Refusal } from "../../src/errors.ts";
 import { C64RUN_PROTOCOL } from "../../src/native/c64run.ts";
 import { namesOf } from "../../skills/c64-testing/scripts/lib/scenario.ts";
-import { withWrite } from "../../src/knowledge/database.ts";
+import { withRead, withWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
 import { importCoverage, importImage } from "../fixtures/program.ts";
 import { readEnvelope } from "../kit.ts";
@@ -364,7 +364,7 @@ test("the entry state check leaves out $0000-$0001, the bytes that time or the s
   const ram = new Uint8Array(0x400);
   // The jiffy clock and the cursor blink change by time, $ac/$ad by the start path; the keyboard scan ($91, $cb, $f5/$f6, $028c) changes with the input.
   for (const address of [0x0000, 0x0001, 0x0091, 0x00a1, 0x00ac, 0x00ad, 0x00cb, 0x00cd, 0x00ce, 0x00cf, 0x00f5, 0x00f6, 0x0150, 0x01f6, 0x01f7, 0x0287, 0x028c, 0x03ff]) ram[address] = 1;
-  const loader = { sp: 0xf0, byteAt: () => 0 };
+  const loader = { sp: 0xf0, written: [{ start: 0x0002, end: 0x03ff }], byteAt: () => 0 };
   assert.deepEqual(entryStateDiffers({ sp: 0xf6, ram }, loader), [
     { start: 0x0091, end: 0x0091 },
     { start: 0x00cb, end: 0x00cb },
@@ -378,7 +378,7 @@ test("the entry state check leaves out $0000-$0001, the bytes that time or the s
 test("the entry state is compared when the program came to its entry after a press step, and only noted as not compared when it came during one", () => {
   const ram = new Uint8Array(0x400);
   ram.set([0x81, 0xeb], 0xf5);
-  const loader = { sp: 0xf6, byteAt: () => 0 };
+  const loader = { sp: 0xf6, written: [{ start: 0x0002, end: 0x03ff }], byteAt: () => 0 };
   const presses = [{ from: 1000, to: 2000 }];
   assert.deepEqual(entryStateCheck({ sp: 0xf6, ram, tick: 2000 }, presses, loader), { entryStateDiffers: [{ start: "$00f5", end: "$00f6" }] });
   assert.deepEqual(entryStateCheck({ sp: 0xf6, ram, tick: 1500 }, presses, loader), { entryState: ENTRY_DURING_INPUT });
@@ -396,4 +396,21 @@ test("the key input of a record spans from a key down while no key is down to th
     { from: 100, to: 600 },
     { from: 700, to: 9000 },
   ]);
+});
+
+test("the entry state check compares only what the loader writes: the segments in pages 0-3 and the pages that the entry state has", () => {
+  const own = join(project, "loader-state");
+  mkdirSync(join(own, ".c64-re-tools"), { recursive: true });
+  const memory = new Uint8Array(0x10000).fill(0xee, 0x0300, 0x0310);
+  const registers = { pc: "$0400", a: 0, x: 0, y: 0, sp: 0xf6, flags: {} };
+  const written = (pages: Record<string, string>, segments = [{ start: 0x0400, end: 0x04ff }]) => {
+    importImage(own, memory, { segments, entry: 0x0400, state: { registers, cpuPort: { $00: 0x2f, $01: 0x37 }, pages } });
+    return withRead((db) => loaderEntryState(db, 0x0400), own)?.written;
+  };
+  // No pages and no segment there: nothing to compare, so no field.
+  assert.equal(written({}), undefined);
+  // One page: only that page.
+  assert.deepEqual(written({ $0200: "00".repeat(0x100) }), [{ start: 0x0200, end: 0x02ff }]);
+  // A segment in pages 0-3 too, and the program bytes at the entry that are outside them are left out.
+  assert.deepEqual(written({ $0200: "00".repeat(0x100) }, [{ start: 0x0300, end: 0x030f }, { start: 0x0400, end: 0x04ff }]), [{ start: 0x0200, end: 0x030f }]);
 });
