@@ -1054,7 +1054,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       };
       return (db) => {
         if (base) {
-          if (!isProgram(requireProgram(db, call.space), image)) throw new Refusal("invalid-input", `The bytes of ${file} are not the program of the knowledge. Give --base only to the release whose file image put into the knowledge.`);
+          if (!isProgram(requireProgram(db, call.space), image)) throw new Refusal("invalid-input", `The bytes of ${file} are not the program of the knowledge${call.space === DEFAULT_SPACE ? "" : ` in ${call.space}`}. Give --base only to the release whose file image put into the knowledge.`);
         }
         const bytes = image.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0);
         return { ...shown(setRelease(db, context, request), "release", release), bytes };

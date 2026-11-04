@@ -806,6 +806,11 @@ function checkInImage(image: OperandImage, start: number, end: number, what: str
 
 type PatchRequest = InSpace & { start: number; end: number; switch: string; code: string; comment?: string };
 
+/** A space other than the C64 in a message: " in <space>". */
+const inSpace = (space: Space) => (space === DEFAULT_SPACE ? "" : ` in ${space}`);
+/** The option of a command for a space other than the C64: " --space <space>". */
+const spaceOption = (space: Space) => (space === DEFAULT_SPACE ? "" : ` --space ${space}`);
+
 function checkSwitchName(name: unknown, what = "A switch name"): void {
   if (typeof name !== "string" || !SWITCH_NAME.test(name)) {
     throw new Refusal("invalid-input", `${what} is an upper-case letter, then 1 to 31 upper-case letters, digits or underscores, for example PROTECTION.`);
@@ -876,7 +881,7 @@ function patchStep(db: DatabaseSync, change: Change, request: PatchRequest, cont
     throw new Refusal("invalid-input", `The patch code is at least ${least} bytes, and the range ${range} has ${length}. Make the code shorter, or make the range larger.`);
   }
   const owner = switchNamed(db, request.switch, space);
-  if (owner === undefined) throw new Refusal("not-found", `There is no switch ${request.switch}. Write it first (switch ${request.switch} --kind <kind> --releases <labels>).`);
+  if (owner === undefined) throw new Refusal("not-found", `There is no switch ${request.switch}${inSpace(space)}. Write it first (switch ${request.switch} --kind <kind> --releases <labels>${spaceOption(space)}).`);
   // A write at the start of a patch of the same switch changes that patch. Another switch can have the same range: an alternative.
   const mine = (row: PatchRow) => row.start === request.start && row.switch === request.switch;
   const other = patchesOverlapping(db, request.start, request.end, space).find((row) => !mine(row) && (row.start !== request.start || row.end !== request.end || row.switch === request.switch));
@@ -968,10 +973,10 @@ function defaultOf(request: SwitchRequest, existing: SwitchRow | undefined): 0 |
 function switchStep(db: DatabaseSync, change: Change, request: SwitchRequest, context: StepContext): Step<SwitchRow, SwitchRow> {
   const space = spaceOf(request);
   const base = baseLabel(db, space);
-  if (base === undefined) throw new Refusal("not-found", "The knowledge has no base release. Record the release whose bytes are the program first (release <label> --file <file> --base).");
+  if (base === undefined) throw new Refusal("not-found", `The knowledge has no base release${inSpace(space)}. Record the release whose bytes are the program${inSpace(space)} first (release <label> --file <file> --base${spaceOption(space)}).`);
   const existing = switchNamed(db, request.name, space);
   const releases = [...new Set(request.releases ?? existing?.releases ?? [])].sort();
-  for (const label of releases) if (releaseLabeled(db, label, space) === undefined) throw new Refusal("not-found", `There is no release ${label}. Record it first (release ${label} --file <file>).`);
+  for (const label of releases) if (releaseLabeled(db, label, space) === undefined) throw new Refusal("not-found", `There is no release ${label}${inSpace(space)}. Record it first (release ${label} --file <file>${spaceOption(space)}).`);
   const value = defaultOf(request, existing);
   const comment = request.comment === undefined ? existing?.comment : request.comment.trim();
   const origin = context.origin as SwitchRow["origin"];
@@ -1045,11 +1050,11 @@ function releaseStep(db: DatabaseSync, change: Change, request: ReleaseRequest, 
   const sameBytes = held.length === wanted.size && held.every((row) => wanted.get(row.address) === row.bytes);
   if (existing !== undefined && existing.base === base && existing.comment === comment && sameFile && sameBytes && !confirms(existing.origin, origin)) return { current: existing };
   const other = baseLabel(db, space);
-  if (base && other !== undefined && other !== request.label) throw new Refusal("conflict", `The release ${other} is the base release. A space has one base release.`);
+  if (base && other !== undefined && other !== request.label) throw new Refusal("conflict", `The release ${other} is the base release${inSpace(space)}. A space has one base release.`);
   // Every switch takes its base value from the base release: it cannot change under them.
   if ((existing?.base ?? false) !== base) {
     const switches = listSwitches(db, undefined, space);
-    if (switches.length > 0) throw new Refusal("conflict", `The base release decides the state of the program for the switches ${switches.map((row) => row.name).join(", ")}. Remove them first (unswitch) to change the base release.`);
+    if (switches.length > 0) throw new Refusal("conflict", `The base release decides the state of the program for the switches ${switches.map((row) => row.name).join(", ")}. Remove them first (unswitch${spaceOption(space)}) to change the base release${inSpace(space)}.`);
   }
   const symbol = symbolNamed(db, `${RELEASE_DEFINE}${request.label}`, space);
   if (symbol !== undefined) throw new Refusal("conflict", `The build of the release defines ${RELEASE_DEFINE}${request.label}, and that is the name of the symbol at ${formatC64Address(symbol.address)}. Give the release another label.`);
@@ -1071,7 +1076,7 @@ function releaseStep(db: DatabaseSync, change: Change, request: ReleaseRequest, 
 function unreleaseStep(db: DatabaseSync, change: Change, request: InSpace & { label: string }): Step<null> {
   const space = spaceOf(request);
   const existing = releaseLabeled(db, request.label, space);
-  if (existing === undefined) throw new Refusal("not-found", `There is no release ${request.label}.`);
+  if (existing === undefined) throw new Refusal("not-found", `There is no release ${request.label}${inSpace(space)}.`);
   const switches = listSwitches(db, undefined, space).filter((row) => existing.base || row.releases.includes(request.label));
   if (switches.length > 0) {
     const why = existing.base ? "decides the state of the program for" : "is named by";

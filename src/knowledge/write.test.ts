@@ -621,6 +621,8 @@ test("a switch has a kind, a default and the releases that have it on; the base 
   for (const kind of ["protection", "trainer", "cheat", "crack"] as const) assert.throws(() => setSwitch(db, context, { name: "OTHER", kind, default: 1 }), /off in the default build/, kind);
   assert.throws(() => setSwitch(db, context, { name: "OTHER", kind: "change" }), /needs a default/);
   assert.throws(() => setSwitch(db, context, { name: "OTHER", kind: "fix", releases: ["V3"] }), /There is no release V3/);
+  // The base release of the C64 is not the base release of another space.
+  assert.throws(() => setSwitch(db, context, { space: "loading", name: "OTHER", kind: "fix" }), (error: unknown) => failsWith("not-found")(error) && /--base --space loading\)/.test((error as Error).message));
   assert.throws(() => setSwitch(db, context, { name: "RELEASE_V2", kind: "fix" }), /does not start with RELEASE_/);
   assert.throws(() => setSwitch(db, context, { name: "VICSCN", kind: "fix" }), /is a C64 platform name/);
   renameSymbol(db, llm, { address: 0x2000, name: "LIVES" });
