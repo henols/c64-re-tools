@@ -195,10 +195,12 @@ export interface CoverageImport {
   /** The ranges of accesses that the coverage gained and lost, of all kinds. */
   added: number;
   removed: number;
-  /** The addresses that the runs now execute and did not before, and the addresses that they no longer execute. */
-  executeGained: AddressRange[];
-  executeLost: AddressRange[];
+  /** At an address: gained when the runs now execute it and did not before, lost when they no longer execute it, else undefined. */
+  executeChange: (address: number) => ExecuteChange | undefined;
 }
+
+/** How an import changed what the runs execute at an address. */
+export type ExecuteChange = "gained" | "lost";
 
 /**
  * Puts coverage maps into the coverage of a space. The knowledge keeps the
@@ -237,8 +239,7 @@ export function addCoverage(
       known: hashed.filter((map) => !fresh.includes(map)).map((map) => map.name),
       added: 0,
       removed: 0,
-      executeGained: [],
-      executeLost: [],
+      executeChange: () => undefined,
     };
     if (fresh.length === 0) return result;
     // A revision for each import, also when the coverage does not change: the maps are its evidence.
@@ -257,10 +258,12 @@ export function addCoverage(
     const after = currentCoverage(db, space);
     result.added = gained(before, after);
     result.removed = gained(after, before);
+    // One value for each address: a lookup of a comment costs one read, also for many short ranges.
     const was = executedIn(before);
     const is = executedIn(after);
-    result.executeGained = rangesWhere((address) => is(address) && !was(address));
-    result.executeLost = rangesWhere((address) => was(address) && !is(address));
+    const changes = new Uint8Array(SIZE);
+    for (let address = 0; address < SIZE; address++) if (was(address) !== is(address)) changes[address] = is(address) ? 1 : 2;
+    result.executeChange = (address) => (changes[address] === 1 ? "gained" : changes[address] === 2 ? "lost" : undefined);
     return result;
   });
 }

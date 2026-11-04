@@ -1209,9 +1209,8 @@ const WRITE_COMMANDS: CommandSpec[] = [
       return (db) => {
         const { revision, current } = addCoverage(db, context, { space: call.space, maps });
         // A comment can tell what the runs execute: where that changed, its claim can be false now. The script does not read the text.
-        const changed = [...current.executeGained, ...current.executeLost];
-        const toCheck = changed.length === 0 ? [] : listComments(db, undefined, undefined, call.space).filter((row) => inRanges(changed, row.address));
-        const checked = (row: CommentRow) => ({ ...comment(row), executed: inRanges(current.executeGained, row.address) });
+        const toCheck = current.added === 0 && current.removed === 0 ? [] : listComments(db, undefined, undefined, call.space).filter((row) => current.executeChange(row.address) !== undefined);
+        const checked = (row: CommentRow) => ({ ...comment(row), executed: current.executeChange(row.address) === "gained" });
         const body = {
           revision,
           ...spaceOf(current),
