@@ -177,8 +177,17 @@ function lookUp(start: string): Lookup {
   const below = projectsBelow(start);
   if (below.length > 0) return { below };
   // A folder of a group that is no project, for example its docs/: a write there would make it a project of the group.
-  const group = foldersUpFrom(start).slice(1).map(groupAt).find((each) => each !== undefined);
+  const group = groupAbove(start);
   return group === undefined ? { root: start, plain: true } : { group };
+}
+
+/** The nearest group folder above `start`, or undefined. The search stops at the first one. */
+function groupAbove(start: string): ProjectGroup | undefined {
+  for (const folder of foldersUpFrom(start).slice(1)) {
+    const group = groupAt(folder);
+    if (group !== undefined) return group;
+  }
+  return undefined;
 }
 
 /** The projects of a group, relative to `start` and with /. */
@@ -231,7 +240,7 @@ export function fileProject(file: string, access: "read" | "write"): string {
   const plain = "root" in started && started.plain === true ? started.root : undefined;
   if (plain !== undefined && insideReally(plain, file) !== undefined) return plain;
   if (isTop(start)) throw new Refusal("invalid-input", `${file} is not in a project folder. Give a file in a folder that has .c64-re-tools/, or start the agent in a project folder.`);
-  const group = groupAt(start) ?? foldersUpFrom(start).slice(1).map(groupAt).find((each) => each !== undefined);
+  const group = groupAt(start) ?? groupAbove(start);
   if (group !== undefined) {
     if (access === "read") return [...group.projects.values()][0]!;
     throw new Refusal("invalid-input", `${file} is in the group folder ${group.root}, and not in a project of the group. The projects of the group are ${groupProjects(group, start)}. Give a file in one of them.`);

@@ -113,7 +113,7 @@ export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z
   /**
    * `out` is the file of the input out, checked before the tool does any
    * work; undefined without out. The tool branches on it, not on the input.
-   * defineTool checks it for a call that does not give it.
+   * defineTool checks it and gives it to the handler; a caller of run gives no out file.
    */
   run(input: z.output<I>, session: ViceSessionApi, out?: ToolFile): Promise<z.input<O> | ToolOutput<z.input<O>>>;
 }
@@ -143,14 +143,14 @@ export function toCondition(input: z.output<typeof TOOL_INPUTS.condition>): Cond
 }
 
 /**
- * Keeps a tool's handler typed against its own schemas. A call with the input
- * out and without its checked file, for example from another tool, gets the
- * file checked here: every call path refuses a wrong out before the work.
+ * Keeps a tool's handler typed against its own schemas. Each call checks the
+ * input out here, before the handler does any work, and gives the handler the
+ * checked file: the server and another tool call run without it.
  */
 export function defineTool<I extends z.ZodObject, O extends z.ZodObject>(tool: ToolDefinition<I, O>): ToolDefinition {
-  const run: ToolDefinition<I, O>["run"] = async (input, session, out) => {
+  const run: ToolDefinition<I, O>["run"] = async (input, session) => {
     const given = (input as { out?: unknown }).out;
-    return tool.run(input, session, out ?? (typeof given === "string" ? checkOut(given) : undefined));
+    return tool.run(input, session, typeof given === "string" ? checkOut(given) : undefined);
   };
   return { ...tool, run } as unknown as ToolDefinition;
 }
@@ -224,16 +224,14 @@ async function runCall(
   const parsed = tool.inputSchema.safeParse(args ?? {});
   if (!parsed.success) return { failed: { code: "invalid-input", message: describeIssues(parsed.error, tool.inputSchema) } };
   try {
-    // An out path is checked before the tool runs: a refused path must not lose the work or leave its side effects.
-    const fields = parsed.data as { out?: unknown };
-    const out = typeof fields.out === "string" ? checkOut(fields.out) : undefined;
+    // The tool checks its out before any work (defineTool): a refused path must not lose the work or leave its side effects.
     let output: unknown;
     try {
-      output = await tool.run(parsed.data, await session(), out);
+      output = await tool.run(parsed.data, await session());
     } catch (error) {
       // A session that the emulator never answered had no machine state: the call goes again on a new session.
       if (!(error instanceof LostBeforeAnswer)) throw error;
-      output = await tool.run(parsed.data, await session(), out);
+      output = await tool.run(parsed.data, await session());
     }
     // The result goes out in the shape that the tool listing advertises: keys
     // that the output schema does not name are removed, and a result that does
