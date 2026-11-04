@@ -10,7 +10,7 @@ import { symbolsPath } from "#src/build-name.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { readPrg } from "#src/host-client/image.ts";
 import { readProjectFile, writeReported, type Written } from "#src/host-client/transfer.ts";
-import { formatC64Address, formatC64RangeFields } from "#src/c64.ts";
+import { formatC64Address } from "#src/c64.ts";
 import { encodePng } from "#src/graphics.ts";
 import { withRead } from "#src/knowledge/database.ts";
 import { LOADER_JUMP } from "#src/knowledge/start-screen.ts";
@@ -20,7 +20,7 @@ import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { UsageError } from "#src/script.ts";
-import { entryStateDiffers, eventBeforeEntry, firstDifference, loaderEntry, loaderEntryState, mover, parseStateItem, pinLines, readRecording, replaySide, siteMap, type Comparison, type ReplayResult, type ReplaySubject } from "./recording.ts";
+import { entryStateCheck, eventBeforeEntry, firstDifference, loaderEntry, loaderEntryState, mover, parseStateItem, pinLines, readRecording, replaySide, siteMap, type Comparison, type ReplayResult, type ReplaySubject } from "./recording.ts";
 import { cachedNames } from "./scenario.ts";
 
 const MAX_STATE_ITEMS = 16;
@@ -151,7 +151,7 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     if (compare !== undefined && expected.length === 0) return result("INCONCLUSIVE", "reference", { reason: `the reference never came to the checkpoint ${compare.checkpoint} in the session` });
     if (values.rebuild === undefined) return result("PASS", "reference", { checkpoints: expected.length });
     let handover: { entry: number; reference: NonNullable<typeof self.entryPoint> } | undefined;
-    let entryState: Pick<ReplayResult, "entryStateDiffers"> = {};
+    let entryState: Pick<ReplayResult, "entryStateDiffers" | "entryState"> = {};
     if (loader !== undefined) {
       const entered = self.entryPoint;
       const at = formatC64Address(loader.reference);
@@ -162,8 +162,7 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
       handover = { entry: loader.entry, reference: entered };
       // The loader writes the entry state of the capture: a capture with other input before the entry gives the rebuild another start.
       const state = withRead((db) => loaderEntryState(db, loader.reference));
-      const differs = state === undefined ? [] : entryStateDiffers(entered, state);
-      if (differs.length > 0) entryState = { entryStateDiffers: differs.map(formatC64RangeFields) };
+      if (state !== undefined) entryState = entryStateCheck(entered, recording.presses ?? [], state);
     }
 
     const rebuild: ReplaySubject = { side: "rebuild", program: values.rebuild, symbols: rebuildSymbols };

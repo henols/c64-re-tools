@@ -12,7 +12,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "#src/errors.ts";
-import { type AddressRange, c64AddressOf, COVERAGE, formatC64Address, hexWord, inRanges, parseC64Address, rangesWhere } from "#src/c64.ts";
+import { type AddressRange, c64AddressOf, COVERAGE, formatC64Address, formatC64RangeFields, hexWord, inRanges, parseC64Address, rangesWhere } from "#src/c64.ts";
 import { keyTaps, type KeyTap } from "#src/c64-keys.ts";
 import { parseEntryState, READY_FRAMES } from "#src/host-client/entry-state.ts";
 import { ACTION_STEP_KINDS, checkActionStep, keyboardBytes, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
@@ -137,6 +137,14 @@ export interface Recording {
   /** The cycles of the session, and the state hash at its end (RAM from $0002 and colour RAM). */
   ticks: number;
   hash: string;
+  /** The cycles of each press step, from its first key down to the end of its frames; none without a press step. */
+  presses?: TickSpan[];
+}
+
+/** The cycles from `from` up to `to`. */
+export interface TickSpan {
+  from: number;
+  to: number;
 }
 
 /** Steps that are input or time: the replay gives the program the reads that they caused, and does not do them again. */
@@ -274,6 +282,9 @@ export function readRecording(folder: string): Recording {
     if (typeof compare.checkpoint !== "string" || compare.checkpoint === "") where("checkpoint must be the name or $ address of a routine");
     checkState(compare.state, where);
     if (compare.pin !== undefined) checkState(compare.pin, where, "pin");
+  }
+  if (value.presses !== undefined && (!Array.isArray(value.presses) || !value.presses.every((span) => isObject(span) && isInteger(span.from, 0, Number.MAX_SAFE_INTEGER) && isInteger(span.to, 0, Number.MAX_SAFE_INTEGER)))) {
+    fail(`presses must be a list of { from, to } cycles. ${remedy}`);
   }
   (value.events as unknown[]).forEach((event, index) => {
     const at = `event ${index + 1}`;
@@ -451,6 +462,20 @@ export function entryStateDiffers(program: EntryRam, loader: LoaderEntryState): 
   return rangesWhere((address) => compared(address) && program.ram[address] !== loader.byteAt(address));
 }
 
+/** The note in place of the entry state check when the program came to its entry during a press step. */
+export const ENTRY_DURING_INPUT = "not compared: the program came to its entry during a press step of the record file";
+
+/**
+ * The entry state check of a program at its entry (`tick`) against the entry state that the loader writes: the
+ * differing ranges, or nothing when all bytes are the same. A capture stops at the first arrival after its steps, so
+ * at an entry during a press step it holds a later state, which no new capture changes: then only the note.
+ */
+export function entryStateCheck(program: EntryRam & { tick: number }, presses: readonly TickSpan[], loader: LoaderEntryState): { entryStateDiffers?: Array<{ start: string; end: string }>; entryState?: string } {
+  if (presses.some((span) => program.tick >= span.from && program.tick < span.to)) return { entryState: ENTRY_DURING_INPUT };
+  const differs = entryStateDiffers(program, loader);
+  return differs.length === 0 ? {} : { entryStateDiffers: differs.map(formatC64RangeFields) };
+}
+
 /**
  * A loader with a start screen that RUN starts waits for a key or a fire button that the recording does not have:
  * the rebuild goes on after the wait, as the check of the loader does. Gives the tick of the wait, a problem, or
@@ -602,8 +627,8 @@ export interface RecordOutcome {
   reason?: string;
   /** With an entry: why a rebuild with a loader cannot replay the recording, as replay finds it on the reference. */
   loaderProblem?: string;
-  /** With an entry that the program came to: its pages 0-3 and its stack pointer there. */
-  entryRam?: EntryRam;
+  /** With an entry that the program came to: its pages 0-3 and its stack pointer there, and the cycle of its arrival. */
+  entryRam?: EntryRam & { tick: number };
 }
 
 /**
@@ -643,6 +668,7 @@ export async function record(
   // From READY on: the start of the C64 itself is never in the map.
   await core.command(COVERAGE_COMMANDS.get(file.coverage) ?? `coverage on-pc ${hexWord(parseC64Address(file.coverage))}`);
   const events: RecordedEvent[] = [];
+  const presses: TickSpan[] = [];
   const masks = [0, 0];
   let reason: string | undefined;
   let afterEvent = false;
@@ -684,6 +710,7 @@ export async function record(
       await core.command(`joy ${masks[0]!.toString(16)} ${masks[1]!.toString(16)}`);
     } else if ("press" in step) {
       const hold = step.press.frames * PAL_FRAME_CYCLES;
+      const start = tick;
       for (const tap of keyTaps(step.press.keys) as KeyTap[]) {
         for (const place of tap.keys) await core.command(`key ${coreKey(place)} down`);
         // RESTORE is no read: an event at the next read of the program, with the keys of the tap down.
@@ -696,6 +723,7 @@ export async function record(
         // Frames ran: the next RESTORE is no event right after an event.
         afterEvent = false;
       }
+      presses.push({ from: start, to: (await core.status("status")).tick });
       if (reason !== undefined) {
         reason = `step ${index + 1}: RESTORE: ${reason}`;
         break;
@@ -745,6 +773,7 @@ export async function record(
     sites,
     ticks: end.tick,
     hash: end.hash,
+    ...(presses.length === 0 ? {} : { presses }),
   };
   return {
     recording,
@@ -753,7 +782,7 @@ export async function record(
     ...(from === null ? {} : { coverageFrom: { tick: Number(from[1]), pc: Number.parseInt(from[2]!, 16) } }),
     ...(reason === undefined ? {} : { reason }),
     ...(loaderProblem === undefined ? {} : { loaderProblem }),
-    ...(came === undefined ? {} : { entryRam: { sp: came.sp, ram: came.ram } }),
+    ...(came === undefined ? {} : { entryRam: { sp: came.sp, ram: came.ram, tick: came.tick } }),
   };
 }
 
@@ -985,6 +1014,8 @@ export interface ReplayResult {
   idleReads?: number;
   /** A rebuild with a loader: where the reference at its entry differs from the entry state that the loader writes. */
   entryStateDiffers?: Array<{ start: string; end: string }>;
+  /** A rebuild with a loader: why the entry state is not compared. */
+  entryState?: string;
   files?: Written[];
   /** The screen of the reference at the end of the session (--screen). */
   screen?: Written;

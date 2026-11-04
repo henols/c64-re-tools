@@ -6,7 +6,7 @@
 // states; checklist gives the Markdown list for a human tester.
 
 import { symbolsPath } from "#src/build-name.ts";
-import { COVERAGE, formatC64Address, formatC64RangeFields } from "#src/c64.ts";
+import { COVERAGE, formatC64Address } from "#src/c64.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readPrg } from "#src/host-client/image.ts";
@@ -24,7 +24,7 @@ import { LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot } from
 import { OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type Reply } from "#src/script.ts";
 import { diffFiles } from "./lib/diff-files.ts";
 import { CANCELLED, play } from "./lib/play.ts";
-import { entryStateDiffers, loaderEntryState, readRecordFile, record, showRecording } from "./lib/recording.ts";
+import { entryStateCheck, loaderEntryState, readRecordFile, record, showRecording } from "./lib/recording.ts";
 import { replay, replayAll } from "./lib/replay.ts";
 import { keepRun, runFile } from "./lib/runs.ts";
 import { namesOf, readScenario, runScenario, scenarioNames, type Scenario, type ScenarioResult } from "./lib/scenario.ts";
@@ -139,10 +139,10 @@ async function recordCommand(call: Call): Promise<Reply> {
     // The recording replays on the reference and on a rebuild without a loader: the event before the entry is no refusal.
     const loader = outcome.loaderProblem === undefined ? "" : `${outcome.loaderProblem}, then record again. Until then, the recording replays on the reference and on a rebuild without a loader, not on a rebuild with a loader. `;
     const state = entry === undefined || outcome.entryRam === undefined ? undefined : loaderEntryState(db, entry);
-    const differs = state === undefined ? [] : entryStateDiffers(outcome.entryRam!, state);
-    const entryState = differs.length === 0 ? "" : `At its entry ${formatC64Address(entry!)}, the program has other bytes than the entry state of the project knowledge in entryStateDiffers. ${ENTRY_STATE_REMEDY} `;
+    const checked = state === undefined ? {} : entryStateCheck(outcome.entryRam!, outcome.recording.presses ?? [], state);
+    const entryState = checked.entryStateDiffers === undefined ? "" : `At its entry ${formatC64Address(entry!)}, the program has other bytes than the entry state of the project knowledge in entryStateDiffers. ${ENTRY_STATE_REMEDY} `;
     return reply(
-      { result: "PASS", recorded: true, out, ...summary, files, ...(evidence.length === 0 ? {} : { evidence }), ...(differs.length === 0 ? {} : { entryStateDiffers: differs.map(formatC64RangeFields) }) },
+      { result: "PASS", recorded: true, out, ...summary, files, ...(evidence.length === 0 ? {} : { evidence }), ...checked },
       { hint: `${loader}${entryState}${keep}${recordFile}${cited} ${summary.coverageFrom === null ? "The coverage did not start: the map is empty." : "The map has no marks for the code that ran before coverageFrom."} To make sure that the recording replays, run nextAction.`, nextAction: call.next("replay", out) },
     );
   } finally {
