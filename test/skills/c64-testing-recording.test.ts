@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
-import { firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
+import { entryStateDiffers, firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
 import { rebuildNames, replay, replayAll } from "../../skills/c64-testing/scripts/lib/replay.ts";
 import { Refusal } from "../../src/errors.ts";
 import { C64RUN_PROTOCOL } from "../../src/native/c64run.ts";
@@ -85,9 +85,9 @@ test("the coverage of a record file starts at the first input read, at the progr
  * A stand-in replay core for record: it answers each command with the machine
  * state, writes the files that record and coverage name, logs the commands,
  * and answers coverage status with `from`. A mark comes at the second marked,
- * or with `marks` false never.
+ * or with `marks` false never. At the mark, the stack pointer is $f6 and pages 0-3 are `pages`.
  */
-function recordingCore(name: string, from: string, marks = true): { path: string; log: string } {
+function recordingCore(name: string, from: string, marks = true, pages = new Uint8Array(0x400)): { path: string; log: string } {
   const path = join(project, name);
   const log = join(project, `${name}.log`);
   const state = "ok tick=982800 sync=1 pc=1aed a=00 x=00 y=00 s=fd p=16 line=0 cycle=7 hash=0123abcd";
@@ -103,6 +103,7 @@ function recordingCore(name: string, from: string, marks = true): { path: string
       '    record) [ "$rest" = off ] || : > "$rest"; echo "ok" ;;',
       '    sites) echo "ok unknown=0" ;;',
       `    marked) if [ ${marks} = true ] && [ -e ${log}.marked ]; then echo "ok tick=990000 phase=00"; else : > ${log}.marked; echo "ok none"; fi ;;`,
+      `    marked-ram) echo "ok s=f6 ram=${Buffer.from(pages).toString("hex")}" ;;`,
       '    coverage) case "$rest" in',
       `        status) echo "${from}" ;;`,
       '        on*|off) echo "ok" ;;',
@@ -332,4 +333,39 @@ test("record gives the hint of replay when an event ran before the program came 
   // The names of a build: replay finds the entry of the loader in the reference by them, not by the names of the knowledge.
   const build = record("build", "build-names.json", true);
   assert.ok(!build.marked && !build.hint.includes("entry $0400"), build.hint);
+});
+
+test("record lists where the program at the entry of the knowledge differs from the entry state that the loader of a rebuild writes", { skip: process.platform === "win32" ? "the stand-in replay core is a shell script" : false }, () => {
+  writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
+  // The knowledge: a segment at $0300-$04ff, and an entry state with zero pages and the stack pointer $f6.
+  const memory = new Uint8Array(0x10000).fill(0xee, 0x0300, 0x0500);
+  const page = "00".repeat(0x100);
+  const state = { registers: { pc: "$0400", a: 0, x: 0, y: 0, sp: 0xf6, flags: {} }, cpuPort: { $00: 0x2f, $01: 0x37 }, pages: { $0000: page, $0100: page, $0200: page, $0300: page } };
+  importImage(project, memory, { segments: [{ start: 0x0300, end: 0x04ff }], entry: 0x0400, state });
+  // The program at its entry: the keyboard table pointer and the repeat delay of a key press, the jiffy clock, the free stack, and the bytes of the segment.
+  const pages = new Uint8Array(0x400).fill(0xee, 0x0300);
+  pages.set([0x81, 0xeb], 0xf5);
+  pages[0x028c] = 0x0e;
+  pages.set([0x01, 0x02, 0x03], 0xa0);
+  pages[0x01f6] = 0x55;
+  // The mark of the stand-in comes after the first event.
+  const core = recordingCore("c64run-entry-state", "ok from tick=982800 pc=1aed", true, pages);
+  const run = spawnSync(process.execPath, [...process.execArgv, resolve(home, "skills/c64-testing/scripts/testing.ts"), "record", file("entry-state.json", { name: "entry state", program: "game.prg", symbols: "none", steps: [{ write: { address: "$c000", data: "01" } }, { frames: 10 }] }), "--out", "tests/recordings/entry-state"], {
+    cwd: project,
+    encoding: "utf8",
+    env: { ...process.env, C64RT_C64RUN: core.path },
+  });
+  const { json } = readEnvelope(run.stdout, run.status);
+  assert.deepEqual([json.result, json.entryStateDiffers], ["PASS", [{ start: "$00f5", end: "$00f6" }, { start: "$028c", end: "$028c" }]], JSON.stringify(json));
+});
+
+test("the entry state check leaves out $0000-$0001, the jiffy clock and the free stack below the higher stack pointer", () => {
+  const ram = new Uint8Array(0x400);
+  for (const address of [0x0000, 0x0001, 0x00a1, 0x00f5, 0x00f6, 0x0150, 0x01f6, 0x01f7, 0x03ff]) ram[address] = 1;
+  const loader = { sp: 0xf0, byteAt: () => 0 };
+  assert.deepEqual(entryStateDiffers({ sp: 0xf6, ram }, loader), [
+    { start: 0x00f5, end: 0x00f6 },
+    { start: 0x01f7, end: 0x01f7 },
+    { start: 0x03ff, end: 0x03ff },
+  ]);
 });

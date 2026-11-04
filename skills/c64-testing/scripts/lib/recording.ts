@@ -9,14 +9,16 @@
 // state can be chosen at replay time, with the names that the knowledge has then.
 
 import { readFileSync, writeFileSync } from "node:fs";
+import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "#src/errors.ts";
-import { c64AddressOf, COVERAGE, formatC64Address, hexWord, parseC64Address } from "#src/c64.ts";
+import { type AddressRange, c64AddressOf, COVERAGE, formatC64Address, hexWord, inRanges, parseC64Address, rangesWhere } from "#src/c64.ts";
 import { keyTaps, type KeyTap } from "#src/c64-keys.ts";
-import { READY_FRAMES } from "#src/host-client/entry-state.ts";
+import { parseEntryState, READY_FRAMES } from "#src/host-client/entry-state.ts";
 import { ACTION_STEP_KINDS, checkActionStep, keyboardBytes, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { isInteger, isObject } from "#src/host-client/tools.ts";
 import { readProjectFile, readProjectJson, type Written } from "#src/host-client/transfer.ts";
+import { entryMemory, programImage } from "#src/knowledge/program.ts";
 import { RECORDING_FILES } from "#src/knowledge/recording-files.ts";
 import { LOADER_JUMP, startScreenLabels } from "#src/knowledge/start-screen.ts";
 import { sha256 } from "#src/knowledge/text.ts";
@@ -338,8 +340,15 @@ export function siteMap(sites: RecordedSite[], from: Map<string, number>, to: Ma
   return moved;
 }
 
+/** Pages 0-3 of RAM and the stack pointer of a program at its entry. */
+export interface EntryRam {
+  sp: number;
+  /** $0000-$03ff. */
+  ram: Uint8Array;
+}
+
 /** Where the reference came to the entry that the loader of a rebuild jumps to. */
-export interface EntryPoint {
+export interface EntryPoint extends EntryRam {
   /** The tick of the first opcode fetch at the entry. */
   tick: number;
   /**
@@ -365,6 +374,12 @@ async function markEntry(core: C64RunSession, entry: number) {
     const answer = /tick=(\d+) phase=([0-9a-f]+)/.exec(await core.command("marked"));
     return answer === null ? undefined : { tick: Number(answer[1]), phase: answer[2]! };
   };
+  /** Pages 0-3 and the stack pointer at the mark, which came. */
+  const memory = async (): Promise<EntryRam> => {
+    const answer = /s=([0-9a-f]{2}) ram=([0-9a-f]{2048})/.exec(await core.command("marked-ram"));
+    if (answer === null) throw new Refusal("operation-failed", "c64run marked-ram gave no memory at the mark");
+    return { sp: Number.parseInt(answer[1]!, 16), ram: Uint8Array.from(Buffer.from(answer[2]!, "hex")) };
+  };
   let came: { tick: number; phase: string } | undefined;
   let eventsBefore = 0;
   return {
@@ -374,10 +389,10 @@ async function markEntry(core: C64RunSession, entry: number) {
       came = await marked();
       if (came === undefined) eventsBefore = index + 1;
     },
-    /** Where the program came to the entry, or undefined when it did not come to it. */
-    async end(): Promise<{ tick: number; phase: string; eventsBefore: number } | undefined> {
+    /** Where the program came to the entry, with its memory there, or undefined when it did not come to it. */
+    async end(): Promise<({ tick: number; phase: string; eventsBefore: number } & EntryRam) | undefined> {
       came ??= await marked();
-      return came === undefined ? undefined : { ...came, eventsBefore };
+      return came === undefined ? undefined : { ...came, eventsBefore, ...(await memory()) };
     },
   };
 }
@@ -391,6 +406,36 @@ export function eventBeforeEntry(events: readonly RecordedEvent[], eventsBefore:
   if (early === undefined) return undefined;
   const what = early.step === undefined ? "the RESTORE of the play" : `step ${early.step}`;
   return `${what} ran before the program came to its entry ${formatC64Address(entry)}. A rebuild with a loader has no point for it. Make the steps of the record file start after the entry`;
+}
+
+/** The memory that the loader of a rebuild writes at an entry: $0002-$03ff of the program of the knowledge at its entry, and its stack pointer. */
+export interface LoaderEntryState {
+  sp: number;
+  byteAt: (address: number) => number;
+}
+
+/**
+ * The entry state of the knowledge at `entry`, as the loader of a rebuild writes it ($0002-$03ff: the segments there,
+ * else the pages of the entry state). Undefined when the knowledge has no entry state, or one at another entry.
+ */
+export function loaderEntryState(db: DatabaseSync | undefined, entry: number): LoaderEntryState | undefined {
+  const image = programImage(db);
+  if (image?.state === undefined || image.entry !== entry) return undefined;
+  return { sp: parseEntryState(image.state, "the entry state of the knowledge").sp, byteAt: entryMemory(image).byteAt };
+}
+
+/** The jiffy clock of the KERNAL: it counts the time from power-on, which the start of the program in each emulator sets, not the input. */
+const JIFFY_CLOCK: AddressRange = { start: 0x00a0, end: 0x00a2 };
+
+/**
+ * Where a program at its entry differs from the entry state that the loader of a rebuild writes: the ranges of $0002-$03ff
+ * with other bytes. The free part of the stack page, from $0100 up to the stack pointer of either state, holds no state,
+ * and the jiffy clock is not compared.
+ */
+export function entryStateDiffers(program: EntryRam, loader: LoaderEntryState): AddressRange[] {
+  const free = 0x0100 + Math.max(program.sp, loader.sp);
+  const compared = (address: number) => address >= 0x0002 && address <= 0x03ff && (address < 0x0100 || address > free) && !inRanges([JIFFY_CLOCK], address);
+  return rangesWhere((address) => compared(address) && program.ram[address] !== loader.byteAt(address));
 }
 
 /**
@@ -432,8 +477,10 @@ async function startProgram(core: C64RunSession, prg: Uint8Array, load: boolean)
   const end = start + prg.length - 2;
   if (!load && start !== 0x0801) throw new Refusal("invalid-input", `the program loads at ${formatC64Address(start)}, not at $0801 with a BASIC start line: give load true and a registers step that starts it`);
   await core.write(start, prg.subarray(2));
-  // The pointers that LOAD sets: the end of the program and of the variables.
+  // The pointers that the load of the emulator sets, as a LOAD does: the end of the program and of the variables, and
+  // the start of the BASIC text in $ac/$ad. A capture in the emulator keeps them in its entry state.
   for (const pointer of [0x2d, 0x2f, 0x31, 0xae]) await core.write(pointer, Uint8Array.of(end & 0xff, end >> 8));
+  await core.write(0xac, await core.peek(0x2b, 2));
   if (!load) {
     await core.write(0x0277, Uint8Array.from([0x52, 0x55, 0x4e, 0x0d]));
     await core.write(0x00c6, Uint8Array.of(4));
@@ -542,6 +589,8 @@ export interface RecordOutcome {
   reason?: string;
   /** With an entry: why a rebuild with a loader cannot replay the recording, as replay finds it on the reference. */
   loaderProblem?: string;
+  /** With an entry that the program came to: its pages 0-3 and its stack pointer there. */
+  entryRam?: EntryRam;
 }
 
 /**
@@ -691,6 +740,7 @@ export async function record(
     ...(from === null ? {} : { coverageFrom: { tick: Number(from[1]), pc: Number.parseInt(from[2]!, 16) } }),
     ...(reason === undefined ? {} : { reason }),
     ...(loaderProblem === undefined ? {} : { loaderProblem }),
+    ...(came === undefined ? {} : { entryRam: { sp: came.sp, ram: came.ram } }),
   };
 }
 
@@ -920,6 +970,8 @@ export interface ReplayResult {
   movedSites?: number;
   /** Input reads of the rebuild that the recording had no value for: they got the idle value. */
   idleReads?: number;
+  /** A rebuild with a loader: where the reference at its entry differs from the entry state that the loader writes. */
+  entryStateDiffers?: Array<{ start: string; end: string }>;
   files?: Written[];
   /** The screen of the reference at the end of the session (--screen). */
   screen?: Written;

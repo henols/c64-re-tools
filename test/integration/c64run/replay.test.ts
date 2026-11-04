@@ -13,6 +13,7 @@ import { after, test } from "node:test";
 
 import { READY_FRAMES } from "../../../src/host-client/entry-state.ts";
 import { C64RUN, findTool } from "../../../src/native/discover.ts";
+import { importImage } from "../../fixtures/program.ts";
 import { joystickCounterPrg } from "../../fixtures/prg/joystick-counter.ts";
 import { readEnvelope } from "../../kit.ts";
 
@@ -337,4 +338,16 @@ test("a tick key after the entry comes as far from the entry in a rebuild whose 
   assert.deepEqual(Object.keys(events[0]!.key), ["tick"]);
   const slow = handoverReplay("silent", "silent-slow");
   assert.equal(slow.result, "PASS", JSON.stringify(slow));
+});
+
+test("a rebuild with a loader lists where the reference at its entry differs from the entry state of the knowledge", { skip, timeout: 120_000 }, () => {
+  // The knowledge: the game at its entry $c000 with zero pages 0-3. The reference there has the pointers of BASIC, the jiffy clock and more.
+  const page = "00".repeat(0x100);
+  const state = { registers: { pc: "$c000", a: 0, x: 0, y: 0, sp: 0xf6, flags: {} }, cpuPort: { $00: 0x2f, $01: 0x37 }, pages: { $0000: page, $0100: page, $0200: page, $0300: page } };
+  importImage(handover, new Uint8Array(0x10000), { segments: [{ start: 0xc000, end: 0xc01c }], entry: 0xc000, state });
+  const replayed = handoverReplay("handover", "rebuild");
+  assert.equal(replayed.result, "PASS", JSON.stringify(replayed));
+  const differs = (replayed.entryStateDiffers as Array<{ start: string; end: string }>).map(({ start, end }) => [Number.parseInt(start.slice(1), 16), Number.parseInt(end.slice(1), 16)] as const);
+  assert.ok(differs.some(([start, end]) => start <= 0x2b && end >= 0x2c), "the start of the BASIC text differs");
+  assert.ok(!differs.some(([start, end]) => start <= 0xa2 && end >= 0xa0), "the jiffy clock is not compared");
 });

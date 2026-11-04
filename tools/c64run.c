@@ -27,7 +27,7 @@
 #include "systems/c1541.h"
 #include "systems/c64.h"
 
-#define C64RUN_PROTOCOL 7
+#define C64RUN_PROTOCOL 8
 // The key code of matrix place 0 (row 0, column 0); place n has code 0x80 + n.
 #define C64RUN_KEY_PLACE 0x80
 #ifndef CHIPS_COMMIT
@@ -237,6 +237,9 @@ static int counted_pcs;
 // "mark": the counts and the tick at the first opcode fetch at mark_pc, before that fetch counts.
 static uint64_t marked[MAX_COUNTED];
 static uint64_t mark_tick;
+// "mark": pages 0-3 of RAM and the stack pointer at that fetch, the part of the entry state that a loader writes.
+static uint8_t mark_ram[0x400];
+static uint8_t mark_s;
 static int mark_pc = -1;  // -1: no mark waits
 static int mark_set;      // marked and mark_tick hold the mark
 
@@ -290,6 +293,8 @@ static void count_fetch(uint16_t pc) {
         for (int i = 0; i < counted_pcs; i++) marked[i] = counted[i];
         mark_tick = ticks;
         phase_get(&mark_phase);
+        memcpy(mark_ram, sys.ram, sizeof mark_ram);
+        mark_s = sys.cpu.S;
         mark_pc = -1;
         mark_set = 1;
     }
@@ -622,6 +627,14 @@ int main(int argc, char** argv) {
             if (mark_set) {
                 printf("ok tick=%llu phase=", (unsigned long long)mark_tick);
                 for (size_t i = 0; i < sizeof mark_phase; i++) printf("%02x", ((const uint8_t*)&mark_phase)[i]);
+                printf("\n");
+            }
+            else printf("ok none\n");
+        } else if (!strcmp(cmd, "marked-ram")) {
+            // marked-ram: the stack pointer and RAM $0000-$03ff (hex) at the mark when it came, else none
+            if (mark_set) {
+                printf("ok s=%02x ram=", mark_s);
+                for (size_t i = 0; i < sizeof mark_ram; i++) printf("%02x", mark_ram[i]);
                 printf("\n");
             }
             else printf("ok none\n");

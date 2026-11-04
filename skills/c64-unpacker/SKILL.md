@@ -46,10 +46,10 @@ To get the command list, run the script with no arguments.
 
 ### Steps files
 
-A steps file is a JSON list of steps. The steps run right after the program starts. Use a steps file when an intro waits for a key or a menu waits for a choice. For example, wait 50 frames and type a space:
+A steps file is a JSON list of steps. The steps run right after the program starts. Use a steps file when an intro waits for a key or a menu waits for a choice. For example, wait 50 frames and push the space key:
 
 ```json
-[{ "frames": 50 }, { "type": { "mode": "text", "text": " " } }]
+[{ "frames": 50 }, { "press": { "keys": " " } }]
 ```
 
 Each step has one of these kinds:
@@ -225,7 +225,7 @@ Traps:
 
 - The capture stops at the first arrival at `--until` after the steps. To capture a later arrival, add a `runUntil` step to an address after the first arrival.
 - A dropped range can be a part of the program. Make sure that the program does not use the bytes in `dropped`. If the program uses them, tell the user.
-- `captured: false`: the program did not get to `--until` in `--timeout-frames`. The reason tells where it stopped. Find a better address, or give more frames. If it stopped in a key wait, give `--steps` with a `type` step. If the CPU got to `--until` in a step, the reason names that step.
+- `captured: false`: the program did not get to `--until` in `--timeout-frames`. The reason tells where it stopped. Find a better address, or give more frames. If it stopped in a key wait, give `--steps` with a `press` step. If the CPU got to `--until` in a step, the reason names that step.
 
 ### `loads <program>`
 
