@@ -180,6 +180,26 @@ function gained(before: Map<CoverageKind, Uint8Array>, after: Map<CoverageKind, 
   return count;
 }
 
+/** True at each address that a run executed: in RAM, in a ROM or in the I/O area. */
+function executedIn(maps: Map<CoverageKind, Uint8Array>): (address: number) => boolean {
+  const executes = (["x", "rom-x", "io-x"] as const).map((kind) => maps.get(kind)!);
+  return (address) => executes.some((map) => map[address] === 1);
+}
+
+/** What one import did to the coverage of a space. */
+export interface CoverageImport {
+  space: Space;
+  imported: string[];
+  replaced: string[];
+  known: string[];
+  /** The ranges of accesses that the coverage gained and lost, of all kinds. */
+  added: number;
+  removed: number;
+  /** The addresses that the runs now execute and did not before, and the addresses that they no longer execute. */
+  executeGained: AddressRange[];
+  executeLost: AddressRange[];
+}
+
 /**
  * Puts coverage maps into the coverage of a space. The knowledge keeps the
  * ranges of each map by its project path; the coverage of the space is the
@@ -193,7 +213,7 @@ export function addCoverage(
   db: DatabaseSync,
   context: WriteContext,
   request: { space?: Space; maps: CoverageMap[] },
-): { revision: string | null; current: { space: Space; imported: string[]; replaced: string[]; known: string[]; added: number; removed: number } } {
+): { revision: string | null; current: CoverageImport } {
   checkSpace(request);
   const space = request.space ?? DEFAULT_SPACE;
   for (const map of request.maps) {
@@ -210,7 +230,16 @@ export function addCoverage(
   const fresh = hashed.filter((map) => !isKnown(map));
   const evidence: Evidence[] = [...(context.evidence ?? []), ...fresh.map((map): Evidence => ({ kind: "coverage", ref: map.name, sha256: map.sha256, ...(space === DEFAULT_SPACE ? {} : { space }) }))];
   return write(db, { ...context, evidence }, "coverage", (change) => {
-    const result = { space, imported: fresh.map((map) => map.name), replaced: fresh.filter((map) => latest.has(map.name) && latest.get(map.name) !== map.sha256).map((map) => map.name), known: hashed.filter((map) => !fresh.includes(map)).map((map) => map.name), added: 0, removed: 0 };
+    const result: CoverageImport = {
+      space,
+      imported: fresh.map((map) => map.name),
+      replaced: fresh.filter((map) => latest.has(map.name) && latest.get(map.name) !== map.sha256).map((map) => map.name),
+      known: hashed.filter((map) => !fresh.includes(map)).map((map) => map.name),
+      added: 0,
+      removed: 0,
+      executeGained: [],
+      executeLost: [],
+    };
     if (fresh.length === 0) return result;
     // A revision for each import, also when the coverage does not change: the maps are its evidence.
     change.id();
@@ -228,6 +257,10 @@ export function addCoverage(
     const after = currentCoverage(db, space);
     result.added = gained(before, after);
     result.removed = gained(after, before);
+    const was = executedIn(before);
+    const is = executedIn(after);
+    result.executeGained = rangesWhere((address) => is(address) && !was(address));
+    result.executeLost = rangesWhere((address) => was(address) && !is(address));
     return result;
   });
 }

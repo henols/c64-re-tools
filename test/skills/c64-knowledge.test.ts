@@ -184,7 +184,11 @@ test("coverage imports a map into each space, by one spelling of its path, and -
   writeFileSync(join(runs, "m.bin"), run);
   const sha = () => createHash("sha256").update(readFileSync(join(runs, "m.bin"))).digest("hex");
   const first = sha();
-  assert.deepEqual(knowledge(root, "coverage", "runs/m.bin").json.imported, ["runs/m.bin"]);
+  // A comment where the execute of the runs changed comes back for a check of its claims.
+  knowledge(root, "comment", "$0400", "side", "no run executes this");
+  const imported = knowledge(root, "coverage", "runs/m.bin").json;
+  assert.deepEqual(imported.imported, ["runs/m.bin"]);
+  assert.deepEqual(items<{ address: string; executed: boolean }>(imported.commentsToCheck).map(({ address, executed }) => ({ address, executed })), [{ address: "$0400", executed: true }]);
   assert.deepEqual(knowledge(root, "coverage", "./runs/m.bin").json.known, ["runs/m.bin"], "./runs/m.bin is the same map");
   const drive = knowledge(root, "coverage", "runs/m.bin", "--space", "drive8");
   assert.deepEqual(drive.json.imported, ["runs/m.bin"], "the map is not yet in drive8");
@@ -192,7 +196,9 @@ test("coverage imports a map into each space, by one spelling of its path, and -
   // The map changes and is imported again: the evidence is the new import.
   run[0x0500] = COVERAGE.ramRead;
   writeFileSync(join(runs, "m.bin"), run);
-  assert.deepEqual(knowledge(root, "coverage", "runs/m.bin").json.imported, ["runs/m.bin"]);
+  const read = knowledge(root, "coverage", "runs/m.bin").json;
+  assert.deepEqual(read.imported, ["runs/m.bin"]);
+  assert.equal(read.commentsToCheck, undefined, "a read changes no execute");
   const evidenceOf = (...args: string[]) => {
     const cited = knowledge(root, "rename", "$0400", "start", ...args);
     assert.equal(cited.status, 0, JSON.stringify(cited.json));

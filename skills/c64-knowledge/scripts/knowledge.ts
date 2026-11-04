@@ -1198,6 +1198,8 @@ const WRITE_COMMANDS: CommandSpec[] = [
       name: "coverage",
       summary: "Puts coverage maps of the emulator, of a run or of a recording folder into the coverage of the knowledge. Each map is named by its path: a new map of a path replaces the earlier map of that path, and --evidence coverage:<path> cites it.",
       subjects: [{ name: "<map>", help: "a 64 KiB coverage map, or a recording folder: then its coverage map", list: true }],
+      options: LIST,
+      notes: "commentsToCheck lists the comments at the addresses that the runs now execute or no longer execute. executed is true when the runs now execute the address.",
     },
     (call, context) => {
       const maps = call.subjects.map((given) => {
@@ -1207,14 +1209,31 @@ const WRITE_COMMANDS: CommandSpec[] = [
       });
       return (db) => {
         const { revision, current } = addCoverage(db, context, { space: call.space, maps });
-        const body = { revision, ...spaceOf(current), imported: current.imported, replaced: current.replaced, known: current.known, added: current.added, removed: current.removed };
+        // A comment can tell what the runs execute: where that changed, its claim can be false now. The script does not read the text.
+        const changed = [...current.executeGained, ...current.executeLost];
+        const toCheck = changed.length === 0 ? [] : listComments(db, undefined, undefined, call.space).filter((row) => inRanges(changed, row.address));
+        const checked = (row: CommentRow) => ({ ...comment(row), executed: inRanges(current.executeGained, row.address) });
+        const body = {
+          revision,
+          ...spaceOf(current),
+          imported: current.imported,
+          replaced: current.replaced,
+          known: current.known,
+          added: current.added,
+          removed: current.removed,
+          ...(toCheck.length === 0 ? {} : { commentsToCheck: list(call, toCheck, checked, MORE) }),
+        };
+        const next =
+          toCheck.length === 0
+            ? "Generate the source again, then the reference."
+            : `${toCheck.length} comment${toCheck.length === 1 ? " is" : "s are"} at addresses that the runs now execute or no longer execute: see commentsToCheck. Read what each one tells about the runs, and correct each comment that is no longer true. Then generate the source again, then the reference.`;
         // Only a range that the coverage gained or lost changes the source and the reference.
         const hint =
           revision === null
             ? "The knowledge has each map already. Nothing changed."
             : current.added === 0 && current.removed === 0
               ? "The coverage did not change. The knowledge keeps the maps as evidence. The source and the reference do not change."
-              : `The coverage gained ${current.added} and lost ${current.removed} ranges of accesses. They can change the leftovers and the code that no run executed. Generate the source again, then the reference.`;
+              : `The coverage gained ${current.added} and lost ${current.removed} ranges of accesses. They can change the leftovers and the code that no run executed. ${next}`;
         return reply(body, { hint });
       };
     },
