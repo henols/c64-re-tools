@@ -321,7 +321,7 @@ async function analyze(call: Call): Promise<unknown> {
   // DXA has one list, without the coverage starts that it reaches by fall-through from another seed, for example the
   // instruction after a JSR. Each target stays a seed: DXA drops routes that fall-through would show as reached.
   const limits = analyzer === "dxa" ? DXA_LIMITS : DECOMPILER_LIMITS;
-  const targets = analyzer === "dxa" ? referenceTargets(reader, analyzer, inProgram, dataRanges, space) : [];
+  const targets = analyzer === "dxa" ? referenceTargets(reader, analyzer, inProgram, { data: dataRanges, dualUse: idioms.findings.regions.filter((region) => region.type === "dual-use") }, space) : [];
   const fallThrough = (from: readonly number[]) => (coverage === undefined ? new Set<number>() : dxaFallThrough(from, coverage, inProgram, seeds.dataRanges));
   const reached = analyzer === "dxa" ? fallThrough([...known, ...idioms.entryPoints, ...fromCoverage]) : new Set<number>();
   const kinds = analyzer === "dxa" || coverage === undefined ? { routines: fromCoverage.filter((entry) => !reached.has(entry)), codeStarts: [] } : coverageSeedKinds(coverage, inProgram);

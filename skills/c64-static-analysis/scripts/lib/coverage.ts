@@ -34,6 +34,11 @@ export function codeEntries(db: DatabaseSync | undefined, image: ImageByte, spac
   return entries;
 }
 
+/** The classes of an address for referenceTargets, as bits of a 64 KiB map. */
+const CODE = 1;
+const SEMANTIC_DATA = 2;
+const NO_TARGET = 4;
+
 /**
  * The targets of the jump and call references from code in the knowledge,
  * inside the image: entry points for DXA. DXA drops code that it
@@ -41,22 +46,29 @@ export function codeEntries(db: DatabaseSync | undefined, image: ImageByte, spac
  * example into the operand of a BIT skip; which code it drops changes with
  * the seeds. A target in a data range would make that range code, and DXA
  * cannot decode both instructions of a dual-use region: such targets are left out.
- * The references of the analyzer that runs are left out: fed back, a wrong
+ * `dualUse` adds the dual-use regions that this run found and that the knowledge
+ * does not have yet. The references of the analyzer that runs are left out: fed back, a wrong
  * decode would seed itself, and a re-analysis could not retire it. A
  * reference from a data region of the user or the LLM is left out too: their
  * regions win over the code region of an analyzer.
  */
-export function referenceTargets(db: DatabaseSync | undefined, analyzer: Analyzer, image: ImageByte, dataRanges: readonly AddressRange[], space: Space = DEFAULT_SPACE): number[] {
-  const regions = listRegions(db, undefined, undefined, undefined, space);
-  const code = regions.filter((region) => INSTRUCTION_REGION_TYPES.includes(region.type));
-  const data = regions.filter((region) => isSemantic(region.origin) && !INSTRUCTION_REGION_TYPES.includes(region.type));
-  const dualUse = regions.filter((region) => region.type === "dual-use");
+export function referenceTargets(db: DatabaseSync | undefined, analyzer: Analyzer, image: ImageByte, ranges: { data: readonly AddressRange[]; dualUse: readonly AddressRange[] }, space: Space = DEFAULT_SPACE): number[] {
+  const map = new Uint8Array(0x10000);
+  const mark = (range: AddressRange, bit: number) => {
+    for (let address = range.start; address <= range.end; address++) map[address]! |= bit;
+  };
+  for (const region of listRegions(db, undefined, undefined, undefined, space)) {
+    if (INSTRUCTION_REGION_TYPES.includes(region.type)) mark(region, CODE);
+    else if (isSemantic(region.origin)) mark(region, SEMANTIC_DATA);
+    if (region.type === "dual-use") mark(region, NO_TARGET);
+  }
+  for (const range of [...ranges.data, ...ranges.dualUse]) mark(range, NO_TARGET);
   const targets = new Set<number>();
   for (const reference of listReferences(db, undefined, undefined, undefined, space)) {
     if (reference.kind !== "jump" && reference.kind !== "call") continue;
-    if (reference.origin !== analyzer && inRanges(code, reference.from) && !inRanges(data, reference.from)) targets.add(reference.to);
+    if (reference.origin !== analyzer && (map[reference.from]! & (CODE | SEMANTIC_DATA)) === CODE) targets.add(reference.to);
   }
-  return [...targets].filter((address) => image(address) !== undefined && !inRanges(dataRanges, address) && !inRanges(dualUse, address)).sort((a, b) => a - b);
+  return [...targets].filter((address) => image(address) !== undefined && (map[address]! & NO_TARGET) === 0).sort((a, b) => a - b);
 }
 
 /** Analyzer data regions that hold executed instruction starts: the coverage shows code there. */

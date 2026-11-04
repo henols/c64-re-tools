@@ -159,8 +159,11 @@ test("the jump and call targets from code of the other origins are DXA entry poi
   addReference(db, { origin: "llm" }, { from: 0x4015, to: 0x40d0, kind: "call" });
   classifyRegion(db, { origin: "llm" }, { start: 0x4015, end: 0x4017, type: "bytes" });
   const image: ImageByte = (address) => (address >= 0x4000 && address <= 0x50ff ? 0xea : undefined);
-  assert.deepEqual(referenceTargets(db, "dxa", image, [{ start: 0x4080, end: 0x408f }]), [0x4050, 0x4060, 0x40b0]);
-  assert.deepEqual(referenceTargets(db, "decompiler", image, [{ start: 0x4080, end: 0x408f }]), [0x40b0, 0x50c0], "the decompiler's own references are left out of its run");
+  const ranges = { data: [{ start: 0x4080, end: 0x408f }], dualUse: [] };
+  assert.deepEqual(referenceTargets(db, "dxa", image, ranges), [0x4050, 0x4060, 0x40b0]);
+  assert.deepEqual(referenceTargets(db, "decompiler", image, ranges), [0x40b0, 0x50c0], "the decompiler's own references are left out of its run");
+  // A BIT-skip operand that the idioms of this run found is dual-use before the knowledge has it.
+  assert.deepEqual(referenceTargets(db, "dxa", image, { ...ranges, dualUse: [{ start: 0x4060, end: 0x4061 }] }), [0x4050, 0x40b0]);
   db.close();
 });
 
