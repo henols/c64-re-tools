@@ -157,8 +157,10 @@ const QUEUE = 0x0277;
 const QUEUE_LENGTH = 0x00c6;
 const QUEUE_SIZE = 10;
 
-/** The key code of the replay core for a matrix place: 80 + the place. RESTORE is ff. */
-const coreKey = (place: number) => (0x80 + place).toString(16);
+/** The key code of the replay core for a matrix place: 80 + the place. */
+const coreKey = (place: number) => 0x80 + place;
+/** The key code of RESTORE in the replay core. */
+const RESTORE_KEY = 0xff;
 
 /** The joystick mask of the replay core: 1 up, 2 down, 4 left, 8 right, $10 fire. */
 export function joystickMask(direction: Extract<ActionStep, { joystick: unknown }>["joystick"]["direction"], fire: boolean): number {
@@ -479,20 +481,19 @@ export function entryStateDiffers(program: EntryRam, loader: LoaderEntryState): 
 }
 
 /**
- * The core with the spans of the input of a session: from the input that starts while no input is held to the end
- * of the last one. Input is a key down (a press step, the play, RESTORE), a joystick that is not centered (a joystick
- * step, the play), and keys of a type step in the KERNAL queue. The key and the joystick commands answer the tick.
- * `typed` starts the keys of a type step, and `settle` ends them when the queue is empty. `cover` makes the spans from
- * `from` on one span up to `to`, for the frames of a step. `spans` closes a span that is still open at `end`.
+ * The spans of the input of a session: from the input that starts while no input is held to the end of the last one.
+ * Input is a key down (a press step, the play, RESTORE) and a joystick that is not centered (a joystick step, the
+ * play): the key() and joy() of the core report each one with its tick. `typed` starts the keys of a type step, and
+ * `settle` ends them when the KERNAL queue is empty. `cover` makes the spans from `from` on one span up to `to`, for
+ * the frames of a step. `spans` closes a span that is still open at `end`, and ends the tracking.
  */
-export function trackInput(core: C64RunSession): {
-  core: C64RunSession;
+export function trackInput(core: Pick<C64RunSession, "onInput" | "peek" | "status">): {
   typed: (tick: number) => void;
   settle: () => Promise<void>;
   cover: (from: number, to: number) => void;
   spans: (end: number) => TickSpan[];
 } {
-  const down = new Set<string>();
+  const down = new Set<number>();
   let joystick = false;
   let queue = false;
   const spans: TickSpan[] = [];
@@ -507,25 +508,13 @@ export function trackInput(core: C64RunSession): {
       since = undefined;
     }
   };
-  const command = async (text: string, limitMs?: number): Promise<string> => {
-    const answer = await core.command(text, limitMs);
-    const key = /^key ([0-9a-f]+) (down|up)$/.exec(text);
-    const joy = /^joy ([0-9a-f]+) ([0-9a-f]+)$/.exec(text);
-    if (key === null && joy === null) return answer;
-    const tick = Number(/tick=(\d+)/.exec(answer)?.[1] ?? Number.NaN);
-    if (Number.isNaN(tick)) throw new Refusal("operation-failed", `c64run ${text.split(" ")[0]} gave no tick: ${answer}`);
-    if (key !== null) change(tick, () => (key[2] === "down" ? down.add(key[1]!) : down.delete(key[1]!)));
-    else change(tick, () => (joystick = joy![1] !== "0" || joy![2] !== "0"));
-    return answer;
-  };
-  // The methods of the core keep the core as `this`: its fields are private.
-  const tracked = new Proxy(core, {
-    get: (target, name) => {
-      if (name === "command") return command;
-      const value: unknown = Reflect.get(target, name, target);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
+  core.onInput((input, tick) =>
+    change(tick, () => {
+      if (input.kind === "joy") joystick = input.masks.some((mask) => mask !== 0);
+      else if (input.down) down.add(input.code);
+      else down.delete(input.code);
+    }),
+  );
   const settle = async () => {
     if (queue && (await core.peek(QUEUE_LENGTH, 1))[0] === 0) change((await core.status("status")).tick, () => (queue = false));
   };
@@ -533,7 +522,11 @@ export function trackInput(core: C64RunSession): {
     const first = spans.findIndex((span) => span.from >= from);
     if (since === undefined && first >= 0) spans.splice(first, spans.length - first, { from, to: Math.max(to, spans.at(-1)!.to) });
   };
-  return { core: tracked, typed: (tick) => change(tick, () => (queue = true)), settle, cover, spans: (end) => (since === undefined ? [...spans] : [...spans, { from: since, to: end }]) };
+  const end = (at: number) => {
+    core.onInput(undefined);
+    return since === undefined ? [...spans] : [...spans, { from: since, to: at }];
+  };
+  return { typed: (tick) => change(tick, () => (queue = true)), settle, cover, spans: end };
 }
 
 /** The note in place of the entry state check when the program came to its entry during the input. */
@@ -647,9 +640,9 @@ async function doAction(core: C64RunSession, step: ActionStep | RestoreAction, a
   if ("restore" in step) {
     // The NMI line is low while RESTORE is down: hold it as a press step holds a key.
     const tick = (await core.status("status")).tick;
-    await core.command("key ff down");
+    await core.key(RESTORE_KEY, true);
     await core.status("run " + (tick + KEY_FRAMES * PAL_FRAME_CYCLES));
-    await core.command("key ff up");
+    await core.key(RESTORE_KEY, false);
   } else if ("write" in step) {
     await core.write(at.data(step.write.address), Buffer.from(step.write.data, "hex"));
   } else if ("type" in step) {
@@ -712,15 +705,14 @@ export interface RecordOutcome {
  * replay finds it on the reference.
  */
 export async function record(
-  session: C64RunSession,
+  core: C64RunSession,
   file: RecordFile,
   workspace: Workspace,
   input?: (core: C64RunSession, restore: () => Promise<string | undefined>) => Promise<string | undefined>,
   entry?: number,
 ): Promise<RecordOutcome> {
-  // Every key and joystick goes through the key and joy commands of the core: the steps, the play and a RESTORE.
-  const tracked = trackInput(session);
-  const core = tracked.core;
+  // Every key and joystick goes through key() and joy() of the core: the steps, the play and a RESTORE.
+  const tracked = trackInput(core);
   const prg = readProjectFile(file.program).bytes;
   const same = (address: number) => address;
   const at = sideAddresses(namesOf(file.symbols), "reference", { code: same, data: same });
@@ -781,18 +773,18 @@ export async function record(
       await core.status(`run ${tick + step.frames * PAL_FRAME_CYCLES}`);
     } else if ("joystick" in step) {
       masks[step.joystick.port - 1] = joystickMask(step.joystick.direction, step.joystick.fire ?? false);
-      await core.command(`joy ${masks[0]!.toString(16)} ${masks[1]!.toString(16)}`);
+      await core.joy(masks[0]!, masks[1]!);
     } else if ("press" in step) {
       const hold = step.press.frames * PAL_FRAME_CYCLES;
       const start = tick;
       for (const tap of keyTaps(step.press.keys) as KeyTap[]) {
-        for (const place of tap.keys) await core.command(`key ${coreKey(place)} down`);
+        for (const place of tap.keys) await core.key(coreKey(place), true);
         // RESTORE is no read: an event at the next read of the program, with the keys of the tap down.
         if (tap.restore) reason = await runEvent({ restore: true }, index + 1);
         if (reason !== undefined) break;
         tick = (await core.status("status")).tick;
         await core.status(`run ${(tick += hold)}`);
-        for (const place of tap.keys) await core.command(`key ${coreKey(place)} up`);
+        for (const place of tap.keys) await core.key(coreKey(place), false);
         await core.status(`run ${(tick += hold)}`);
         // Frames ran: the next RESTORE is no event right after an event.
         afterEvent = false;
@@ -882,6 +874,8 @@ export interface SideRun {
   problem?: string;
   /** True when the rebuild went on after the wait of its start screen. */
   startScreenSkipped?: boolean;
+  /** The rebuild with a `handover`: its pages 0-3 and its stack pointer at its entry, as its loader left them. */
+  entryRam?: EntryRam;
   /** The reference with an `entry`: where it came to that entry, when it came to it. */
   entryPoint?: EntryPoint;
   /**
@@ -967,6 +961,7 @@ export async function replaySide(
   // A pc key counts the opcode fetches from the start, also those of the code before the entry: the unpacker of
   // the reference, or the loader of the rebuild. The rebuild counts again from the jump of its loader, without those of the reference.
   const { handover } = options;
+  let entryRam: EntryRam | undefined;
   if (problem === undefined && handover !== undefined) {
     const jump = own.get(LOADER_JUMP)!;
     if ((await core.status(`run-pc ${hexWord(jump)} ${limit}`)).word !== "reached") problem = `the rebuild did not come to the jump of its loader at ${formatC64Address(jump)}`;
@@ -975,6 +970,7 @@ export async function replaySide(
       const reached = await core.status(`run-pc ${hexWord(handover.entry)} ${limit}`);
       if (reached.word !== "reached") problem = `the rebuild did not come to its entry at ${formatC64Address(handover.entry)}`;
       else {
+        entryRam = { sp: reached.s, ram: await core.peek(0, 0x400) };
         // The loader sets the entry state of the capture, but the phase of the frame and of the CIA timers at the entry
         // depends on how the reference started: the rebuild waits at its entry for the beam position of the reference, and
         // gets its CIA timers and interrupt state there. A program that starts its timers without a load keeps that phase.
@@ -1042,6 +1038,7 @@ export async function replaySide(
     ...(problem === undefined ? {} : { problem }),
     ...(screenSkipped ? { startScreenSkipped: true } : {}),
     ...(entryPoint === undefined ? {} : { entryPoint }),
+    ...(entryRam === undefined ? {} : { entryRam }),
     ...(ram === undefined ? {} : { ram }),
   };
 }

@@ -12,7 +12,7 @@ import { MATRIX_KEYS } from "../../src/c64-keys.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "../../src/native/c64run.ts";
 
 /** A core that logs each command; a run moves its tick. */
-class FakeCore implements Pick<C64RunSession, "command" | "status"> {
+class FakeCore implements Pick<C64RunSession, "command" | "status" | "key" | "joy"> {
   readonly log: string[] = [];
   tick = 1000;
 
@@ -21,6 +21,16 @@ class FakeCore implements Pick<C64RunSession, "command" | "status"> {
     if (text === "palette") return "ok 000000 ffffff";
     if (text === "frame") return "ok 2 1 AAE=";
     return "ok";
+  }
+
+  async key(code: number, down: boolean): Promise<number> {
+    this.log.push(`key ${code.toString(16)} ${down ? "down" : "up"}`);
+    return this.tick;
+  }
+
+  async joy(port1: number, port2: number): Promise<number> {
+    this.log.push(`joy ${port1.toString(16)} ${port2.toString(16)}`);
+    return this.tick;
   }
 
   async status(text: string): Promise<CoreStatus> {

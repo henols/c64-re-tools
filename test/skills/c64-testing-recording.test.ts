@@ -12,7 +12,7 @@ import { after, afterEach, beforeEach, test } from "node:test";
 import { ENTRY_DURING_INPUT, entryStateCheck, entryStateDiffers, firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, loaderEntryState, siteMap, trackInput } from "../../skills/c64-testing/scripts/lib/recording.ts";
 import { rebuildNames, replay, replayAll } from "../../skills/c64-testing/scripts/lib/replay.ts";
 import { Refusal } from "../../src/errors.ts";
-import { C64RUN_PROTOCOL } from "../../src/native/c64run.ts";
+import { C64RUN_PROTOCOL, type C64RunSession } from "../../src/native/c64run.ts";
 import { namesOf } from "../../skills/c64-testing/scripts/lib/scenario.ts";
 import { withRead, withWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
@@ -386,34 +386,45 @@ test("the entry state is compared when the program came to its entry after a pre
 });
 
 test("the input of a record spans from an input while none is held to the end of the last one: keys, a joystick and typed keys", async () => {
-  // A stand-in core: each command answers a tick 100 cycles later; the KERNAL queue is empty after the second peek.
+  // A stand-in core: it keeps the input listener; each status is 100 cycles later, and the KERNAL queue is empty at the second peek.
+  let listener: Parameters<C64RunSession["onInput"]>[0];
   let tick = 0;
   let peeks = 0;
   const core = {
-    command: async () => `ok tick=${(tick += 100)}`,
+    onInput: (given: typeof listener) => (listener = given),
     status: async () => ({ tick: (tick += 100) }),
     peek: async () => Uint8Array.of(++peeks < 2 ? 1 : 0),
   } as unknown as Parameters<typeof trackInput>[0];
+  const key = (code: number, down: boolean) => listener!({ kind: "key", code, down }, (tick += 100));
+  const joy = (port2: number) => listener!({ kind: "joy", masks: [0, port2] }, (tick += 100));
   const tracked = trackInput(core);
-  // A key of the play, RESTORE (ff) while it is down, then a frame that is no input: one span.
-  for (const text of ["key 81 down", "key ff down", "key 81 up", "frame", "key ff up"]) await tracked.core.command(text);
+  // A key of the play, RESTORE (ff) while it is down: one span.
+  key(0x81, true);
+  key(0xff, true);
+  key(0x81, false);
+  key(0xff, false);
   // A joystick that leaves the center and comes back: one span.
-  for (const text of ["joy 0 10", "joy 0 0"]) await tracked.core.command(text);
-  // A type step at 750: its keys are input until the queue is empty.
-  tracked.typed(750);
+  joy(0x10);
+  joy(0);
+  // A type step at 650: its keys are input until the queue is empty.
+  tracked.typed(650);
   await tracked.settle();
   await tracked.settle();
   // A key held at the end.
-  await tracked.core.command("key 82 down");
+  key(0x82, true);
   assert.deepEqual(tracked.spans(9000), [
-    { from: 100, to: 500 },
-    { from: 600, to: 700 },
-    { from: 750, to: 800 },
-    { from: 900, to: 9000 },
+    { from: 100, to: 400 },
+    { from: 500, to: 600 },
+    { from: 650, to: 700 },
+    { from: 800, to: 9000 },
   ]);
+  assert.equal(listener, undefined, "the tracking ends with spans");
   // A press step of two taps from 0 to 5000: its spans become the one span of the step.
   const step = trackInput(core);
-  for (const text of ["key 81 down", "key 81 up", "key 82 down", "key 82 up"]) await step.core.command(text);
+  key(0x81, true);
+  key(0x81, false);
+  key(0x82, true);
+  key(0x82, false);
   step.cover(0, 5000);
   assert.deepEqual(step.spans(9000), [{ from: 0, to: 5000 }]);
 });

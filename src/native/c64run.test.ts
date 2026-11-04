@@ -27,6 +27,7 @@ function standInCore(name: string, options: { protocol?: number; roms?: boolean 
       `    version) echo "ok c64run protocol=${options.protocol ?? C64RUN_PROTOCOL} chips=test" ;;`,
       `    init) ${init} ;;`,
       '    peek) echo "ok 0102" ;;',
+      '    key|joy) echo "ok tick=42" ;;',
       "    hang) sleep 600 ;;",
       "    quit) exit 0 ;;",
       '    *) echo "err unknown $cmd" ;;',
@@ -60,6 +61,24 @@ test("a session sends commands in order and turns an err answer into operation-f
     await session.close();
   }
   assert.equal(run.supervisor.size, 0);
+});
+
+test("key and joy report each input with its tick to the listener, and no input goes past them as a raw command", { skip, timeout: 20_000 }, async () => {
+  const session = await C64RunSession.open(context({ C64RT_C64RUN: standInCore("c64run-input") }));
+  try {
+    const heard: unknown[] = [];
+    session.onInput((input, tick) => heard.push([input, tick]));
+    assert.equal(await session.key(0x8a, true), 42);
+    await session.joy(0, 0x10);
+    assert.deepEqual(heard, [
+      [{ kind: "key", code: 0x8a, down: true }, 42],
+      [{ kind: "joy", masks: [0, 0x10] }, 42],
+    ]);
+    await assert.rejects(session.command("key 8a up"), /key\(\) or joy\(\)/);
+    await assert.rejects(session.command("joy 0 0"), /key\(\) or joy\(\)/);
+  } finally {
+    await session.close();
+  }
 });
 
 test("a run to a far tick gets the time of its cycles at 1 million per second; other commands get 30 s", () => {
