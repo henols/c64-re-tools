@@ -10,7 +10,7 @@ import { Refusal } from "../errors.ts";
 import { projectRoot } from "../project.ts";
 import { withRead } from "./database.ts";
 import { analyzerNamed, listAnalyzerNames, listSymbols, symbolNamed } from "./read.ts";
-import { DEFAULT_SPACE, type Space, type SymbolKind } from "./schema.ts";
+import { DEFAULT_SPACE, inSpace, type Space, type SymbolKind } from "./schema.ts";
 
 /** The address of a name in a space. Refuses a name that no symbol and no analyzer has, and an analyzer name at two addresses. */
 export function addressOfName(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): number {
@@ -19,7 +19,7 @@ export function addressOfName(db: DatabaseSync | undefined, name: string, space:
   const rows = analyzerNamed(db, name, space);
   const addresses = [...new Set(rows.map((row) => row.address))];
   if (addresses.length === 1) return addresses[0]!;
-  const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
+  const where = inSpace(space);
   if (addresses.length > 1) throw new Refusal("invalid-input", `the analyzers give ${name} to ${rows.map((row) => `${formatC64Address(row.address)} (${row.origin})`).join(" and ")}${where}. Give the address.`);
   throw new Refusal("not-found", `${name} is not a name in the knowledge${where}. Give a $ address, or a symbol or an analyzer name of the project knowledge${where}.`);
 }

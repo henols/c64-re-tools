@@ -241,7 +241,18 @@ test("pickFields keeps the dotted paths with their nesting, takes a path through
   });
   assert.deepEqual(pickFields(body, ["regions", "regions.count"]), { body: { regions: body.regions }, missing: [] });
   assert.deepEqual(pickFields(body, ["regions.listed.origin"]), { body: { regions: { listed: [{ origin: "llm" }, {}] } }, missing: [] });
-  assert.deepEqual(pickFields(body, ["revision", "nothing", "note.deeper"]), { body: { revision: "r1" }, missing: ["nothing", "note.deeper"] });
+  assert.deepEqual(pickFields(body, ["revision", "nothing", "note.deeper"]), {
+    body: { revision: "r1" },
+    missing: [
+      { path: "nothing", at: "", list: false, fields: ["revision", "regions", "note"] },
+      { path: "note.deeper", at: "note", list: false, fields: [] },
+    ],
+  });
+  // A path names the deepest part that the body has, with its fields: the next level to give.
+  assert.deepEqual(pickFields(body, ["regions.name", "regions.listed.size"]).missing, [
+    { path: "regions.name", at: "regions", list: false, fields: ["count", "listed"] },
+    { path: "regions.listed.size", at: "regions.listed", list: true, fields: ["start", "type", "origin"] },
+  ]);
   assert.deepEqual(pickFields({ regions: { count: 0, listed: [] } }, ["regions.listed.start"]), { body: { regions: { listed: [] } }, missing: [] }, "an empty list lacks no field");
 });
 
@@ -256,6 +267,7 @@ test("--fields prints only those parts of the body, and a path that the body lac
   // The sentence for a cut list comes only when the fields show that list.
   assert.equal(run(["cut", "--fields", "nothing"]).envelope.hint, "The body has no nothing. Its fields are items.");
   assert.match(run(["cut", "--fields", "items.count"]).envelope.hint, /^A list in the body is cut/);
+  assert.match(run(["cut", "--fields", "items.name"]).envelope.hint!, / The body has no items\.name\. items has the fields count, listed and rest\.$/);
 });
 
 test("--project sets the project of the script", () => {

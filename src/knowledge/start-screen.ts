@@ -1,11 +1,64 @@
 // The start screen of a captured stage, from the entry state of its capture:
 // the VIC-II registers and the VIC bank give the mode and the addresses, and
 // the colour RAM of the capture gives the colours. Thus the start screen of a
-// stage needs no address from the user.
+// stage needs no address from the user. Also the values that the start screen
+// code of a generated loader gets from a start screen of the knowledge.
 
-import { formatC64Byte, vicScreenMemory } from "../c64.ts";
+import { formatC64Address, formatC64Byte, vicScreenMemory } from "../c64.ts";
 import { Refusal } from "../errors.ts";
+import { isRomFont, type StartScreenRow } from "./read.ts";
 import { LEFTOVERS_SWITCH, START_SCREEN_SWITCH, type StartScreenMode } from "./schema.ts";
+
+/** The file of the start screen code in the generated source. */
+export const START_SCREEN_FILE = "start_screen.asm";
+
+/** The VIC-II values of a start screen, as the start screen code sets them. */
+export interface StartScreenPlan {
+  d011: number;
+  d016: number;
+  d018: number;
+  /** The VIC bank: 0 for $0000-$3fff to 3 for $c000-$ffff. */
+  bank: number;
+  border: number;
+  background: number;
+  /** 0: no colour RAM (hires), 1: one colour, 2: a copy of 1000 bytes. */
+  colourMode: 0 | 1 | 2;
+}
+
+/** The VIC-II values that show a start screen of the knowledge. */
+export function startScreenPlan(row: StartScreenRow): StartScreenPlan {
+  const bank = row.screen >> 14;
+  const base = (row.bitmap === undefined ? ((row.charset! & 0x3fff) >> 11) << 1 : ((row.bitmap & 0x3fff) >> 13) << 3) | 0x01;
+  return {
+    d011: row.mode === "text" ? 0x1b : 0x3b,
+    d016: row.mode === "multicolour" ? 0x18 : 0x08,
+    d018: (((row.screen & 0x3fff) >> 10) << 4) | base,
+    bank,
+    border: row.border,
+    background: row.background,
+    colourMode: row.colours !== undefined || row.colourRam === true ? 2 : row.colour !== undefined ? 1 : 0,
+  };
+}
+
+/** The lines of loader.asm or of the show stage that give the start screen code its values. */
+export function startScreenValues(row: StartScreenRow, plan: StartScreenPlan): string[] {
+  const value = (name: string, number: number, comment?: string) => `c64_source_ss_${name} = ${formatC64Byte(number)}${comment === undefined ? "" : ` ; ${comment}`}`;
+  const font = row.charset !== undefined && isRomFont(row.charset) ? " (the character ROM)" : "";
+  const what = [`screen ${formatC64Address(row.screen)}`, ...(row.bitmap === undefined ? [] : [`bitmap ${formatC64Address(row.bitmap)}`]), ...(row.charset === undefined ? [] : [`charset ${formatC64Address(row.charset)}${font}`])];
+  return [
+    `; The start screen: ${row.mode}, ${what.join(", ")}.${row.comment === undefined ? "" : ` ${row.comment.replace(/\s*\r?\n\s*/g, " ")}`}`,
+    value("d011", plan.d011),
+    value("d016", plan.d016),
+    value("d018", plan.d018),
+    value("bank", 3 - plan.bank, `VIC bank ${formatC64Address(plan.bank << 14)}-${formatC64Address((plan.bank << 14) + 0x3fff)}`),
+    value("border", plan.border),
+    value("background", plan.background),
+    value("colour_mode", plan.colourMode),
+    value("colour", row.colour ?? 0),
+    // The colour RAM of a captured stage is in the show code: STAGE_COLOURS in src/stage.ts.
+    `c64_source_ss_colours = ${row.colourRam === true ? "c64_source_stage_colours" : formatC64Address(row.colours ?? 0)}`,
+  ];
+}
 
 /** The labels of the start screen in a generated loader: its wait for a key or a fire button, and the code after the wait. */
 export const START_SCREEN_WAIT = "loader_start_screen_wait";

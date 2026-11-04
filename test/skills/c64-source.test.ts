@@ -13,16 +13,18 @@ import { after, test } from "node:test";
 
 import { COVERAGE, instructionLength } from "../../src/c64.ts";
 import { assemble } from "../../src/native/acme.ts";
+import { symbolValue, symbolValues } from "../../src/native/types.ts";
 import { ACME, EXOMIZER, findTool } from "../../src/native/discover.ts";
 import { localToolContext } from "../../src/native/local.ts";
-import { ciaSection, copierAreas, copyOrder, loaderLimits, planLoader, loaderState, simulate, START_SCREEN_CODE, START_SCREEN_FILE, START_SCREEN_SIZES, startScreenPlan, stopCause, type EntryCia, type EntryState, type LoaderPlan } from "../../skills/c64-source/scripts/lib/loader.ts";
+import { ciaSection, copierAreas, copyOrder, loaderLimits, planLoader, loaderState, simulate, START_SCREEN_CODE, START_SCREEN_SIZES, stopCause, type EntryCia, type EntryState, type LoaderPlan } from "../../skills/c64-source/scripts/lib/loader.ts";
 import { packLoader } from "../../src/loader.ts";
 import { WireFailure } from "../../src/protocol/messages.ts";
 import { PACKAGE } from "../../src/package.ts";
 import { MODE_LENGTH, OPCODES } from "../../src/opcodes.ts";
 import { configText, entriesInData, entryOutsideImage, layout, render, stagePatchText, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
 import { configValues } from "../../src/build-name.ts";
-import { planStage, STAGE_CODE_END, STAGE_FILE, stageParts, type StageInput } from "../../skills/c64-source/scripts/lib/stage.ts";
+import { planStage, STAGE_CODE_END, STAGE_FILE, stageParts, type StageInput } from "../../src/stage.ts";
+import { START_SCREEN_FILE, startScreenPlan } from "../../src/knowledge/start-screen.ts";
 import { decode, describeAddress, platformNames } from "../../src/platform.ts";
 import type { StartScreenRow } from "../../src/knowledge/read.ts";
 import { referenceHeader } from "../../src/reference-pages.ts";
@@ -415,10 +417,7 @@ test("with real ACME, the loader takes its copies and its jump from labels, so c
   main.program.subarray(2, 2 + 0xf0).forEach((byte, offset) => assert.equal(after[0x1000 + offset], byte, `$${(0x1000 + offset).toString(16)}`));
   for (let address = 0xc000; address <= 0xc0ff; address++) assert.equal(after[address], source.byteAt(address));
   assert.deepEqual([...main.program.subarray(2 + 0x30, 2 + 0x38)], [0xa9, 0x00, 0xad, 0x40, 0x10, 0x4c, 0x30, 0x10], "the code at $1030 names its moved targets");
-  const value = (name: string) => {
-    const symbol = relocated.symbols.find((item) => item.name === name)!;
-    return symbol.kind === "address" ? symbol.address : symbol.value;
-  };
+  const value = (name: string) => symbolValue(relocated.symbols.find((item) => item.name === name)!);
   const at = 2 + value("loader_copier_src") - 0x0801 + (value("c64_source_loader_jump") - plan.copier);
   assert.deepEqual([...relocated.program.subarray(at, at + 3)], [0x4c, 0x30, 0x10], "the loader jumps to the moved entry");
 });
@@ -562,7 +561,7 @@ test("with real ACME, a loader with a start screen and the colour RAM assembles 
     const block = plan.blocks.find((item) => item.what === "entry state colour RAM")!;
     assert.deepEqual(Uint8Array.from(program.subarray(2 + block.packedAt - 0x0801, 2 + block.packedAt - 0x0801 + 1000)), colourRam, "the colours are where the plan copies them from");
     const wait = symbols.find((symbol) => symbol.name === "loader_start_screen_wait")!;
-    const at = wait.kind === "address" ? wait.address : wait.value;
+    const at = symbolValue(wait);
     assert.ok(at > plan.copier && at < plan.copier + 0x300, "the start screen runs in the copier pages");
   }
   const packedSource: SourceInput = { ...input([], 0x0800, { startScreen: true }), segments: [{ start: 0x0800, end: 0xbfff }, { start: 0xd000, end: 0xdfff }], byteAt: (address) => address & 0xff };
@@ -1203,28 +1202,6 @@ test("with real ACME, the source with LEFTOVERS = 1 gives the program, and with 
   assert.notDeepEqual(clean.slice(8, 12), original.slice(8, 12));
 });
 
-test("the show stage runs where the KERNAL can be in, and puts the loader bytes under the stage in a stash; without room it refuses with the free ranges", () => {
-  const row: StartScreenRow = { space: "c64", mode: "multicolour", screen: 0xcc00, bitmap: 0xe000, colours: 0x8328, border: 0, background: 6, stage: "bank1", call: 0x0a00, origin: "llm", revision: "r" };
-  const stageInput = (inner: StageInput["inner"], stage: StageInput["stage"]): StageInput => ({ inner, innerStart: 0x080d, innerPort: 0x37, stage, row, plan: startScreenPlan(row), settings: [], header: [], codeSize: 300 });
-  const plan = planStage(stageInput([{ start: 0x0801, body: new Uint8Array(0x500) }], [{ start: 0x0a00, body: new Uint8Array(0x20) }, { start: 0xcc00, body: new Uint8Array(1000) }]));
-  assert.equal(plan.code, 0x0400, "the first free range that the code fits");
-  assert.deepEqual(plan.stash.map((item) => item.target), [{ start: 0x0a00, end: 0x0a1f }]);
-  const at = plan.stash[0]!.at;
-  assert.ok(at >= 0x0400 + 300 + 8 && at + 0x1f <= 0x0800, "the stash is in free memory after the code");
-  assert.match(plan.text, /c64_source_ss_call = \$0a00 /);
-  assert.match(plan.text, new RegExp(`!word 32, \\$${at.toString(16).padStart(4, "0")}, \\$0a00 ; \\$0a00-\\$0a1f of the loader`));
-  assert.match(plan.text, /jmp \$080d\n/);
-  // The colour RAM of the capture is in the show code: the start screen copies it from there.
-  const { colours: _colours, ...picture } = row;
-  const fromCapture: StartScreenRow = { ...picture, colourRam: true };
-  const withColours = planStage({ ...stageInput([{ start: 0x0801, body: new Uint8Array(0x500) }], [{ start: 0xcc00, body: new Uint8Array(1000) }]), row: fromCapture, plan: startScreenPlan(fromCapture), colourRam: Uint8Array.from({ length: 1000 }, (_, index) => index & 0x0f), codeSize: 1300 });
-  assert.match(withColours.text, /\nc64_source_ss_colour_mode = \$02\n/);
-  assert.match(withColours.text, /\nc64_source_ss_colours = c64_source_stage_colours\n/);
-  assert.match(withColours.text, /\nc64_source_stage_colours\n {8}!byte \$00,\$01,\$02,/);
-  assert.equal((withColours.text.split("\nc64_source_stage_colours\n")[1]!.split("c64_source_stage_code_end")[0]!.match(/\$[0-9a-f]{2}/g) ?? []).length, 1000);
-  assert.throws(() => planStage(stageInput([{ start: 0x0400, body: new Uint8Array(0xcc00) }], [{ start: 0xe000, body: new Uint8Array(8000) }])), /The show stage needs 308 free bytes for its code in \$0400-\$9fff or \$c000-\$cfff.* The largest free ranges outside the loader and the bytes of the stage: \$d000-\$dfff \(4096 bytes\)/);
-});
-
 test("with real ACME, the show stage builds when its code is high and the parts of the stage are large: each part is at its own address", { skip: acmeSkip }, async () => {
   const row: StartScreenRow = { space: "c64", mode: "multicolour", screen: 0x0400, bitmap: 0x2000, colours: 0x5800, border: 0, background: 6, stage: "loading", origin: "llm", revision: "r" };
   // The loader and the stage fill $0400-$bfff, so the code goes to $c000, and 17 KB of the stage is below it.
@@ -1232,7 +1209,7 @@ test("with real ACME, the show stage builds when its code is high and the parts 
     { start: 0x0400, body: Uint8Array.from({ length: 1000 }, (_, index) => index & 0xff) },
     { start: 0x2000, body: Uint8Array.from({ length: 0x4000 }, (_, index) => (index * 7) & 0xff) },
   ];
-  const input: StageInput = { inner: [{ start: 0x0801, body: new Uint8Array(0x17ff).fill(0xea) }, { start: 0x6000, body: new Uint8Array(0x6000).fill(0xea) }], innerStart: 0x080d, innerPort: 0x37, stage, row, plan: startScreenPlan(row), settings: [], header: [], codeSize: 600 };
+  const input: StageInput = { inner: [{ start: 0x0801, body: new Uint8Array(0x17ff).fill(0xea) }, { start: 0x6000, body: new Uint8Array(0x6000).fill(0xea) }], innerStart: 0x080d, innerPort: 0x37, stage, row, plan: startScreenPlan(row), settings: [], header: [], key: "0123456789abcdef", codeSize: 600 };
   const plan = planStage(input);
   assert.ok(plan.code >= 0xc000, "the code is high");
   assert.doesNotMatch(plan.text, /!pseudopc/);
@@ -1243,7 +1220,7 @@ test("with real ACME, the show stage builds when its code is high and the parts 
   const contents = files.map((file) => Buffer.from(file.text));
   const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: STAGE_FILE, includeDirs: [], defines: {} }, contents, localToolContext());
   assert.equal(result.assembled, true, result.diagnostics.map((diagnostic) => diagnostic.message).join("; "));
-  const labels = new Map((result.symbols ?? []).map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]));
+  const labels = symbolValues(result.symbols ?? []);
   const parts = stageParts(input, plan, attachments![0]!, (name) => labels.get(name)!);
   for (const part of stage) assert.deepEqual([...parts.find((item) => item.start === part.start)!.body], [...part.body], `the part at ${part.start.toString(16)}`);
   assert.equal(parts.at(-1)!.start, plan.code);

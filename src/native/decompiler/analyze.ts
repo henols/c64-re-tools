@@ -18,7 +18,7 @@ export async function analyze(
   image: Buffer,
   context: ToolContext,
 ): Promise<{ result: DecompilerResult; seeds: SeedReport }> {
-  checkRequestBounds(params);
+  checkRequestBounds(params, DECOMPILER_LIMITS);
   const { start, end, body } = imageRange(params.imageKind, image);
 
   // The decoder sees only the loaded bytes; labels may name any address.

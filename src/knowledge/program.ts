@@ -3,12 +3,14 @@
 // capture and the coverage maps are imported one time; every later step reads
 // them here, so a project needs no image or coverage files to be made again.
 
+import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
 import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, formatC64Range, inRanges, mergeRanges, prgOf, rangesWhere } from "../c64.ts";
-import { COVERAGE_KINDS, DEFAULT_SPACE, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
-import { coverageRuns } from "./read.ts";
+import { COVERAGE_KINDS, DEFAULT_SPACE, inSpace, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
+import { baseValue, coverageRuns, listPatches, listReleases, listSwitches, type StartScreenRow } from "./read.ts";
+import { capturedColourRam } from "./start-screen.ts";
 import { sha256 } from "./text.ts";
 import { checkAddress, checkSpace, write, type Evidence, type OperandImage, type WriteContext } from "./write.ts";
 
@@ -180,6 +182,28 @@ function gained(before: Map<CoverageKind, Uint8Array>, after: Map<CoverageKind, 
   return count;
 }
 
+/** True at each address that a run executed: in RAM, in a ROM or in the I/O area. */
+function executedIn(maps: Map<CoverageKind, Uint8Array>): (address: number) => boolean {
+  const executes = (["x", "rom-x", "io-x"] as const).map((kind) => maps.get(kind)!);
+  return (address) => executes.some((map) => map[address] === 1);
+}
+
+/** What one import did to the coverage of a space. */
+export interface CoverageImport {
+  space: Space;
+  imported: string[];
+  replaced: string[];
+  known: string[];
+  /** The ranges of accesses that the coverage gained and lost, of all kinds. */
+  added: number;
+  removed: number;
+  /** At an address: gained when the runs now execute it and did not before, lost when they no longer execute it, else undefined. */
+  executeChange: (address: number) => ExecuteChange | undefined;
+}
+
+/** How an import changed what the runs execute at an address. */
+export type ExecuteChange = "gained" | "lost";
+
 /**
  * Puts coverage maps into the coverage of a space. The knowledge keeps the
  * ranges of each map by its project path; the coverage of the space is the
@@ -193,7 +217,7 @@ export function addCoverage(
   db: DatabaseSync,
   context: WriteContext,
   request: { space?: Space; maps: CoverageMap[] },
-): { revision: string | null; current: { space: Space; imported: string[]; replaced: string[]; known: string[]; added: number; removed: number } } {
+): { revision: string | null; current: CoverageImport } {
   checkSpace(request);
   const space = request.space ?? DEFAULT_SPACE;
   for (const map of request.maps) {
@@ -210,7 +234,15 @@ export function addCoverage(
   const fresh = hashed.filter((map) => !isKnown(map));
   const evidence: Evidence[] = [...(context.evidence ?? []), ...fresh.map((map): Evidence => ({ kind: "coverage", ref: map.name, sha256: map.sha256, ...(space === DEFAULT_SPACE ? {} : { space }) }))];
   return write(db, { ...context, evidence }, "coverage", (change) => {
-    const result = { space, imported: fresh.map((map) => map.name), replaced: fresh.filter((map) => latest.has(map.name) && latest.get(map.name) !== map.sha256).map((map) => map.name), known: hashed.filter((map) => !fresh.includes(map)).map((map) => map.name), added: 0, removed: 0 };
+    const result: CoverageImport = {
+      space,
+      imported: fresh.map((map) => map.name),
+      replaced: fresh.filter((map) => latest.has(map.name) && latest.get(map.name) !== map.sha256).map((map) => map.name),
+      known: hashed.filter((map) => !fresh.includes(map)).map((map) => map.name),
+      added: 0,
+      removed: 0,
+      executeChange: () => undefined,
+    };
     if (fresh.length === 0) return result;
     // A revision for each import, also when the coverage does not change: the maps are its evidence.
     change.id();
@@ -228,6 +260,12 @@ export function addCoverage(
     const after = currentCoverage(db, space);
     result.added = gained(before, after);
     result.removed = gained(after, before);
+    // One value for each address: a lookup of a comment costs one read, also for many short ranges.
+    const was = executedIn(before);
+    const is = executedIn(after);
+    const changes = new Uint8Array(SIZE);
+    for (let address = 0; address < SIZE; address++) if (was(address) !== is(address)) changes[address] = is(address) ? 1 : 2;
+    result.executeChange = (address) => (changes[address] === 1 ? "gained" : changes[address] === 2 ? "lost" : undefined);
     return result;
   });
 }
@@ -330,8 +368,7 @@ export function programEntry(db: DatabaseSync | undefined, space: Space = DEFAUL
 export function requireProgram(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): ProgramImage {
   const image = programImage(db, space);
   if (image !== undefined) return image;
-  const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
-  throw new Refusal("not-found", `The knowledge has no program${where}. Put the program into the project knowledge${where}: a PRG, or the image.json of a capture.`);
+  throw new Refusal("not-found", `The knowledge has no program${inSpace(space)}. Put the program into the project knowledge${inSpace(space)}: a PRG, or the image.json of a capture.`);
 }
 
 /** The pages of an entry state: $0000-$03ff as the capture wrote them, 256 bytes as hex for each page. */
@@ -374,6 +411,29 @@ export function analyzedBytes(image: ProgramImage): { bytes: Buffer; kind: "prg"
     return { bytes: prgOf(segment!.start, image.memory.subarray(segment!.start, segment!.end + 1)), kind: "prg" };
   }
   return { bytes: Buffer.from(entryMemory(image).memory), kind: "flat64k" };
+}
+
+/**
+ * The key of a start screen of a captured stage: a hash of what the bytes of
+ * its show stage are made from. These are the fields of the start screen (not
+ * its comment), the bytes of the program of the stage, the code of each patch
+ * there whose switch default is not its base value, the colour RAM of the
+ * capture when the start screen takes its colours from it, and with a call
+ * the coverage of the stage. A name, a comment or a module of the stage does
+ * not change it. Another key means that a show stage of the source is not of
+ * this start screen.
+ */
+export function startScreenKey(db: DatabaseSync | undefined, row: StartScreenRow): string {
+  const stage = row.stage!;
+  const hash = createHash("sha256").update(JSON.stringify([row.space, row.mode, row.screen, row.bitmap, row.charset, row.colours, row.colour, row.border, row.background, stage, row.call, row.colourRam]));
+  const image = programImage(db, stage);
+  for (const segment of image?.segments ?? []) hash.update(JSON.stringify([segment.start, segment.end])).update(image!.memory.subarray(segment.start, segment.end + 1));
+  const base = listReleases(db, undefined, stage).find((release) => release.base)?.label;
+  const changed = new Set(listSwitches(db, undefined, stage).filter((item) => item.default !== baseValue(item, base)).map((item) => item.name));
+  hash.update(JSON.stringify(listPatches(db, undefined, undefined, undefined, stage).filter((patch) => changed.has(patch.switch)).map((patch) => [patch.start, patch.end, patch.code])));
+  if (row.colourRam === true) hash.update(capturedColourRam(image?.state) ?? new Uint8Array());
+  if (row.call !== undefined) hash.update(programCoverage(db, stage)?.map ?? new Uint8Array());
+  return hash.digest("hex").slice(0, 16);
 }
 
 /**
@@ -434,7 +494,7 @@ const PATCH_LINE_BYTES = 8;
 export function releaseCode(db: DatabaseSync | undefined, label: string, start: number, end: number, space: Space = DEFAULT_SPACE): string {
   const range = formatC64Range({ start, end });
   const release = db?.prepare("SELECT base FROM current_releases WHERE space = ? AND label = ?").get(space, label) as { base: number } | undefined;
-  if (release === undefined) throw new Refusal("not-found", `There is no release ${label}${space === DEFAULT_SPACE ? "" : ` in ${space}`}. Record it first with its file.`);
+  if (release === undefined) throw new Refusal("not-found", `There is no release ${label}${inSpace(space)}. Record it first with its file.`);
   if (release.base === 1) throw new Refusal("invalid-input", `${label} is the base release: its bytes are the program, and a patch holds the bytes of the other state. Give the release that has the other bytes in ${range}.`);
   const image = releaseImage(db, label, space)!;
   for (let address = start; address <= end; address++) {

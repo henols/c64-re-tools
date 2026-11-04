@@ -24,7 +24,7 @@ import { parseArgs } from "node:util";
 import { c64AddressOf, formatC64Address, isAddressText, SPACE_PATTERN, SYMBOL_NAME, type AddressRange } from "./c64.ts";
 import { describeError, isRefusal, Refusal, splitMessage, type ErrorCode } from "./errors.ts";
 import { checkOutputPath, projectRoot, resolveProjectPath, resolveReadPath, useProject, type OutputKind } from "./project.ts";
-import { isObject, STOP_AND_ASK } from "./protocol/messages.ts";
+import { STOP_AND_ASK } from "./protocol/messages.ts";
 import { elapsedMs, startTrace, trace, type TraceFields } from "./trace.ts";
 
 /** A wrong command line: an invalid-input refusal that also shows the usage of the command. */
@@ -458,41 +458,87 @@ export function takeFields(argv: readonly string[]): { fields?: string[]; argv: 
   return { fields, argv: rest };
 }
 
+/** A path of --fields that no part of the body has, and the deepest part of the path that the body has. */
+export interface MissingField {
+  path: string;
+  /** That part as a dotted path: "" is the body. */
+  at: string;
+  /** True when that part is a list: then `fields` are the fields of its items. */
+  list: boolean;
+  /** The fields of that part. */
+  fields: string[];
+}
+
 /**
  * The parts of a body at the dotted paths, with their nesting. A path through
  * a list takes the rest of the path from each item, and two paths through one
- * list give one list. `missing` holds the paths that no part of the body has.
+ * list give one list. `missing` holds the paths that no part of the body has,
+ * each with the fields of the deepest part of the path that the body has.
  */
-export function pickFields(body: unknown, paths: readonly string[]): { body: unknown; missing: string[] } {
+export function pickFields(body: unknown, paths: readonly string[]): { body: unknown; missing: MissingField[] } {
   const found = new Set<string>();
+  const reached = new Map<string, { at: string[]; list: boolean; fields: Set<string> }>();
   interface Wanted {
     path: string;
     rest: readonly string[];
   }
-  const pick = (node: unknown, wanted: readonly Wanted[]): unknown => {
+  // The path stops at `at`: keep the deepest place, and the fields of each item of a list there.
+  const reach = (wanted: Wanted, at: string[], list: boolean, fields: readonly string[]) => {
+    const known = reached.get(wanted.path);
+    if (known === undefined || at.length > known.at.length) reached.set(wanted.path, { at, list, fields: new Set(fields) });
+    else if (at.length === known.at.length) for (const field of fields) known.fields.add(field);
+  };
+  const pick = (node: unknown, wanted: readonly Wanted[], at: string[], list: boolean): unknown => {
     if (Array.isArray(node)) {
       // An empty list has no item that lacks the field.
       if (node.length === 0) for (const item of wanted) found.add(item.path);
-      return node.map((item) => pick(item, wanted));
+      return node.map((item) => pick(item, wanted, at, true));
     }
-    if (typeof node !== "object" || node === null) return undefined;
+    if (typeof node !== "object" || node === null) {
+      for (const item of wanted) reach(item, at, list, []);
+      return undefined;
+    }
     const out: Record<string, unknown> = {};
     const groups = new Map<string, Wanted[]>();
     for (const item of wanted) groups.set(item.rest[0]!, [...(groups.get(item.rest[0]!) ?? []), item]);
     for (const [key, group] of groups) {
-      if (!(key in node)) continue;
+      if (!(key in node)) {
+        for (const item of group) reach(item, at, list, Object.keys(node));
+        continue;
+      }
       const value = (node as Record<string, unknown>)[key];
       const ends = group.filter((item) => item.rest.length === 1);
       for (const item of ends) found.add(item.path);
       const deeper = group.filter((item) => item.rest.length > 1).map((item) => ({ path: item.path, rest: item.rest.slice(1) }));
-      const part = deeper.length > 0 ? pick(value, deeper) : undefined;
+      const part = deeper.length > 0 ? pick(value, deeper, [...at, key], false) : undefined;
       if (ends.length > 0) out[key] = value;
       else if (part !== undefined) out[key] = part;
     }
     return out;
   };
-  const picked = pick(body, paths.map((path) => ({ path, rest: path.split(".") })));
-  return { body: picked ?? {}, missing: paths.filter((path) => !found.has(path)) };
+  const picked = pick(body, paths.map((path) => ({ path, rest: path.split(".") })), [], false);
+  const missing = paths
+    .filter((path) => !found.has(path))
+    .map((path) => {
+      const place = reached.get(path)!;
+      return { path, at: place.at.join("."), list: place.list, fields: [...place.fields] };
+    });
+  return { body: picked ?? {}, missing };
+}
+
+/** The hint of the paths of --fields that the body lacks: the paths, then the fields of each place where a path stops. */
+function missingHint(missing: readonly MissingField[]): string {
+  const places = new Map<string, MissingField>();
+  for (const item of missing) if (!places.has(item.at)) places.set(item.at, item);
+  const fields = (item: MissingField) => {
+    if (item.at === "") return item.fields.length === 0 ? "It has no fields." : `Its fields are ${wordList(item.fields)}.`;
+    const what = item.list ? `The items of ${item.at}` : item.at;
+    const verb = item.list ? "have" : "has";
+    return item.fields.length === 0 ? `${what} ${verb} no fields.` : `${what} ${verb} the fields ${wordList(item.fields)}.`;
+  };
+  // The body comes first, so "Its fields" follows the sentence about the body. The other places keep the order of the paths.
+  const sorted = [...places.values()].sort((a, b) => Number(b.at === "") - Number(a.at === ""));
+  return [`The body has no ${wordList(missing.map((item) => item.path))}.`, ...sorted.map(fields)].join(" ");
 }
 
 /** True when --help comes before "--". */
@@ -785,8 +831,7 @@ async function envelope(script: Envelope): Promise<void> {
       const picked = pickFields(shownBody, fields);
       shownBody = picked.body;
       if (picked.missing.length > 0) {
-        const top = isObject(body) ? Object.keys(body) : [];
-        const lacks = `The body has no ${wordList(picked.missing)}. ${top.length === 0 ? "It has no fields." : `Its fields are ${wordList(top)}.`}`;
+        const lacks = missingHint(picked.missing);
         shownHint = shownHint === undefined ? lacks : `${sentence(shownHint)} ${lacks}`;
       }
     }

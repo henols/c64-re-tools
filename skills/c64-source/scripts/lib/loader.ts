@@ -19,12 +19,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { COPIER_LINE } from "#src/build-name.ts";
-import { type AddressRange, formatC64Address, formatC64Byte, formatC64Range, hexWord, rangesOverlap, subtract, underRom } from "#src/c64.ts";
+import { type AddressRange, formatC64Address, formatC64Byte, formatC64Range, rangesOverlap, subtract, underRom } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { parseEntryState } from "#src/host-client/entry-state.ts";
-import { isRomFont, startScreenRanges, type StartScreenRow } from "#src/knowledge/read.ts";
-import { capturedColourRam, LOADER_JUMP } from "#src/knowledge/start-screen.ts";
-import { COPIER_SOURCE } from "#src/loader.ts";
+import { startScreenRanges, type StartScreenRow } from "#src/knowledge/read.ts";
+import { capturedColourRam, LOADER_JUMP, START_SCREEN_FILE, startScreenPlan, startScreenValues, type StartScreenPlan } from "#src/knowledge/start-screen.ts";
+import { blockLabel, COPIER_SOURCE, largestFree, type Piece, placePieces, settingsLines } from "#src/loader.ts";
 import { romUseOfPort } from "#src/platform.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 
@@ -145,60 +145,10 @@ export function loaderLimits(plan: { cia?: CiaPlan; colourLimit?: string }): str
   return [...cia, ...(plan.colourLimit === undefined ? [] : [plan.colourLimit])];
 }
 
-/** The file of the start screen in the generated source. */
-export const START_SCREEN_FILE = "start_screen.asm";
 /** The code of the start screen: the same for each program. loader.asm sets its values. */
 export const START_SCREEN_CODE = readFileSync(fileURLToPath(new URL("./start-screen.asm", import.meta.url)), "utf8");
 /** The bytes of the start screen code for each colour mode: none, one colour, a copy of 1000 bytes. */
 export const START_SCREEN_SIZES = [197, 216, 226] as const;
-
-/** The VIC-II values of a start screen, as the start screen code sets them. */
-export interface StartScreenPlan {
-  d011: number;
-  d016: number;
-  d018: number;
-  /** The VIC bank: 0 for $0000-$3fff to 3 for $c000-$ffff. */
-  bank: number;
-  border: number;
-  background: number;
-  /** 0: no colour RAM (hires), 1: one colour, 2: a copy of 1000 bytes. */
-  colourMode: 0 | 1 | 2;
-}
-
-/** The VIC-II values that show a start screen of the knowledge. */
-export function startScreenPlan(row: StartScreenRow): StartScreenPlan {
-  const bank = row.screen >> 14;
-  const base = (row.bitmap === undefined ? ((row.charset! & 0x3fff) >> 11) << 1 : ((row.bitmap & 0x3fff) >> 13) << 3) | 0x01;
-  return {
-    d011: row.mode === "text" ? 0x1b : 0x3b,
-    d016: row.mode === "multicolour" ? 0x18 : 0x08,
-    d018: (((row.screen & 0x3fff) >> 10) << 4) | base,
-    bank,
-    border: row.border,
-    background: row.background,
-    colourMode: row.colours !== undefined || row.colourRam === true ? 2 : row.colour !== undefined ? 1 : 0,
-  };
-}
-
-/** The lines of loader.asm that give the start screen code its values. */
-export function startScreenValues(row: StartScreenRow, plan: StartScreenPlan): string[] {
-  const value = (name: string, number: number, comment?: string) => `c64_source_ss_${name} = ${formatC64Byte(number)}${comment === undefined ? "" : ` ; ${comment}`}`;
-  const font = row.charset !== undefined && isRomFont(row.charset) ? " (the character ROM)" : "";
-  const what = [`screen ${formatC64Address(row.screen)}`, ...(row.bitmap === undefined ? [] : [`bitmap ${formatC64Address(row.bitmap)}`]), ...(row.charset === undefined ? [] : [`charset ${formatC64Address(row.charset)}${font}`])];
-  return [
-    `; The start screen: ${row.mode}, ${what.join(", ")}.${row.comment === undefined ? "" : ` ${row.comment.replace(/\s*\r?\n\s*/g, " ")}`}`,
-    value("d011", plan.d011),
-    value("d016", plan.d016),
-    value("d018", plan.d018),
-    value("bank", 3 - plan.bank, `VIC bank ${formatC64Address(plan.bank << 14)}-${formatC64Address((plan.bank << 14) + 0x3fff)}`),
-    value("border", plan.border),
-    value("background", plan.background),
-    value("colour_mode", plan.colourMode),
-    value("colour", row.colour ?? 0),
-    // The colour RAM of a captured stage is in the show code: STAGE_COLOURS in stage.ts.
-    `c64_source_ss_colours = ${row.colourRam === true ? "c64_source_stage_colours" : formatC64Address(row.colours ?? 0)}`,
-  ];
-}
 
 /** The copier lines that include the start screen code, in a zone of its own. */
 const START_SCREEN_LINES = ["!zone c64_source_start_screen {", `!source "${START_SCREEN_FILE}"`, "}"];
@@ -475,14 +425,6 @@ function checkStartScreen(input: LoaderInput): StartScreenPlan | undefined {
   return startScreenPlan(row);
 }
 
-/** The settings that loader.asm and the show stage include: switches.asm, else config.asm for a start screen, else none. */
-export function settingsLines(input: Pick<LoaderInput, "switches" | "config">): string[] {
-  if (input.switches === true) return ['!source "switches.asm"'];
-  return input.config === true ? ['!source "config.asm"'] : [];
-}
-
-/** The label of a block: its first byte and the byte after it in the loader file, and its first address where it runs. */
-const blockLabel = (start: number, part: "from" | "end" | "to") => `loader_${part}_${hexWord(start)}`;
 const plus = (label: string, offset: number) => (offset === 0 ? label : `${label}+${offset}`);
 
 /** A block of the loader: a segment with its files, or bytes of pages 0-3. */
@@ -698,14 +640,6 @@ export function copierAreas(port: readonly [number, number]): AddressRange[] {
   if (rom.basic) return [{ start: 0x0400, end: 0x9fff }, { start: 0xc000, end: 0xcfff }];
   return [{ start: 0x0400, end: 0xcfff }, ...(rom.kernal ? [] : [{ start: 0xe000, end: BELOW_VECTORS }])];
 }
-/** The free ranges that a refusal names. */
-const SHOWN_FREE = 8;
-
-/** The largest free ranges with their sizes, for a refusal: at most SHOWN_FREE of them, or none. */
-export function largestFree(ranges: readonly AddressRange[]): string {
-  const shown = [...ranges].sort((a, b) => b.end - b.start - (a.end - a.start)).slice(0, SHOWN_FREE);
-  return shown.length === 0 ? "none" : shown.map((range) => `${formatC64Range(range)} (${range.end - range.start + 1} bytes)`).join(", ");
-}
 
 /**
  * The packed form of the loader, for an image too large for one loader file:
@@ -809,47 +743,6 @@ function planPacked(input: LoaderInput, blocks: Block[], cia: ReturnType<typeof 
     ...(colourRange === undefined ? {} : { colours: colourRange }),
     packed: { start },
   };
-}
-
-/** A piece of pages 0-3 in the packed form: its target and where the copier reads it. */
-export interface Piece {
-  what: string;
-  target: AddressRange;
-  at: number;
-  bytes: (address: number) => number;
-}
-
-/**
- * Puts the parts of pages 0-3 into the free ranges, in their order: each time
- * into the nearest range that holds the rest, else into the largest range.
- * A part that does not fit in one range is split, and each piece is a copy.
- * Undefined when the ranges are too small.
- */
-export function placePieces(ranges: AddressRange[], low: ReadonlyArray<{ what: string; range: AddressRange; bytes: (address: number) => number }>, distance: (range: AddressRange) => number): Piece[] | undefined {
-  const left = ranges.map((range) => ({ ...range }));
-  const pieces: Piece[] = [];
-  let rest = low.reduce((sum, block) => sum + block.range.end - block.range.start + 1, 0);
-  const length = (range: AddressRange) => range.end - range.start + 1;
-  let target: AddressRange | undefined;
-  for (const block of low) {
-    let next = block.range.start;
-    while (next <= block.range.end) {
-      if (target === undefined || target.start > target.end) {
-        const open = left.filter((range) => range.start <= range.end);
-        if (open.length === 0) return undefined;
-        const holding = open.filter((range) => length(range) >= rest).sort((a, b) => distance(a) - distance(b));
-        target = holding[0] ?? open.sort((a, b) => length(b) - length(a))[0]!;
-      }
-      const count = Math.min(block.range.end - next + 1, length(target));
-      const part = { start: next, end: next + count - 1 };
-      const cut = part.start !== block.range.start || part.end !== block.range.end;
-      pieces.push({ what: cut ? `${block.what}, bytes ${formatC64Range(part)}` : block.what, target: part, at: target.start, bytes: block.bytes });
-      target.start += count;
-      next += count;
-      rest -= count;
-    }
-  }
-  return pieces;
 }
 
 /**

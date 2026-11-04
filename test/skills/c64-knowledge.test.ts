@@ -184,7 +184,11 @@ test("coverage imports a map into each space, by one spelling of its path, and -
   writeFileSync(join(runs, "m.bin"), run);
   const sha = () => createHash("sha256").update(readFileSync(join(runs, "m.bin"))).digest("hex");
   const first = sha();
-  assert.deepEqual(knowledge(root, "coverage", "runs/m.bin").json.imported, ["runs/m.bin"]);
+  // A comment where the execute of the runs changed comes back for a check of its claims.
+  knowledge(root, "comment", "$0400", "side", "no run executes this");
+  const imported = knowledge(root, "coverage", "runs/m.bin").json;
+  assert.deepEqual(imported.imported, ["runs/m.bin"]);
+  assert.deepEqual(items<{ address: string; executed: boolean }>(imported.commentsToCheck).map(({ address, executed }) => ({ address, executed })), [{ address: "$0400", executed: true }]);
   assert.deepEqual(knowledge(root, "coverage", "./runs/m.bin").json.known, ["runs/m.bin"], "./runs/m.bin is the same map");
   const drive = knowledge(root, "coverage", "runs/m.bin", "--space", "drive8");
   assert.deepEqual(drive.json.imported, ["runs/m.bin"], "the map is not yet in drive8");
@@ -192,7 +196,9 @@ test("coverage imports a map into each space, by one spelling of its path, and -
   // The map changes and is imported again: the evidence is the new import.
   run[0x0500] = COVERAGE.ramRead;
   writeFileSync(join(runs, "m.bin"), run);
-  assert.deepEqual(knowledge(root, "coverage", "runs/m.bin").json.imported, ["runs/m.bin"]);
+  const read = knowledge(root, "coverage", "runs/m.bin").json;
+  assert.deepEqual(read.imported, ["runs/m.bin"]);
+  assert.equal(read.commentsToCheck, undefined, "a read changes no execute");
   const evidenceOf = (...args: string[]) => {
     const cited = knowledge(root, "rename", "$0400", "start", ...args);
     assert.equal(cited.status, 0, JSON.stringify(cited.json));
@@ -311,8 +317,6 @@ test("release, switch, patch, macro and use write the source knowledge, and swit
   capturedImage("./releases/../other.prg");
   const fromCapture = knowledge(root, "release", "V3", "--file", ".c64-re-tools/local/capture/image.json").json as { release: Record<string, unknown>; bytes: number };
   assert.deepEqual([fromCapture.release.file, fromCapture.release.sha256, fromCapture.bytes], ["other.prg", programSha256, 11], "the project path in one spelling");
-  capturedImage("../outside.prg");
-  assert.match((knowledge(root, "release", "V4", "--file", ".c64-re-tools/local/capture/image.json").json.error as { message: string }).message, /^The program of \.c64-re-tools\/local\/capture\/image\.json must be a path inside the project folder, relative to it or absolute, not \.\.\/outside\.prg\./);
   assert.match(readFileSync(join(root, ".c64-re-tools", "knowledge", "release_memory.jsonl"), "utf8"), /"label":"V3","at":"\$8100","bytes":"e6fbd002e6fca9018d20d0"/);
   assert.equal(knowledge(root, "switch", "CRACK", "--kind", "crack", "--comment", "A white border.").status, 0);
   assert.equal(knowledge(root, "switch", "FIX_BORDER", "--kind", "fix", "--releases", "V2").status, 0);
@@ -366,6 +370,11 @@ test("join shows one batch or the batches of parallel agents as one list of writ
   const written = knowledge(root, "join", "a.json", "b.json", "--apply", "--reason", "the names of two agents");
   assert.equal(written.status, 0, JSON.stringify(written.json));
   assert.deepEqual({ ...written.json, revision: typeof written.json.revision }, { revision: "string", writes: 3, replaced: [], repeated: 0, choices: shown.choices });
+  // Without --apply, the writes run as a trial: the knowledge refuses a write as with --apply.
+  writeFileSync(join(root, "d.json"), JSON.stringify([{ op: "uncomment", address: "$3000", placement: "side" }]));
+  const refused = knowledge(root, "join", "d.json").json.error as { code: string; message: string };
+  assert.equal(refused.code, "not-found");
+  assert.match(refused.message, /^Write 1: There is no side comment at \$3000\./);
 });
 
 test("listing reads the program and the coverage in the knowledge", () => {

@@ -125,7 +125,7 @@ Each flag applies only to the commands in the table. On another command, the scr
 | `--why <text>` | `verdict` | With `wrong`: the evidence, with the addresses and the instructions. With `unsure`: the run that can show the claim. With `correct`: the evidence. It is optional. |
 | `--text <text>` | `verdict` | With `wrong`: the correct comment. |
 | `--name <name>` | `verdict` | With `wrong`: the correct name at the address. |
-| `--max-listed <n>` | `search`, `symbols`, `regions`, `comments`, `references`, `suppressions`, `modules`, `operands`, `patches`, `switches`, `releases`, `macros`, `uses`, `spaces`, `history`, `revisions`, `revision`, `listing`, `join`, `checks` | The most items in each list of the body. The default is 50. The counts are always complete. |
+| `--max-listed <n>` | `search`, `symbols`, `regions`, `comments`, `references`, `suppressions`, `modules`, `operands`, `patches`, `switches`, `releases`, `macros`, `uses`, `spaces`, `history`, `revisions`, `revision`, `listing`, `coverage`, `join`, `checks` | The most items in each list of the body. The default is 50. The counts are always complete. |
 | `--kind <kind>` | `symbols`, `rename` | The symbol kind: `label`, `routine`, `variable`, `data` or `vector`. A read gives all kinds by default. A new symbol without `--kind` is a `label`. A `rename` without `--kind` keeps the kind of the symbol. |
 | `--kind <kind>` | `references` | Only references of this kind: `call`, `jump`, `read`, `write`, `reference` or `pointer`. |
 | `--kind <kind>` | `switch` | Necessary. The switch kind: `protection`, `trainer`, `cheat`, `crack`, `fix` or `change`. |
@@ -342,7 +342,7 @@ Errors of this group:
 | `addresses`, `addresses-split` | A table of addresses: one table of 16-bit values, or a low-byte table and then a high-byte table. |
 | `rts-addresses`, `rts-addresses-split` | The same, with each value the target minus 1, for a PHA, PHA, RTS dispatch. |
 | `jumps` | A table of `JMP abs` instructions. Each 3-byte entry is an entry point. It is code. |
-| `workspace` | RAM that the program writes at run time. Its bytes in the image do not matter. |
+| `workspace` | RAM that the program writes at run time. The check of the source compares these bytes in each release too. When a release has other bytes here, record them with `patch --from-release`. Or capture that release again, and exclude the bytes that the program does not read. |
 | `unused` | Bytes that nothing executes or reads. |
 | `dual-use` | Code at one time, and data or a vector at another time. No analyzer finding conflicts with it. |
 
@@ -463,6 +463,7 @@ An operand expression tells the generated source how to write the operand of one
 
 - `<map>` is a 64 KiB coverage map of a run, or a recording folder. For a recording folder, the script takes the coverage map of the recording.
 - `body` holds `revision`, `imported`, `replaced`, `known`, `added` and `removed`. `imported` lists the new maps. `replaced` lists the new maps that replace an earlier map of the same path. `known` lists the maps that the space has already. `added` and `removed` count the ranges of accesses that the coverage gets and loses.
+- `body.commentsToCheck` lists the comments at the addresses that the runs now execute or no longer execute. `executed` is `true` when the runs now execute the address. The list is there only when it has comments. Read what each comment tells about the runs. Correct each comment that is no longer true.
 - When `added` or `removed` is not 0, do as `hint` tells.
 - After you record a run again into the same place, put its map into the knowledge again. See "Maps and their paths" of `<skill>/references/coverage.md`.
 
@@ -476,7 +477,7 @@ An operand expression tells the generated source how to write the operand of one
 
 - `join` joins the batches of agents that name the program at the same time. See "Batches of parallel agents" of `<skill>/references/batches.md`.
 - `join` also takes one batch. Then `writes` shows the writes of that batch, and `join` checks the batch as it checks more batches.
-- Without `--apply`, `join` writes no knowledge. `body` holds `writes`, `repeated` and `choices`. `writes` lists the joined writes. `choices` lists each place where the batches gave different values, with the value that stays.
+- Without `--apply`, `join` writes no knowledge. But it does all the checks of `--apply`. When the knowledge refuses a write, `join` gives the same error as with `--apply`. `body` holds `writes`, `repeated` and `choices`. `writes` lists the joined writes. `choices` lists each place where the batches gave different values, with the value that stays.
 - Examine `choices` and `writes`. `nextAction` is the same `join` with `--apply`. Run it when the choices agree with your task.
 - With `--apply`, `join` writes the joined writes as one revision, or nothing when the knowledge refuses one write. Then `body` holds `revision`, `writes`, `replaced`, `repeated` and `choices`, as for `apply`.
 - When one name or one module file is at two addresses, `join` writes nothing and gives the error `conflict`. Correct the batches that the `error` names. Then do `join` again.

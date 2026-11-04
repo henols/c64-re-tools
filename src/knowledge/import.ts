@@ -95,7 +95,10 @@ export interface ImportResult {
   /** The new revision, or null when nothing changed. */
   revision: string | null;
   /** The analyzer names. */
-  names: ImportCounts;
+  names: ImportCounts & {
+    /** Data names at an executed instruction start that the knowledge names as code: no conflict. */
+    onExecutedCode: number;
+  };
   regions: ImportCounts & {
     /** Data findings on executed code that the knowledge holds as code: not written, and no conflict. */
     onExecutedCode: number;
@@ -184,7 +187,9 @@ function ownNames(db: DatabaseSync, analyzer: Analyzer, range: AddressRange, spa
  * the analyzer's own names in its coverage. A name that the user or the LLM
  * gave the address already is not kept twice. A code or data kind that
  * disagrees with the name of the address is a conflict, except on dual-use
- * bytes: they are code at one time and data at another.
+ * bytes: they are code at one time and data at another. A data name at an
+ * executed instruction start that the knowledge names as code leaves nothing
+ * to decide: it is only counted and not recorded, as a data region there.
  */
 function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
@@ -192,11 +197,28 @@ function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindi
   const wanted = new Map(findings.symbols.map((symbol) => [symbol.address, symbol]));
   const settled = new Set<number>();
   const replaced = new Set<number>();
+  // What the knowledge has at each finding, read once: the name of the user or the LLM, and whether a dual-use region holds the address.
+  // The import changes neither of them. A data name on executed code that the knowledge names as code is only counted, and not recorded.
+  const at = new Map(
+    findings.symbols.map((finding) => {
+      const current = symbolAt(db, finding.address, space);
+      const dualUse = current !== undefined && isCode(current.kind) !== isCode(finding.kind) && regionsOverlapping(db, finding.address, finding.address, space).some((row) => row.type === "dual-use");
+      const counted = current !== undefined && isCode(current.kind) && !isCode(finding.kind) && !dualUse && findings.executed?.(finding.address) === true;
+      return [finding.address, { current, conflict: current !== undefined && isCode(current.kind) !== isCode(finding.kind) && !dualUse && !counted, counted }];
+    }),
+  );
   for (const range of coverage) {
     for (const own of ownNames(db, analyzer, range, space)) {
       const finding = wanted.get(own.address);
+      const known = finding === undefined ? undefined : at.get(finding.address)!;
+      // The analyzer's own name where the finding is only counted leaves, also when it is the same name.
+      if (known?.counted === true) {
+        change.close("analyzer_names", "space = ? AND address = ? AND origin = ?", space, own.address, analyzer);
+        result.names.retired++;
+        continue;
+      }
       // A seeded run gives back the name of the user or the LLM: the analyzer's own name there stays.
-      const echo = finding !== undefined && symbolAt(db, own.address, space)?.name === finding.name;
+      const echo = finding !== undefined && known?.current?.name === finding.name;
       if (echo || (finding !== undefined && finding.name === own.name && finding.kind === own.kind)) {
         settled.add(own.address);
         result.names.unchanged++;
@@ -207,12 +229,13 @@ function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindi
       else replaced.add(own.address);
     }
   }
-  const dualUse = (address: number) => regionsOverlapping(db, address, address, space).some((row) => row.type === "dual-use");
   for (const finding of findings.symbols) {
-    const current = symbolAt(db, finding.address, space);
-    if (current !== undefined && isCode(current.kind) !== isCode(finding.kind) && !dualUse(finding.address)) {
-      result.conflicts.push({ category: "symbol", address: finding.address, reason: "kind", current, finding: { name: finding.name, kind: finding.kind } });
+    const { current, conflict, counted } = at.get(finding.address)!;
+    if (counted) {
+      result.names.onExecutedCode++;
+      continue;
     }
+    if (conflict) result.conflicts.push({ category: "symbol", address: finding.address, reason: "kind", current: current!, finding: { name: finding.name, kind: finding.kind } });
     if (settled.has(finding.address)) continue;
     if (current?.name === finding.name) {
       // The analyzer only gives back the name of the address.
@@ -464,7 +487,7 @@ export function importFindings(db: DatabaseSync, findings: NormalizedFindings, c
   const coverage = validateFindings(findings);
   return transaction(db, () => {
     const change = new Change(db, { origin: findings.analyzer, ...context }, `import-${findings.analyzer}`);
-    const result: ImportResult = { revision: null, names: counts(), regions: { ...counts(), onExecutedCode: 0 }, references: { ...counts(), inData: 0 }, conflicts: [] };
+    const result: ImportResult = { revision: null, names: { ...counts(), onExecutedCode: 0 }, regions: { ...counts(), onExecutedCode: 0 }, references: { ...counts(), inData: 0 }, conflicts: [] };
     importNames(db, change, findings, coverage, result);
     importRegions(db, change, findings, coverage, result);
     importReferences(db, change, findings, coverage, result);
