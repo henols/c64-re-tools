@@ -140,7 +140,7 @@ test("a source tree starts at the lowest folder of the source root and its inclu
   // An include folder that the file system refuses, here a link to itself, is a refusal that names it.
   symlinkSync(join(game, "loop"), join(game, "loop"));
   assert.throws(() => readSourceTree("game/src", ["../loop"], { root: project }), (error: unknown) => failsWith("invalid-input")(error) && (error as Error).message.startsWith("The include folder ../loop cannot be read"));
-  for (const folder of ["../nope", "boot.asm", "../empty"]) {
+  for (const folder of ["../nope", "boot.asm", "boot.asm/sub", "../empty"]) {
     if (folder === "../empty") mkdirSync(join(game, "empty"));
     assert.throws(() => readSourceTree("game/src", [folder], { root: project }), (error: unknown) => failsWith("not-found")(error) && (error as Error).message.startsWith(`There is no include folder ${folder} with files in the project folder.`));
   }

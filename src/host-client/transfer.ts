@@ -233,6 +233,9 @@ export function readSourceTree(sourceRoot: string, includes: readonly string[], 
     try {
       isFolder = statSync(real, { throwIfNoEntry: false })?.isDirectory() === true;
     } catch (error) {
+      // A path through a file (ENOTDIR) names no folder: it is missing. Another error is a refusal.
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOTDIR" || code === "ENOENT") throw missing(folder);
       throw new WireFailure("invalid-input", `The include folder ${folder} cannot be read: the file system refuses it (${(error as NodeJS.ErrnoException).code ?? "an error"}). Give an include folder inside the project folder that you can read.`);
     }
     if (!isFolder) throw missing(folder);
