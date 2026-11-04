@@ -13,6 +13,7 @@ import { after, test } from "node:test";
 
 import { COVERAGE, instructionLength } from "../../src/c64.ts";
 import { assemble } from "../../src/native/acme.ts";
+import { symbolValue, symbolValues } from "../../src/native/types.ts";
 import { ACME, EXOMIZER, findTool } from "../../src/native/discover.ts";
 import { localToolContext } from "../../src/native/local.ts";
 import { ciaSection, copierAreas, copyOrder, loaderLimits, planLoader, loaderState, simulate, START_SCREEN_CODE, START_SCREEN_SIZES, stopCause, type EntryCia, type EntryState, type LoaderPlan } from "../../skills/c64-source/scripts/lib/loader.ts";
@@ -416,10 +417,7 @@ test("with real ACME, the loader takes its copies and its jump from labels, so c
   main.program.subarray(2, 2 + 0xf0).forEach((byte, offset) => assert.equal(after[0x1000 + offset], byte, `$${(0x1000 + offset).toString(16)}`));
   for (let address = 0xc000; address <= 0xc0ff; address++) assert.equal(after[address], source.byteAt(address));
   assert.deepEqual([...main.program.subarray(2 + 0x30, 2 + 0x38)], [0xa9, 0x00, 0xad, 0x40, 0x10, 0x4c, 0x30, 0x10], "the code at $1030 names its moved targets");
-  const value = (name: string) => {
-    const symbol = relocated.symbols.find((item) => item.name === name)!;
-    return symbol.kind === "address" ? symbol.address : symbol.value;
-  };
+  const value = (name: string) => symbolValue(relocated.symbols.find((item) => item.name === name)!);
   const at = 2 + value("loader_copier_src") - 0x0801 + (value("c64_source_loader_jump") - plan.copier);
   assert.deepEqual([...relocated.program.subarray(at, at + 3)], [0x4c, 0x30, 0x10], "the loader jumps to the moved entry");
 });
@@ -563,7 +561,7 @@ test("with real ACME, a loader with a start screen and the colour RAM assembles 
     const block = plan.blocks.find((item) => item.what === "entry state colour RAM")!;
     assert.deepEqual(Uint8Array.from(program.subarray(2 + block.packedAt - 0x0801, 2 + block.packedAt - 0x0801 + 1000)), colourRam, "the colours are where the plan copies them from");
     const wait = symbols.find((symbol) => symbol.name === "loader_start_screen_wait")!;
-    const at = wait.kind === "address" ? wait.address : wait.value;
+    const at = symbolValue(wait);
     assert.ok(at > plan.copier && at < plan.copier + 0x300, "the start screen runs in the copier pages");
   }
   const packedSource: SourceInput = { ...input([], 0x0800, { startScreen: true }), segments: [{ start: 0x0800, end: 0xbfff }, { start: 0xd000, end: 0xdfff }], byteAt: (address) => address & 0xff };
@@ -1222,7 +1220,7 @@ test("with real ACME, the show stage builds when its code is high and the parts 
   const contents = files.map((file) => Buffer.from(file.text));
   const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: STAGE_FILE, includeDirs: [], defines: {} }, contents, localToolContext());
   assert.equal(result.assembled, true, result.diagnostics.map((diagnostic) => diagnostic.message).join("; "));
-  const labels = new Map((result.symbols ?? []).map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]));
+  const labels = symbolValues(result.symbols ?? []);
   const parts = stageParts(input, plan, attachments![0]!, (name) => labels.get(name)!);
   for (const part of stage) assert.deepEqual([...parts.find((item) => item.start === part.start)!.body], [...part.body], `the part at ${part.start.toString(16)}`);
   assert.equal(parts.at(-1)!.start, plan.code);

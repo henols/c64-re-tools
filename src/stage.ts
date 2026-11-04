@@ -16,7 +16,7 @@ import type { StartScreenRow } from "./knowledge/read.ts";
 import { START_SCREEN_CONTINUE, START_SCREEN_FILE, START_SCREEN_WAIT, startScreenPlan, startScreenValues, type StartScreenPlan } from "./knowledge/start-screen.ts";
 import { largestFree, packParts, type PackedLoader, placePieces } from "./loader.ts";
 import type { ToolContext } from "./native/run.ts";
-import type { AssembledSymbol } from "./native/types.ts";
+import { type AssembledSymbol, symbolValues } from "./native/types.ts";
 
 /** Bytes at an address. */
 export interface StagePart {
@@ -278,9 +278,6 @@ export function stageParts(input: StageInput, plan: StagePlan, build: Uint8Array
   return [...loader, ...stash, ...stage, { start: plan.code, body: slice(plan.code, labels(STAGE_CODE_END)) }];
 }
 
-/** The value of each label of a build, by name. */
-const labelsOf = (symbols: readonly AssembledSymbol[]) => new Map(symbols.map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]));
-
 /**
  * The bytes of the stage in a build of start_screen_stage.asm: each part
  * between its labels, and with `colourRam` the colour RAM at STAGE_COLOURS.
@@ -289,7 +286,7 @@ const labelsOf = (symbols: readonly AssembledSymbol[]) => new Map(symbols.map((s
  * needs.
  */
 export function stageOfBuild(build: Uint8Array, symbols: readonly AssembledSymbol[], colourRam: boolean): StageBytes {
-  const labels = labelsOf(symbols);
+  const labels = symbolValues(symbols);
   const start = build[0]! | (build[1]! << 8);
   const slice = (from: number, length: number) => Uint8Array.from(build.subarray(2 + from - start, 2 + from - start + length));
   const parts = [...labels]
@@ -347,7 +344,7 @@ export async function packStage(loader: Uint8Array, stage: StageBytes, row: Star
   };
   const build = async (source: string) => {
     const built = await assembleStage(source);
-    const labels = labelsOf(built.symbols);
+    const labels = symbolValues(built.symbols);
     const label = (name: string) => {
       const value = labels.get(name);
       if (value === undefined) throw new Refusal("operation-failed", `The build of ${STAGE_FILE} has no ${name} label. This is a defect of the script.`);

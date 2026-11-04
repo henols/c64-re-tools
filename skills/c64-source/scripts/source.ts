@@ -35,7 +35,7 @@ import { assemble, symbolsFileText } from "#src/native/acme.ts";
 import { PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { decodeProgram, leftoverInput, reachInput } from "#src/program-code.ts";
 import { localToolContext } from "#src/native/local.ts";
-import type { AssembledSymbol, Diagnostic } from "#src/native/types.ts";
+import { type AssembledSymbol, type Diagnostic, symbolValue, symbolValues } from "#src/native/types.ts";
 import { decode as decodeRegister, describeAddress, platformNames, platformNamesFor, romUseOfProgram } from "#src/platform.ts";
 import { ensureLocal, generatedDirectory, LOCAL_DIRECTORY, newProjectFolder, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { generatedReferences } from "#src/reference-pages.ts";
@@ -240,7 +240,7 @@ async function probeUses(laid: Layout, rendered: Rendered, image: ProgramImage):
       for (const [start, reason] of refused) blamed.set(start, reason);
       continue;
     }
-    const ends = new Map((built.symbols ?? []).map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]));
+    const ends = symbolValues(built.symbols ?? []);
     let offset = 2 + PROBE_BASE - built.start!;
     uses.forEach((use, index) => {
       const length = ends.get(`probe_end_${index}`)! - use.start;
@@ -901,16 +901,16 @@ async function buildLoader(
   if (loaderBuilt.start !== (loader.packed?.start ?? 0x0801) || loaderBuilt.start + program.length - 3 !== loader.end || wrongPacking !== undefined) {
     throw new WireFailure("operation-failed", `The assembled loader does not have the planned layout${wrongPacking === undefined ? "" : ` (${wrongPacking.what})`}. This is a defect of the script.`);
   }
-  const symbolValue = (name: string) => {
+  const labelValue = (name: string) => {
     const symbol = loaderBuilt.symbols?.find((item) => item.name === name);
     if (symbol === undefined) throw new WireFailure("operation-failed", `The assembled loader has no ${name} label. This is a defect of the script.`);
-    return symbol.kind === "address" ? symbol.address : symbol.value;
+    return symbolValue(symbol);
   };
-  const jump = symbolValue(LOADER_JUMP);
+  const jump = labelValue(LOADER_JUMP);
   const wrong = simulate(memory, loader.copies, expected);
   if (wrong !== undefined) throw new WireFailure("operation-failed", `The simulated loader writes a wrong byte at ${formatC64Address(wrong)}. This is a defect of the script.`);
-  const startScreen = loader.startScreen === undefined ? undefined : { wait: symbolValue(START_SCREEN_WAIT), continue: symbolValue(START_SCREEN_CONTINUE) };
-  return { program, symbols: loaderBuilt.symbols ?? [], jump, copierSource: symbolValue(COPIER_SOURCE), expected, ...(startScreen === undefined ? {} : { startScreen }) };
+  const startScreen = loader.startScreen === undefined ? undefined : { wait: labelValue(START_SCREEN_WAIT), continue: labelValue(START_SCREEN_CONTINUE) };
+  return { program, symbols: loaderBuilt.symbols ?? [], jump, copierSource: labelValue(COPIER_SOURCE), expected, ...(startScreen === undefined ? {} : { startScreen }) };
 }
 
 /**
@@ -1210,7 +1210,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   // The unpack runs before the copier, or before the show stage, which then starts the loader.
   const unpackFrames = (cycles: number | undefined) => (cycles === undefined ? LOADER_FRAMES : RUN_LIMIT_FRAMES + Math.ceil(cycles / PAL_FRAME_CYCLES));
   // A build with START_SCREEN = 0 or LEFTOVERS = 1 has the labels of the start screen, but goes on at once: the check waits only for a start screen that shows.
-  const shows = (symbols: readonly AssembledSymbol[]) => startScreenLabels(new Map(symbols.map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]))) !== undefined;
+  const shows = (symbols: readonly AssembledSymbol[]) => startScreenLabels(symbolValues(symbols)) !== undefined;
   const stageShown = stage !== undefined && shows(stage.symbols);
   // A show stage that goes on at once unpacks the loader right after its own unpack.
   const copierFrames = (packed === undefined ? RUN_LIMIT_FRAMES : unpackFrames(packed.cycles)) + (stage === undefined || stageShown ? 0 : unpackFrames(stage.packed.cycles));
@@ -1468,7 +1468,7 @@ async function exportProject(call: Call): Promise<Record<string, unknown>> {
   // 7. The tests of the project, changed for the new project.
   const testsFolder = join(project, "tests");
   const testFiles = existsSync(testsFolder) ? readdirSync(testsFolder, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => entry.name).sort() : [];
-  const symbolMap = new Map(shownSymbols.map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]));
+  const symbolMap = symbolValues(shownSymbols);
   const tests: Array<{ file: string; kind: "scenario" | "run"; text: string }> = [];
   const testsLeftOut: Array<{ file: string; reason: string }> = [];
   for (const file of testFiles) {

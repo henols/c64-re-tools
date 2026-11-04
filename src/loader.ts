@@ -14,7 +14,7 @@ import { compareBuild, mergedPrograms } from "./compare.ts";
 import { Refusal } from "./errors.ts";
 import { pack } from "./native/exomizer.ts";
 import type { ToolContext } from "./native/run.ts";
-import type { AssembledSymbol } from "./native/types.ts";
+import { type AssembledSymbol, symbolValue, symbolValues } from "./native/types.ts";
 
 /** The label of the copier in loader.asm. In the packed form, its address is the copier address, where the unpack jumps. */
 export const COPIER_SOURCE = "loader_copier_src";
@@ -69,7 +69,7 @@ export function checkPackedBuilds(main: Uint8Array, copier: Uint8Array, symbols:
     }
   }
   // The pieces below $0400: each from its first label to its end label in the build of loader.asm.
-  const labels = new Map(symbols.map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]));
+  const labels = symbolValues(symbols);
   const pieces = [...labels].flatMap(([name, at]) => {
     const found = BLOCK_FROM.exec(name);
     if (found === null) return [];
@@ -147,12 +147,11 @@ export async function packParts(parts: ReadonlyArray<{ start: number; body: Uint
  * a show stage. A test takes one symbols file. Refuses a name with two values.
  */
 export function loaderSymbols(...builds: ReadonlyArray<readonly AssembledSymbol[]>): AssembledSymbol[] {
-  const valueOf = (symbol: AssembledSymbol) => (symbol.kind === "address" ? symbol.address : symbol.value);
   const byName = new Map<string, AssembledSymbol>();
   for (const symbol of builds.flat()) {
     const known = byName.get(symbol.name);
-    if (known !== undefined && valueOf(known) !== valueOf(symbol)) {
-      throw new Refusal("operation-failed", `The builds of the loader program give ${symbol.name} two values, ${valueOf(known)} and ${valueOf(symbol)}. This is a defect of the script.`);
+    if (known !== undefined && symbolValue(known) !== symbolValue(symbol)) {
+      throw new Refusal("operation-failed", `The builds of the loader program give ${symbol.name} two values, ${symbolValue(known)} and ${symbolValue(symbol)}. This is a defect of the script.`);
     }
     // An address in one build can be outside the load range of the other build, where it is a constant.
     const kept = known === undefined || (known.kind === "constant" && symbol.kind === "address") ? symbol : known;

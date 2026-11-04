@@ -32,6 +32,12 @@ export interface AcmeParams {
 /** A symbol from the assembly: an address inside the program, or a constant value. */
 export type AssembledSymbol = { name: string; kind: "address"; address: number; used: boolean } | { name: string; kind: "constant"; value: number; used: boolean };
 
+/** The value of a symbol: the address of a label, or the value of a constant. */
+export const symbolValue = (symbol: AssembledSymbol): number => (symbol.kind === "address" ? symbol.address : symbol.value);
+
+/** The value of each symbol, by name. */
+export const symbolValues = (symbols: readonly AssembledSymbol[]): Map<string, number> => new Map(symbols.map((symbol) => [symbol.name, symbolValue(symbol)]));
+
 export interface AcmeResult {
   assembled: boolean;
   /** Present when assembled: where the program loads. The program bytes are the one attachment that assemble returns. */
