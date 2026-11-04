@@ -7,10 +7,10 @@ import { after, test } from "node:test";
 import { Refusal } from "../errors.ts";
 import { COVERAGE, rangesWhere } from "../c64.ts";
 import { indexPath, openForRead, textPath, withWrite } from "./database.ts";
-import { coverageRuns, listSpaces } from "./read.ts";
-import { addCoverage, analyzedBytes, coverageAccess, entryMemory, isProgram, memoryRows, operandImages, programCoverage, programImage, releaseCode, setImage, type CoverageImport, type ImageRequest } from "./program.ts";
+import { coverageRuns, listSpaces, type StartScreenRow } from "./read.ts";
+import { addCoverage, analyzedBytes, coverageAccess, entryMemory, isProgram, memoryRows, operandImages, programCoverage, programImage, releaseCode, setImage, startScreenKey, type CoverageImport, type ImageRequest } from "./program.ts";
 import { revision as revisionChanges } from "./history.ts";
-import { revert, setPatch, setRelease, setSwitch } from "./write.ts";
+import { renameSymbol, revert, setComment, setModule, setPatch, setRelease, setSwitch } from "./write.ts";
 
 const projects: string[] = [];
 after(() => {
@@ -418,4 +418,33 @@ test("an image with segments that touch is the program that the knowledge keeps 
   assert.equal(isProgram(program, image(captured.segments, 1)), false, "another byte");
   assert.equal(isProgram(program, image([{ start: 0x0800, end: 0xcfff }, { start: 0xe000, end: 0xffff }])), false, "a gap");
   assert.equal(isProgram(program, image([{ start: 0x0801, end: 0xffff }])), false, "another start");
+});
+
+test("the key of a start screen of a stage changes with the screen, the bytes of the stage and a patch in, and not with a name, a comment or a module", () => {
+  const root = project();
+  const row: StartScreenRow = { space: "c64", mode: "text", screen: 0x0400, charset: 0x1000, colour: 1, border: 0, background: 0, stage: "loading", origin: "llm", revision: "r" };
+  const key = () => withWrite((db) => startScreenKey(db, row), root);
+  withWrite((db) => setImage(db, llm, image([{ start: 0x0400, end: 0x07e7 }], 0, { space: "loading" })), root);
+  const captured = key();
+  assert.match(captured, /^[0-9a-f]{16}$/);
+  withWrite((db) => {
+    renameSymbol(db, llm, { address: 0x0400, name: "picture", kind: "data", space: "loading" });
+    setComment(db, llm, { address: 0x0400, placement: "line", text: "The loading picture.", space: "loading" });
+    setModule(db, llm, { start: 0x0400, file: "picture.asm", space: "loading" });
+  }, root);
+  assert.equal(key(), captured, "a name, a comment and a module of the stage keep the key");
+  assert.equal(withWrite((db) => startScreenKey(db, { ...row, comment: "The loading picture.", origin: "user" }), root), captured);
+  assert.notEqual(withWrite((db) => startScreenKey(db, { ...row, screen: 0x4400 }), root), captured, "the screen moved");
+  // A patch of a crack switch, on in the base release: the default build takes it out, so the stage holds the patch.
+  const operandImage = () => ({ byteAt: (address: number) => (address >= 0x0400 && address <= 0x07e7 ? address & 0xff : undefined), platform: new Map() });
+  withWrite((db) => {
+    setRelease(db, llm, { label: "CRACK", base: true, space: "loading" });
+    setSwitch(db, { ...llm, image: operandImage }, { name: "CRACK_TEXT", kind: "crack", releases: ["CRACK"], space: "loading" });
+  }, root);
+  assert.equal(key(), captured, "a switch without a patch does not change the bytes");
+  withWrite((db) => setPatch(db, { ...llm, image: operandImage }, { start: 0x0400, end: 0x0403, switch: "CRACK_TEXT", code: "!byte 1,2,3,4", space: "loading" }), root);
+  const patched = key();
+  assert.notEqual(patched, captured, "the patch is in the bytes of the stage");
+  withWrite((db) => setImage(db, llm, image([{ start: 0x0400, end: 0x07e7 }], 1, { space: "loading" })), root);
+  assert.notEqual(key(), patched, "a new capture of the stage");
 });

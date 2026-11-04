@@ -3,12 +3,14 @@
 // capture and the coverage maps are imported one time; every later step reads
 // them here, so a project needs no image or coverage files to be made again.
 
+import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
 import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, formatC64Range, inRanges, mergeRanges, prgOf, rangesWhere } from "../c64.ts";
 import { COVERAGE_KINDS, DEFAULT_SPACE, inSpace, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
-import { coverageRuns } from "./read.ts";
+import { baseValue, coverageRuns, listPatches, listReleases, listSwitches, type StartScreenRow } from "./read.ts";
+import { capturedColourRam } from "./start-screen.ts";
 import { sha256 } from "./text.ts";
 import { checkAddress, checkSpace, write, type Evidence, type OperandImage, type WriteContext } from "./write.ts";
 
@@ -409,6 +411,29 @@ export function analyzedBytes(image: ProgramImage): { bytes: Buffer; kind: "prg"
     return { bytes: prgOf(segment!.start, image.memory.subarray(segment!.start, segment!.end + 1)), kind: "prg" };
   }
   return { bytes: Buffer.from(entryMemory(image).memory), kind: "flat64k" };
+}
+
+/**
+ * The key of a start screen of a captured stage: a hash of what the bytes of
+ * its show stage are made from. These are the fields of the start screen (not
+ * its comment), the bytes of the program of the stage, the code of each patch
+ * there whose switch default is not its base value, the colour RAM of the
+ * capture when the start screen takes its colours from it, and with a call
+ * the coverage of the stage. A name, a comment or a module of the stage does
+ * not change it. Another key means that a show stage of the source is not of
+ * this start screen.
+ */
+export function startScreenKey(db: DatabaseSync | undefined, row: StartScreenRow): string {
+  const stage = row.stage!;
+  const hash = createHash("sha256").update(JSON.stringify([row.space, row.mode, row.screen, row.bitmap, row.charset, row.colours, row.colour, row.border, row.background, stage, row.call, row.colourRam]));
+  const image = programImage(db, stage);
+  for (const segment of image?.segments ?? []) hash.update(JSON.stringify([segment.start, segment.end])).update(image!.memory.subarray(segment.start, segment.end + 1));
+  const base = listReleases(db, undefined, stage).find((release) => release.base)?.label;
+  const changed = new Set(listSwitches(db, undefined, stage).filter((item) => item.default !== baseValue(item, base)).map((item) => item.name));
+  hash.update(JSON.stringify(listPatches(db, undefined, undefined, undefined, stage).filter((patch) => changed.has(patch.switch)).map((patch) => [patch.start, patch.end, patch.code])));
+  if (row.colourRam === true) hash.update(capturedColourRam(image?.state) ?? new Uint8Array());
+  if (row.call !== undefined) hash.update(programCoverage(db, stage)?.map ?? new Uint8Array());
+  return hash.digest("hex").slice(0, 16);
 }
 
 /**

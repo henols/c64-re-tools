@@ -51,16 +51,18 @@ export async function decodeProgram(image: ProgramImage, knowledge: Pick<CodeKno
     .flatMap((region) => image.segments.filter((segment) => rangesOverlap(region, segment)).map((segment) => ({ start: Math.max(region.start, segment.start), end: Math.min(region.end, segment.end) })));
   // A JSR into ROM runs the ROM: the RAM bytes of the image under it are data, not the code of the call.
   for (const range of romOf(image, knowledge, entries, coverage)) if (!dataRanges.some((data) => rangesOverlap(range, data))) dataRanges.push(range);
+  // The bytes that the decompiler reads: one copy of the memory with the pages of the entry state.
+  const analyzed = analyzedBytes(image);
   const { result } = await analyze(
     {
-      imageKind: analyzedBytes(image).kind,
+      imageKind: analyzed.kind,
       entryPoints: entryPoints.slice(0, DECOMPILER_LIMITS.entryPoints),
       codeStarts: flows.codeStarts.filter((address) => !seeds.has(address)).slice(0, DECOMPILER_LIMITS.codeStarts),
       dataRanges: dataRanges.slice(0, DECOMPILER_LIMITS.dataRanges),
       labels: [],
       decompile: [],
     },
-    analyzedBytes(image).bytes,
+    analyzed.bytes,
     localToolContext(),
   );
   const instructions = new Map<number, number>();
