@@ -9,7 +9,7 @@ import { type AddressRange, formatC64Address, hexWord, prgOf, spriteData, sprite
 import { resetToReady } from "#src/host-client/entry-state.ts";
 import { writeRefusal, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { isRefusal } from "#src/errors.ts";
-import { MAX_WATCH_SIZE } from "#src/host-client/tools.ts";
+import { MAX_WATCH_SIZE, WireFailure } from "#src/host-client/tools.ts";
 import { lastOpcode, readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { startScreenRanges } from "#src/knowledge/read.ts";
 import { sha256 } from "#src/knowledge/text.ts";
@@ -273,7 +273,8 @@ export async function readAsRam<T extends AddressRange>(
       }
       // The frames end at the raster position where the check starts, after a stop too.
       const { timing } = await client.observe({ timing: true });
-      const anchor = { line: timing!.rasterLine, cycle: timing!.rasterCycle };
+      if (timing === undefined) throw new WireFailure("operation-failed", "the emulator gave no raster position");
+      const anchor = { line: timing.rasterLine, cycle: timing.rasterCycle };
       let left = frames;
       let storeStops = 0;
       const deadline = Date.now() + limitMs;

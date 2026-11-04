@@ -465,13 +465,13 @@ test("a capture again into its folder removes the segment PRGs and the drive RAM
  * A stand-in emulator for the RAM check: each run stops at a watchpoint with the next of `stops` (the range index and the
  * opcode in the CPU history), and after the last one runs all frames. With "stores", each run stops at a store.
  */
-function ramCheckClient(stops: Array<{ range: number; opcode: number } | "jam" | "late"> | "stores", refuseAdd?: WireFailure) {
+function ramCheckClient(stops: Array<{ range: number; opcode: number } | "jam" | "late"> | "stores", refuseAdd?: WireFailure, timing = true) {
   const ranges = new Map<number, number>();
   let next = 0;
   let last = 0;
   const client = {
     snapshot: async () => ({}),
-    observe: async () => ({ timing: { rasterLine: 0, rasterCycle: 0 } }),
+    observe: async () => (timing ? { timing: { rasterLine: 0, rasterCycle: 0 } } : {}),
     watchpoint: async (params: { action: string; address?: number; id?: number }) => {
       if (params.action === "add") {
         if (refuseAdd !== undefined) throw refuseAdd;
@@ -509,6 +509,8 @@ test("the RAM check under the I/O area takes no stop after a store as a read, an
   // A watchpoint that the emulator refuses ends the check too; a lost session fails it.
   assert.deepEqual(await readAsRam(ramCheckClient([], new WireFailure("invalid-input", "no condition")), ranges, 250), { read: [], undecided: ranges });
   await assert.rejects(readAsRam(ramCheckClient([], new WireFailure("machine-unavailable", "lost")), ranges, 250), /lost/);
+  // No raster position from the emulator ends the check too.
+  assert.deepEqual(await readAsRam(ramCheckClient([], undefined, false), ranges, 250), { read: [], undecided: ranges });
 });
 
 test("fromHere removes its snapshot also when the restore fails, and throws the error of the work with the failed restore in it", async () => {

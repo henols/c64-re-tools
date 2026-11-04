@@ -47,8 +47,9 @@ const ALWAYS = [
 const INCONCLUSIVE_HINT = "reason tells why the script could not compare. This is not a failure of the program. Correct the cause, then run the command again.";
 
 /** What to do when the reference at its entry is not in the entry state that the loader of a rebuild writes. */
-const ENTRY_STATE_REMEDY = "The loader of a rebuild writes the entry state of the project knowledge, so the rebuild starts from another state than the reference. Capture the program again with the input of the record file before the entry. Then put the capture into the project knowledge, and generate the loader again.";
-const ENTRY_STATE_HINT = "At their entries, the reference and the rebuild have other bytes in entryStateDiffers: the loader of the rebuild wrote another entry state. Capture the program again with the input of the record file before the entry. Then put the capture into the project knowledge, and generate the loader again.";
+const RECAPTURE = "Capture the program again with the input of the record file before the entry. Then put the capture into the project knowledge, and generate the loader again.";
+const ENTRY_STATE_REMEDY = `The loader of a rebuild writes the entry state of the project knowledge, so the rebuild starts from another state than the reference. ${RECAPTURE}`;
+const ENTRY_STATE_HINT = `At their entries, the reference and the rebuild have other bytes in entryStateDiffers: the loader of the rebuild wrote another entry state. ${RECAPTURE}`;
 
 async function test(call: Call): Promise<ScenarioResult | Reply> {
   const scenario = readScenario(call.subject(0));
