@@ -569,16 +569,19 @@ test("a data name at an executed start that the knowledge names as code is only 
   const db = fresh();
   renameSymbol(db, { origin: "llm" }, { address: 0x2010, name: "next_command", kind: "label" });
   renameSymbol(db, { origin: "llm" }, { address: 0x2020, name: "debug_dump", kind: "label" });
+  // An earlier run named $2010 l2010, kind label.
+  importFindings(db, findings("dxa", 0x2000, 0x20ff, { authoritative: { symbols: false, regions: true, references: false }, symbols: [{ address: 0x2010, name: "l2010", kind: "label" }] }));
   const result = importFindings(
     db,
     findings("dxa", 0x2000, 0x20ff, {
       symbols: [
-        { address: 0x2010, name: "next_command", kind: "data" },
-        { address: 0x2020, name: "debug_dump", kind: "data" },
+        { address: 0x2010, name: "d2010", kind: "data" },
+        { address: 0x2020, name: "d2020", kind: "data" },
       ],
       executed: (address) => address === 0x2010,
     }),
   );
   assert.deepEqual(result.conflicts.map((conflict) => (conflict.category === "symbol" ? conflict.address : undefined)), [0x2020]);
-  assert.equal(result.names.onExecutedCode, 1);
+  assert.deepEqual(result.names, { added: 1, changed: 0, retired: 1, unchanged: 0, suppressed: 0, onExecutedCode: 1 }, "only d2020 is added; l2010 is retired");
+  assert.deepEqual(analyzerNamesAt(db, 0x2010), [], "the data name on executed code is not recorded");
 });

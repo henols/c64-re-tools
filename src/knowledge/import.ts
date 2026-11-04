@@ -189,7 +189,7 @@ function ownNames(db: DatabaseSync, analyzer: Analyzer, range: AddressRange, spa
  * disagrees with the name of the address is a conflict, except on dual-use
  * bytes: they are code at one time and data at another. A data name at an
  * executed instruction start that the knowledge names as code leaves nothing
- * to decide: it is only counted, as a data region there.
+ * to decide: it is only counted and not recorded, as a data region there.
  */
 function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
@@ -215,9 +215,16 @@ function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindi
   const dualUse = (address: number) => regionsOverlapping(db, address, address, space).some((row) => row.type === "dual-use");
   for (const finding of findings.symbols) {
     const current = symbolAt(db, finding.address, space);
+    // A data name on executed code that the knowledge names as code is only counted, and not recorded.
+    const onExecutedCode = current !== undefined && isCode(current.kind) && !isCode(finding.kind) && !dualUse(finding.address) && findings.executed?.(finding.address) === true;
+    if (onExecutedCode) {
+      result.names.onExecutedCode++;
+      // The analyzer's own name that the finding replaces is closed above.
+      if (replaced.has(finding.address)) result.names.retired++;
+      continue;
+    }
     if (current !== undefined && isCode(current.kind) !== isCode(finding.kind) && !dualUse(finding.address)) {
-      if (isCode(current.kind) && findings.executed?.(finding.address) === true) result.names.onExecutedCode++;
-      else result.conflicts.push({ category: "symbol", address: finding.address, reason: "kind", current, finding: { name: finding.name, kind: finding.kind } });
+      result.conflicts.push({ category: "symbol", address: finding.address, reason: "kind", current, finding: { name: finding.name, kind: finding.kind } });
     }
     if (settled.has(finding.address)) continue;
     if (current?.name === finding.name) {
