@@ -29,7 +29,7 @@ To get the loader program of other switch values, build `main.asm` of the source
 The build writes no loader program in these cases. `loader.reason` tells why.
 
 - The switch values change a byte that `loader.asm` holds. These bytes are between the free ranges of `loader.asm`, or below $0400.
-- The start screen is of a captured stage, and the source has no `start_screen_stage.asm`.
+- The start screen is of a captured stage, and the source has no `start_screen_stage.asm`. Or the file is of an earlier start screen, or of an earlier capture of the stage.
 - The memory has no room for the show stage.
 
 Do the action that `loader.reason` gives. When it tells you to set the switch values in `config.asm`, the generation of the source with the loader removes `build/clean_loader.prg`. See "The loader program".

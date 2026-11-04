@@ -1209,7 +1209,7 @@ test("with real ACME, the show stage builds when its code is high and the parts 
     { start: 0x0400, body: Uint8Array.from({ length: 1000 }, (_, index) => index & 0xff) },
     { start: 0x2000, body: Uint8Array.from({ length: 0x4000 }, (_, index) => (index * 7) & 0xff) },
   ];
-  const input: StageInput = { inner: [{ start: 0x0801, body: new Uint8Array(0x17ff).fill(0xea) }, { start: 0x6000, body: new Uint8Array(0x6000).fill(0xea) }], innerStart: 0x080d, innerPort: 0x37, stage, row, plan: startScreenPlan(row), settings: [], header: [], codeSize: 600 };
+  const input: StageInput = { inner: [{ start: 0x0801, body: new Uint8Array(0x17ff).fill(0xea) }, { start: 0x6000, body: new Uint8Array(0x6000).fill(0xea) }], innerStart: 0x080d, innerPort: 0x37, stage, row, plan: startScreenPlan(row), settings: [], header: [], key: "0123456789abcdef", codeSize: 600 };
   const plan = planStage(input);
   assert.ok(plan.code >= 0xc000, "the code is high");
   assert.doesNotMatch(plan.text, /!pseudopc/);

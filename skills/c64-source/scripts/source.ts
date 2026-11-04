@@ -28,7 +28,7 @@ import { withRead, withWrite } from "#src/knowledge/database.ts";
 import { identifiers } from "#src/knowledge/expression.ts";
 import { clipped, codeKnowledge, effectiveRegions } from "#src/knowledge/code-reach.ts";
 import { memoryRows, releaseImage, type ProgramImage } from "#src/knowledge/program.ts";
-import { ANALYZER_NAME_ORDER, baseValue, currentRevision, sourceRevision, startScreenRanges, type StartScreenRow, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listReleases, listSpaces, listSwitches, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
+import { ANALYZER_NAME_ORDER, baseValue, currentRevision, sourceRevision, spaceRevision, startScreenRanges, type StartScreenRow, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listReleases, listSpaces, listSwitches, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
 import { DEFAULT_SPACE, LEFTOVER_FOLDER, LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
 import { write } from "#src/knowledge/write.ts";
 import { assemble, symbolsFileText } from "#src/native/acme.ts";
@@ -57,7 +57,7 @@ import {
   type LoaderPlan,
 } from "./lib/loader.ts";
 import { instructionWith, OPCODES } from "#src/opcodes.ts";
-import { capturedColourRam, LOADER_JUMP, START_SCREEN_CONTINUE, START_SCREEN_FILE, START_SCREEN_WAIT, startScreenLabels, type StartScreenPlan } from "#src/knowledge/start-screen.ts";
+import { capturedColourRam, LOADER_JUMP, START_SCREEN_CONTINUE, START_SCREEN_FILE, START_SCREEN_WAIT, startScreenKey, startScreenLabels, type StartScreenPlan } from "#src/knowledge/start-screen.ts";
 import { packStage, type PackedStage, STAGE_FILE, type StageBytes, type StagePart } from "#src/stage.ts";
 import { freeName, planDrops, readmeText, rewriteTest } from "./lib/export.ts";
 import type { UnresolvedFlow } from "#src/knowledge/separate.ts";
@@ -978,7 +978,9 @@ async function buildStage(files: Array<{ name: string; text: string }>, laid: La
     return { program: built.program, symbols: built.symbols ?? [] };
   };
   const settings = settingsLines({ switches: hasSwitchFile(laid), config: hasConfigFile(laid) });
-  const built = await packStage(program.program, stage, row, { settings, header }, assembleStage, localToolContext());
+  // The key of the start screen goes into the file: a build with other switch values uses its bytes only for that start screen.
+  const key = withRead((db) => startScreenKey(row, spaceRevision(db, row.stage!)));
+  const built = await packStage(program.program, stage, row, { settings, header, key }, assembleStage, localToolContext());
   return { ...built, text: `${mark}\n${built.text}`, ...stage };
 }
 

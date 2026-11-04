@@ -4,6 +4,8 @@
 // stage needs no address from the user. Also the values that the start screen
 // code of a generated loader gets from a start screen of the knowledge.
 
+import { createHash } from "node:crypto";
+
 import { formatC64Address, formatC64Byte, vicScreenMemory } from "../c64.ts";
 import { Refusal } from "../errors.ts";
 import { isRomFont, type StartScreenRow } from "./read.ts";
@@ -38,6 +40,18 @@ export function startScreenPlan(row: StartScreenRow): StartScreenPlan {
     background: row.background,
     colourMode: row.colours !== undefined || row.colourRam === true ? 2 : row.colour !== undefined ? 1 : 0,
   };
+}
+
+/**
+ * The key of a start screen of a captured stage: what the bytes of its show
+ * stage are made from. These are the fields of the start screen (not its
+ * comment) and the revision of the space of the stage (`stageRevision`), which
+ * changes with each capture, patch or coverage there. Another key means that
+ * a show stage of the source is not of this start screen.
+ */
+export function startScreenKey(row: StartScreenRow, stageRevision: string): string {
+  const fields = [row.space, row.mode, row.screen, row.bitmap, row.charset, row.colours, row.colour, row.border, row.background, row.stage, row.call, row.colourRam, stageRevision];
+  return createHash("sha256").update(JSON.stringify(fields)).digest("hex").slice(0, 16);
 }
 
 /** The lines of loader.asm or of the show stage that give the start screen code its values. */

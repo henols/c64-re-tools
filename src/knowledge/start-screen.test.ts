@@ -5,7 +5,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { capturedColourRam, coloursOfCapture, startScreenLabels, startScreenOfCapture, startScreenOfStage } from "./start-screen.ts";
+import type { StartScreenRow } from "./read.ts";
+import { capturedColourRam, coloursOfCapture, startScreenKey, startScreenLabels, startScreenOfCapture, startScreenOfStage } from "./start-screen.ts";
 
 /** An entry state with the VIC-II values, $dd00 and the colour RAM: colour n at place n mod 16, one colour for all, or none. */
 function captured(values: { d011: number; d016: number; d018: number; dd00: number; colour?: false | number }): Record<string, unknown> {
@@ -73,4 +74,12 @@ test("a build shows its start screen when its symbols have both labels and the s
   assert.equal(startScreenLabels(new Map([...labels, ["LEFTOVERS", 1]])), undefined);
   assert.equal(startScreenLabels(new Map([labels[0]!])), undefined);
   assert.equal(startScreenLabels(new Map()), undefined);
+});
+
+test("the key of a start screen of a stage changes with the screen, the stage and each change of the stage, and not with the comment or the origin", () => {
+  const row: StartScreenRow = { space: "c64", mode: "multicolour", screen: 0x0400, bitmap: 0x2000, border: 0, background: 6, stage: "loading", colourRam: true, origin: "llm", revision: "r1" };
+  const key = startScreenKey(row, "s1");
+  assert.match(key, /^[0-9a-f]{16}$/);
+  assert.equal(startScreenKey({ ...row, comment: "The loading picture.", origin: "user", revision: "r2" }, "s1"), key);
+  for (const other of [startScreenKey({ ...row, screen: 0x4400 }, "s1"), startScreenKey({ ...row, stage: "bank0" }, "s1"), startScreenKey({ ...row, call: 0x9000 }, "s1"), startScreenKey(row, "s2")]) assert.notEqual(other, key);
 });

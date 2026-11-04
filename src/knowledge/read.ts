@@ -398,6 +398,11 @@ function spacesRevision(db: DatabaseSync | undefined, spaces: readonly Space[]):
   return newest;
 }
 
+/** The newest revision that changed a row in `space`, or the revision of no knowledge when none did. */
+export function spaceRevision(db: DatabaseSync | undefined, space: Space): string {
+  return spacesRevision(db, [space]);
+}
+
 /**
  * The revision of the source of a space: the newest revision of that space and
  * of the stage of its start screen. A change in another space does not change it.

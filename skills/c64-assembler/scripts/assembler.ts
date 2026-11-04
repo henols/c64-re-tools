@@ -21,14 +21,15 @@ import { readSourceTree, writeReported } from "#src/host-client/transfer.ts";
 import { withRead } from "#src/knowledge/database.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { releaseImage, requireProgram } from "#src/knowledge/program.ts";
-import { currentStartScreen, listSwitches, releaseLabeled, type StartScreenRow } from "#src/knowledge/read.ts";
+import { currentStartScreen, listSwitches, releaseLabeled, spaceRevision, type StartScreenRow } from "#src/knowledge/read.ts";
+import { startScreenKey } from "#src/knowledge/start-screen.ts";
 import { LEFTOVER_FOLDER, LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
 import { checkPackedBuilds, COPIER_SOURCE, leftoverRange, loaderSymbols, packedRanges, packLoader, type PackedLoader, settingsLines } from "#src/loader.ts";
 import { assemble, showSymbol, symbolsFileText } from "#src/native/acme.ts";
 import { EXOMIZER, findTool } from "#src/native/discover.ts";
 import { localToolContext } from "#src/native/local.ts";
 import type { AcmeParams, AssembledSymbol } from "#src/native/types.ts";
-import { type PackedStage, packStage, STAGE_FILE, stageOfBuild } from "#src/stage.ts";
+import { type PackedStage, packStage, STAGE_FILE, stageKey, stageOfBuild } from "#src/stage.ts";
 import { listed as listedItems, OPTIONS, reply, runScript, UsageError } from "#src/script.ts";
 import { compareBuild, type LeftOutLeftover, type Reference } from "#src/compare.ts";
 
@@ -87,7 +88,7 @@ async function assembleSource(params: AcmeParams, contents: Buffer[], file: stri
  * around this packed loader. Gives why the build gets no loader when the
  * stage does not fit or the file does not hold its bytes.
  */
-async function showStage(packed: PackedLoader, row: StartScreenRow, source: { params: AcmeParams; contents: Buffer[]; stageIndex: number; settings: string[] }): Promise<PackedStage | string> {
+async function showStage(packed: PackedLoader, row: StartScreenRow, source: { params: AcmeParams; contents: Buffer[]; stageIndex: number; settings: string[]; key: string }): Promise<PackedStage | string> {
   const { params, contents, stageIndex } = source;
   const generated = await assembleSource(params, contents, STAGE_FILE);
   // Each plan of the show stage builds with the other files of the source, and its text in place of start_screen_stage.asm.
@@ -97,7 +98,7 @@ async function showStage(packed: PackedLoader, row: StartScreenRow, source: { pa
     return assembleSource({ ...params, files }, contents.map((content, index) => (index === stageIndex ? bytes : content)), STAGE_FILE);
   };
   try {
-    return await packStage(packed.program, stageOfBuild(generated.program, generated.symbols, row.colourRam === true), row, { settings: source.settings, header: [] }, assembleStage, localToolContext());
+    return await packStage(packed.program, stageOfBuild(generated.program, generated.symbols, row.colourRam === true), row, { settings: source.settings, header: [], key: source.key }, assembleStage, localToolContext());
   } catch (error) {
     if (!isRefusal(error) || error.code !== "invalid-input") throw error;
     return `The show stage of the start screen from ${row.stage} cannot be built. ${error.message}`;
@@ -123,7 +124,7 @@ function generatedKnowledge(space: Space, leftovers: readonly AddressRange[] | u
             loaded = packedRanges(requireProgram(db, space).segments, leftovers);
           });
     const startScreen = leftovers === undefined ? undefined : currentStartScreen(db, space);
-    const stageScreen: StartScreenRow | undefined = startScreen?.stage === undefined ? undefined : startScreen;
+    const stageScreen = startScreen?.stage === undefined ? undefined : { row: startScreen, key: startScreenKey(startScreen, spaceRevision(db, startScreen.stage)) };
     return { defaults, loaded, noLoader, stageScreen };
   });
 }
@@ -214,9 +215,14 @@ await runScript({
         // Why the build writes no loader program.
         let noLoader = generated?.noLoader;
         // A start screen of a captured stage: the show stage of the source holds its bytes.
-        const stageScreen = generated?.stageScreen;
-        if (stageScreen !== undefined && noLoader === undefined && inSource(STAGE_FILE) < 0) {
-          noLoader = `The start screen is of the captured stage ${stageScreen.stage}, and ${sourceRoot} has no ${STAGE_FILE} with its bytes. Generate the source with the loader.`;
+        const stageKnown = generated?.stageScreen;
+        const stageScreen = stageKnown?.row;
+        if (stageKnown !== undefined && noLoader === undefined) {
+          const { row, key } = stageKnown;
+          const stageIndex = inSource(STAGE_FILE);
+          if (stageIndex < 0) noLoader = `The start screen is of the captured stage ${row.stage}, and ${sourceRoot} has no ${STAGE_FILE} with its bytes. Generate the source with the loader.`;
+          // A file of another start screen, or of an earlier capture, patch or coverage of the stage, has other bytes.
+          else if (stageKey(textOf(stageIndex)) !== key) noLoader = `${STAGE_FILE} of ${sourceRoot} is not of the start screen of the knowledge now: the start screen or the stage ${row.stage} changed after the generation of the source with the loader. Generate the source with the loader again.`;
         }
         // The toolkit never installs a tool: without Exomizer the build refuses by name before ACME runs.
         if (packedForm && noLoader === undefined) findTool(EXOMIZER);
@@ -245,7 +251,7 @@ await runScript({
               if (stageScreen === undefined) loader = { program: packed.program, symbols, packed };
               else {
                 const settings = settingsLines({ switches: inSource("switches.asm") >= 0, config: config >= 0 });
-                const stage = await showStage(packed, stageScreen, { params, contents, stageIndex: inSource(STAGE_FILE), settings });
+                const stage = await showStage(packed, stageScreen, { params, contents, stageIndex: inSource(STAGE_FILE), settings, key: stageKnown!.key });
                 if (typeof stage === "string") noLoader = stage;
                 else loader = { program: stage.packed.program, symbols: loaderSymbols(result.symbols!, copier.symbols, stage.symbols), packed, stage: { space: stageScreen.stage!, packedBytes: stage.packed.packedBytes, unpackedBytes: stage.packed.unpackedBytes } };
               }

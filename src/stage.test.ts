@@ -8,11 +8,11 @@ import { test } from "node:test";
 import { Refusal } from "./errors.ts";
 import type { StartScreenRow } from "./knowledge/read.ts";
 import { startScreenPlan } from "./knowledge/start-screen.ts";
-import { planStage, stageOfBuild, type StageInput } from "./stage.ts";
+import { planStage, stageKey, stageOfBuild, type StageInput } from "./stage.ts";
 
 test("the show stage runs where the KERNAL can be in, and puts the loader bytes under the stage in a stash; without room it refuses with the free ranges", () => {
   const row: StartScreenRow = { space: "c64", mode: "multicolour", screen: 0xcc00, bitmap: 0xe000, colours: 0x8328, border: 0, background: 6, stage: "bank1", call: 0x0a00, origin: "llm", revision: "r" };
-  const stageInput = (inner: StageInput["inner"], stage: StageInput["stage"]): StageInput => ({ inner, innerStart: 0x080d, innerPort: 0x37, stage, row, plan: startScreenPlan(row), settings: [], header: [], codeSize: 300 });
+  const stageInput = (inner: StageInput["inner"], stage: StageInput["stage"]): StageInput => ({ inner, innerStart: 0x080d, innerPort: 0x37, stage, row, plan: startScreenPlan(row), settings: [], header: [], key: "0123456789abcdef", codeSize: 300 });
   const plan = planStage(stageInput([{ start: 0x0801, body: new Uint8Array(0x500) }], [{ start: 0x0a00, body: new Uint8Array(0x20) }, { start: 0xcc00, body: new Uint8Array(1000) }]));
   assert.equal(plan.code, 0x0400, "the first free range that the code fits");
   assert.deepEqual(plan.stash.map((item) => item.target), [{ start: 0x0a00, end: 0x0a1f }]);
@@ -21,6 +21,9 @@ test("the show stage runs where the KERNAL can be in, and puts the loader bytes 
   assert.match(plan.text, /c64_source_ss_call = \$0a00 /);
   assert.match(plan.text, new RegExp(`!word 32, \\$${at.toString(16).padStart(4, "0")}, \\$0a00 ; \\$0a00-\\$0a1f of the loader`));
   assert.match(plan.text, /jmp \$080d\n/);
+  // The key of the start screen is in the text, and only there.
+  assert.equal(stageKey(plan.text), "0123456789abcdef");
+  assert.equal(stageKey(plan.text.replace(/^; The start screen key .*\n/m, "")), undefined);
   // The colour RAM of the capture is in the show code: the start screen copies it from there.
   const { colours: _colours, ...picture } = row;
   const fromCapture: StartScreenRow = { ...picture, colourRam: true };

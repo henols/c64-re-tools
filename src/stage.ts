@@ -45,6 +45,8 @@ export interface StageInput {
   /** The lines that include switches.asm or config.asm, for START_SCREEN. */
   settings: string[];
   header: string[];
+  /** The key of the start screen that the bytes of the stage are of (startScreenKey). */
+  key: string;
   /** The bytes of the show code without its copy table (stageCodeSize). */
   codeSize: number;
 }
@@ -67,6 +69,14 @@ export const STAGE_CODE_END = "c64_source_stage_code_end";
 export const STAGE_COLOURS = "c64_source_stage_colours";
 /** The label of a part of the stage: its first byte and the byte after it. */
 const stageLabel = (start: number, part: "from" | "end") => `stage_${part}_${hexWord(start)}`;
+/** The line of start_screen_stage.asm with the key of its start screen. */
+const STAGE_KEY_LINE = /^; The start screen key ([0-9a-f]{16}):/m;
+
+/** The key of the start screen in a text of start_screen_stage.asm, or undefined when the text has none. */
+export function stageKey(text: string): string | undefined {
+  return STAGE_KEY_LINE.exec(text)?.[1];
+}
+
 /** The first label of a part, with the address of the part. */
 const STAGE_PART_LABEL = /^stage_from_([0-9a-f]{4})$/;
 
@@ -150,6 +160,7 @@ export function stageText(input: StageInput, code: number, stash: StagePlan["sta
     ...input.header.map((line) => `; ${line}`),
     `; The show stage of the start screen from ${row.stage}: Exomizer packs it with the loader into the loader program, with --entry '${formatC64Address(code)}'.`,
     "; It shows the start screen, waits for a key or a fire button, copies back the bytes of the loader that the stage covers, and starts the loader.",
+    `; The start screen key ${input.key}: a build with other switch values uses the bytes of the stage in this file only for a start screen with this key.`,
     "",
     "!cpu 6510",
     ...input.settings,
@@ -328,7 +339,7 @@ export interface PackedStage {
  * before it starts. Its unpacker unpacks the loader over the start screen
  * after the wait. Refuses by name.
  */
-export async function packStage(loader: Uint8Array, stage: StageBytes, row: StartScreenRow, text: { settings: string[]; header: string[] }, assembleStage: AssembleStage, context: ToolContext): Promise<PackedStage> {
+export async function packStage(loader: Uint8Array, stage: StageBytes, row: StartScreenRow, text: { settings: string[]; header: string[]; key: string }, assembleStage: AssembleStage, context: ToolContext): Promise<PackedStage> {
   const screen = startScreenPlan(row);
   const input: StageInput = {
     inner: [{ start: LOADER_LOAD, body: loader.subarray(2) }],
@@ -340,6 +351,7 @@ export async function packStage(loader: Uint8Array, stage: StageBytes, row: Star
     plan: screen,
     settings: text.settings,
     header: text.header,
+    key: text.key,
     codeSize: 0,
   };
   const build = async (source: string) => {

@@ -11,10 +11,10 @@ import { after, test } from "node:test";
 
 import { COPIER_LINE } from "../../src/build-name.ts";
 import { COVERAGE } from "../../src/c64.ts";
-import { withWrite } from "../../src/knowledge/database.ts";
+import { withRead, withWrite } from "../../src/knowledge/database.ts";
 import { setImage } from "../../src/knowledge/program.ts";
-import type { StartScreenRow } from "../../src/knowledge/read.ts";
-import { START_SCREEN_FILE, startScreenPlan } from "../../src/knowledge/start-screen.ts";
+import { currentStartScreen, spaceRevision, type StartScreenRow } from "../../src/knowledge/read.ts";
+import { START_SCREEN_FILE, startScreenKey, startScreenPlan } from "../../src/knowledge/start-screen.ts";
 import { setStartScreen } from "../../src/knowledge/write.ts";
 import { packLoader, settingsLines } from "../../src/loader.ts";
 import { assemble } from "../../src/native/acme.ts";
@@ -284,8 +284,15 @@ test("--switch builds other switch values and leaves config.asm as it is; with t
   // generate writes the files of the show stage only with a checked loader: here they come from a plan of the stage.
   const sourceFiles = () => ["config.asm", "switches.asm", "loader.asm", START_SCREEN_FILE, STAGE_FILE].filter((name) => existsSync(join(folder, "src", name))).map((name) => ({ name, text: readFileSync(join(folder, "src", name), "utf8") }));
   const settings = settingsLines({ switches: existsSync(join(folder, "src", "switches.asm")), config: true });
+  const key = withRead((db) => startScreenKey(currentStartScreen(db)!, spaceRevision(db, "loading")), folder);
+  const stageFile = (fileKey: string) => writeFileSync(join(folder, "src", STAGE_FILE), planStage({ inner: [], innerStart: 0x080d, innerPort: 0x37, stage: screen, row, plan: startScreenPlan(row), settings, header: [], key: fileKey, codeSize: 300 }).text);
   writeFileSync(join(folder, "src", START_SCREEN_FILE), START_SCREEN_CODE);
-  writeFileSync(join(folder, "src", STAGE_FILE), planStage({ inner: [], innerStart: 0x080d, innerPort: 0x37, stage: screen, row, plan: startScreenPlan(row), settings, header: [], codeSize: 300 }).text);
+  // A file of another start screen, or of an earlier state of the stage, has another key: its bytes are not of this start screen.
+  stageFile("0123456789abcdef");
+  const old = buildIn(folder, ["src", "main.asm", "--switch", "TRAINER=1"]);
+  assert.deepEqual(Object.keys(old.json.loader), ["written", "reason"]);
+  assert.match(old.json.loader.reason, /^start_screen_stage\.asm of src is not of the start screen of the knowledge now: .* Generate the source with the loader again\.$/);
+  stageFile(key);
   const before = sourceFiles();
   const staged = buildIn(folder, ["src", "main.asm", "--switch", "TRAINER=0"]);
   assert.equal(staged.status, 0, JSON.stringify(staged.json));
@@ -299,7 +306,7 @@ test("--switch builds other switch values and leaves config.asm as it is; with t
     assert.equal(result.assembled, true, result.diagnostics.map((diagnostic) => diagnostic.message).join("; "));
     return { program: attachments![0]!, symbols: result.symbols ?? [] };
   };
-  const shown = await packStage(reference.program, { parts: screen }, row, { settings, header: [] }, assembleStage, localToolContext());
+  const shown = await packStage(reference.program, { parts: screen }, row, { settings, header: [], key }, assembleStage, localToolContext());
   assert.deepEqual(readFileSync(join(folder, "build", "clean_loader.prg")), shown.packed.program);
   const names = (JSON.parse(readFileSync(join(folder, "build", "symbols", "clean_loader.json"), "utf8")) as { symbols: Array<{ name: string }> }).symbols.map((symbol) => symbol.name);
   for (const name of ["c64_source_stage", "loader_start_screen_wait", "loader_start_screen_continue", "loader_copier_src"]) assert.ok(names.includes(name), name);
