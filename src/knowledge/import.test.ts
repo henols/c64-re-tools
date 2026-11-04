@@ -66,7 +66,7 @@ test("a re-analysis closes the analyzer's own name that it no longer finds; anal
 
   const second = importFindings(db, findings("decompiler", 0x2000, 0x22ff, { symbols: [{ address: 0x2100, name: "FUN_2100", kind: "routine" }] }));
   assert.equal(second.revision, nth(db, 2));
-  assert.deepEqual(second.names, { added: 0, changed: 0, retired: 1, unchanged: 1, suppressed: 0 });
+  assert.deepEqual(second.names, { added: 0, changed: 0, retired: 1, unchanged: 1, suppressed: 0, onExecutedCode: 0 });
   assert.deepEqual(analyzerNamesAt(db, 0x2200), []);
   assert.equal(analyzerNamesAt(db, 0x2100)[0]?.revision, nth(db, 1), "the unchanged name keeps its row");
   assert.equal(count(db, `SELECT count(*) AS n FROM analyzer_names WHERE address = 8704 AND valid_to_revision = '${nth(db, 2)}'`), 1, "the old row stays in history");
@@ -334,7 +334,7 @@ test("a re-run replaces all of the analyzer's own names in its coverage, also wh
   ]));
   const moved = importFindings(db, partial([{ address: 0x2300, name: "FUN_main", kind: "routine" }]));
   assert.deepEqual(moved.conflicts, []);
-  assert.deepEqual(moved.names, { added: 1, changed: 0, retired: 2, unchanged: 0, suppressed: 0 });
+  assert.deepEqual(moved.names, { added: 1, changed: 0, retired: 2, unchanged: 0, suppressed: 0, onExecutedCode: 0 });
   assert.deepEqual(listAnalyzerNames(db).map((symbol) => [symbol.address, symbol.name]), [[0x2300, "FUN_main"]]);
 });
 
@@ -563,4 +563,30 @@ test("a re-run does not replace the analyzer's own code with data where a run ex
     [0x2000, 0x207f, "code", "decompiler"],
     [0x2080, 0x20ff, "bytes", "decompiler"],
   ]);
+});
+
+test("a data name at an executed start that the knowledge names as code is only counted; where no run executed, it is a conflict", () => {
+  const db = fresh();
+  renameSymbol(db, { origin: "llm" }, { address: 0x2010, name: "next_command", kind: "label" });
+  renameSymbol(db, { origin: "llm" }, { address: 0x2020, name: "debug_dump", kind: "label" });
+  // An earlier run named $2010 l2010, kind label.
+  importFindings(db, findings("dxa", 0x2000, 0x20ff, { authoritative: { symbols: false, regions: true, references: false }, symbols: [{ address: 0x2010, name: "l2010", kind: "label" }] }));
+  const result = importFindings(
+    db,
+    findings("dxa", 0x2000, 0x20ff, {
+      symbols: [
+        { address: 0x2010, name: "d2010", kind: "data" },
+        { address: 0x2020, name: "d2020", kind: "data" },
+      ],
+      executed: (address) => address === 0x2010,
+    }),
+  );
+  assert.deepEqual(result.conflicts.map((conflict) => (conflict.category === "symbol" ? conflict.address : undefined)), [0x2020]);
+  assert.deepEqual(result.names, { added: 1, changed: 0, retired: 1, unchanged: 0, suppressed: 0, onExecutedCode: 1 }, "only d2020 is added; l2010 is retired");
+  assert.deepEqual(analyzerNamesAt(db, 0x2010), [], "the data name on executed code is not recorded");
+  // A data name that an earlier run recorded there, before a run executed it, leaves on a rerun with the same name.
+  importFindings(db, findings("dxa", 0x2000, 0x20ff, { authoritative: { symbols: false, regions: true, references: false }, symbols: [{ address: 0x2010, name: "d2010", kind: "data" }] }));
+  const again = importFindings(db, findings("dxa", 0x2000, 0x20ff, { authoritative: { symbols: false, regions: true, references: false }, symbols: [{ address: 0x2010, name: "d2010", kind: "data" }], executed: (address) => address === 0x2010 }));
+  assert.deepEqual(again.names, { added: 0, changed: 0, retired: 1, unchanged: 0, suppressed: 0, onExecutedCode: 1 });
+  assert.deepEqual(analyzerNamesAt(db, 0x2010), []);
 });
