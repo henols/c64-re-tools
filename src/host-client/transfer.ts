@@ -221,23 +221,15 @@ export function readSourceTree(sourceRoot: string, includes: readonly string[], 
   const folders = includes.map((folder) => {
     const outside = new WireFailure("invalid-input", `The include folder ${folder} is outside the project folder. Give an include folder inside the project folder, relative to the source root or absolute.`);
     const candidate = resolve(source, folder);
-    let real: string | undefined;
-    try {
-      real = realpathSync(candidate);
-    } catch {
-      real = undefined;
-    }
     // The real location decides, also of a folder that does not exist: an absolute folder can reach the project folder through a link, for example /tmp to /private/tmp.
-    let located = real ?? candidate;
-    if (real === undefined) {
-      try {
-        located = realLocation(candidate);
-      } catch {
-        // The path as given.
-      }
+    let real = candidate;
+    try {
+      real = realLocation(candidate);
+    } catch {
+      // The path as given.
     }
-    if (!isInside(project, located)) throw outside;
-    if (real === undefined || !statSync(real).isDirectory()) throw missing(folder);
+    if (!isInside(project, real)) throw outside;
+    if (statSync(real, { throwIfNoEntry: false })?.isDirectory() !== true) throw missing(folder);
     return { folder, real };
   });
   let top = source;
