@@ -774,6 +774,15 @@ test("a range shorter than the pattern has no match, and end must not be lower t
   await client.close();
 });
 
+test("a tool that another tool calls checks its out too, before any work", async () => {
+  const session = new FakeSession();
+  const read = memoryTools.find((tool) => tool.name === "c64_memory_read")!;
+  await assert.rejects(read.run({ address: 0x1000, size: 4, space: "c64", view: "cpu", out: "dumps/mem.bin" }, session), (error: unknown) => error instanceof WireFailure && error.code === "invalid-input");
+  assert.deepEqual(session.reads, [], "no memory was read");
+  const written = (await read.run({ address: 0x1000, size: 4, space: "c64", view: "cpu", out: at("direct", "mem.bin") }, session)) as Record<string, unknown>;
+  assert.equal(written.out, at("direct", "mem.bin"));
+});
+
 test("refusals name the rule that the call broke", async () => {
   const client = await connect(async () => new FakeSession());
   const message = async (name: string, args: Record<string, unknown>) => errorOf(await call(client, name, args)).message;

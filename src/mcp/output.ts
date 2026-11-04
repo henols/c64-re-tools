@@ -25,11 +25,10 @@ export function linesText(lines: readonly string[]): string {
 }
 
 /**
- * Writes `data` to the file of out, that the server checked before the tool
- * ran (checkOut), and gives what the result shows in its place: the absolute
- * path, the size and the SHA-256.
+ * Writes `data` to the file of out, checked before the tool ran (checkOut),
+ * and gives what the result shows in its place: the absolute path, the size
+ * and the SHA-256.
  */
-export function writeOut(target: ToolFile | undefined, data: Uint8Array | string): Written {
-  if (target === undefined) throw new Error("out has no file that the server checked before the tool ran");
+export function writeOut(target: ToolFile, data: Uint8Array | string): Written {
   return writeReported(target.file, data, { what: "out", root: target.root });
 }

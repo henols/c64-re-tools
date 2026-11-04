@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, parse, resolve } from "node:path";
+import { dirname, join, parse, resolve } from "node:path";
 import { test } from "node:test";
 
 import { Refusal } from "./errors.ts";
@@ -157,6 +157,7 @@ test("a named project must be a folder, not the home folder and not inside anoth
     assert.throws(() => namedProject("missing", workspace), refusal("not-found", /There is no folder missing/));
     assert.throws(() => namedProject("file", workspace), refusal("invalid-input", /is not a folder/));
     assert.throws(() => namedProject(home, workspace), refusal("invalid-input", /home folder/));
+    for (const top of [parse(home).root, dirname(home)]) assert.throws(() => namedProject(top, workspace), refusal("invalid-input", /is the root of a file system or a folder above the home folder/), top);
     assert.throws(() => namedProject(join("game", "src"), workspace), refusal("invalid-input", /inside the project game\. Give that project folder/));
     // A project inside a project is a project of its own.
     mkdirSync(join(workspace, "game", "disk2", ".c64-re-tools"), { recursive: true });
@@ -304,7 +305,16 @@ test("the project of a file of an MCP tool is the project at or above it by the 
     mkdirSync(join(disk2, ".c64-re-tools"), { recursive: true });
     assert.equal(fileProject(join(disk2, "game.d64"), "read"), disk2);
 
-    assert.throws(() => fileProject(join(games, "notes.bin"), "write"), refusal("invalid-input", /games, and it is not a project folder\. These folders below it are projects: bruce, fist\. Give a file in one of them\.$/));
+    const saved = process.cwd();
+    try {
+      // The projects below the folder of the file name the remedy when the agent started there.
+      process.chdir(games);
+      assert.throws(() => fileProject(join(games, "notes.bin"), "write"), refusal("invalid-input", /games, and it is not a project folder\. These folders below it are projects: bruce, fist\. Give a file in one of them\.$/));
+    } finally {
+      process.chdir(saved);
+    }
+    // Elsewhere the refusal searches no folder below.
+    assert.throws(() => fileProject(join(games, "notes.bin"), "write"), refusal("invalid-input", /notes\.bin is not in a project folder\./));
     assert.throws(() => fileProject(join(home, "x.bin"), "write"), refusal("invalid-input", /x\.bin is not in a project folder\. Give a file in a folder that has \.c64-re-tools\/, or start the agent in a project folder\.$/));
   });
 });
@@ -328,6 +338,9 @@ test("for an MCP tool, a folder without .c64-re-tools/ is a project only in the 
       assert.equal(fileProject(join(start, "dev", "build", "game.prg"), "read"), start);
       for (const access of ["read", "write"] as const) assert.throws(() => fileProject(join(elsewhere, "x.bin"), access), notInProject, access);
       assert.equal(fileProject(join(marked, "x.bin"), "write"), marked);
+      // A project made below the start folder later ends its place as a project.
+      mkdirSync(join(start, "bruce", ".c64-re-tools"), { recursive: true });
+      assert.throws(() => fileProject(join(start, "dev", "build", "game.prg"), "read"), notInProject);
       // The home folder and a folder with projects below it are no project, and no plain folder in them is one.
       process.chdir(home);
       assert.throws(() => fileProject(join(home, ".ssh", "authorized_keys"), "write"), notInProject);
@@ -371,5 +384,31 @@ test("an MCP tool reads in the group folder of a project, and writes only in a p
     assert.equal(resolveReadFile(join(game, "shared", "game.prg"), root), realpathSync(join(game, "shared", "game.prg")));
     assert.equal(fileProject(join(game, "notes.prg"), "read"), join(game, "v1"));
     assert.throws(() => fileProject(join(game, "shared", "out.bin"), "write"), refusal("invalid-input", /is in the group folder .*fist, and not in a project of the group\. The projects of the group are \.\.\/v1, \.\.\/v2\. Give a file in one of them\.$/));
+  });
+});
+
+test("the home folder through a symbolic link is the home folder: a server that starts at its real location writes in no plain folder of it", { skip: process.platform === "win32" ? "symbolic links need extra rights on Windows" : false }, () => {
+  withHome((home) => {
+    const real = join(dirname(home), "real-home");
+    mkdirSync(join(real, ".ssh"), { recursive: true });
+    const linked = join(dirname(home), "linked-home");
+    symlinkSync(real, linked);
+    process.env.HOME = linked;
+    process.env.USERPROFILE = linked;
+    assert.throws(() => findProject(real), refusal("invalid-input", /^The home folder is not a project folder/));
+    const saved = process.cwd();
+    try {
+      process.chdir(real);
+      assert.throws(() => fileProject(join(linked, ".ssh", "authorized_keys"), "write"), refusal("invalid-input", /is not in a project folder/));
+    } finally {
+      process.chdir(saved);
+    }
+  });
+});
+
+test("a folder of the path of an MCP file that the file system refuses is a refusal that names the file", { skip: process.platform === "win32" ? "symbolic links need extra rights on Windows" : false }, () => {
+  withHome((home) => {
+    symlinkSync(join(home, "loop"), join(home, "loop"));
+    assert.throws(() => fileProject(join(home, "loop", "x.bin"), "read"), refusal("invalid-input", /x\.bin cannot be reached: the file system refuses a folder of its path \(ELOOP\)/));
   });
 });

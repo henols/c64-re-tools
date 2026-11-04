@@ -117,7 +117,11 @@ export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z
   outputSchema: O;
   /** True for operations that only observe the machine. */
   readOnly: boolean;
-  /** `out` is the file of the input out, checked before the tool runs; undefined without out. */
+  /**
+   * `out` is the file of the input out, checked before the tool does any
+   * work; undefined without out. The tool branches on it, not on the input.
+   * defineTool checks it for a call that does not give it.
+   */
   run(input: z.output<I>, session: ViceSessionApi, out?: ToolFile): Promise<z.input<O> | ToolOutput<z.input<O>>>;
 }
 
@@ -145,9 +149,17 @@ export function toCondition(input: z.output<typeof TOOL_INPUTS.condition>): Cond
   return defined(input) as Condition;
 }
 
-/** Keeps a tool's handler typed against its own schemas. */
+/**
+ * Keeps a tool's handler typed against its own schemas. A call with the input
+ * out and without its checked file, for example from another tool, gets the
+ * file checked here: every call path refuses a wrong out before the work.
+ */
 export function defineTool<I extends z.ZodObject, O extends z.ZodObject>(tool: ToolDefinition<I, O>): ToolDefinition {
-  return tool as unknown as ToolDefinition;
+  const run: ToolDefinition<I, O>["run"] = async (input, session, out) => {
+    const given = (input as { out?: unknown }).out;
+    return tool.run(input, session, out ?? (typeof given === "string" ? checkOut(given) : undefined));
+  };
+  return { ...tool, run } as unknown as ToolDefinition;
 }
 
 function jsonSchema(schema: z.ZodObject, io: "input" | "output"): McpTool["inputSchema"] {

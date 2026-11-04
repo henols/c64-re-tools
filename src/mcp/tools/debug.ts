@@ -164,9 +164,9 @@ const c64CpuHistory = defineTool({
   }),
   readOnly: false,
   async run(input, session, file) {
-    const { out, ...request } = input;
+    const { out: _given, ...request } = input;
     const { entries } = await session.cpuHistory(request);
-    if (out === undefined) return { entries: entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
+    if (file === undefined) return { entries: entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
     const lines = entries.map((entry) => {
       const raster = entry.rasterLine === undefined ? "" : `  line ${entry.rasterLine} cycle ${entry.rasterCycle ?? 0}`;
       return `${formatC64Address(entry.address)}  ${spaced(entry.bytes).padEnd(9)} ${entry.text.padEnd(16)} a=${hexByte(entry.a)} x=${hexByte(entry.x)} y=${hexByte(entry.y)} sp=${hexByte(entry.sp)}${raster}`;
@@ -304,14 +304,14 @@ const c64Trace = defineTool({
   }),
   readOnly: false,
   async run(input, session, file) {
-    const { out, points, ...request } = input;
+    const { out: _given, points, ...request } = input;
     const ranges = points.map((point) => ({ kind: point.kind, start: point.start, end: point.end ?? point.start }));
     if (ranges.some((point) => point.end < point.start)) throw new WireFailure("invalid-input", "A point end must not be before its start.");
     const traced = await session.trace({ points: ranges, ...request });
     const shown = traced.hits.map(({ address, ...hit }) => ({ ...hit, pc: formatC64Address(hit.pc), ...(address === undefined ? {} : { address: formatC64Address(address) }) }));
     const head = { end: traced.end, frames: traced.frames, pc: formatC64Address(traced.pc), count: traced.hits.length };
     const summary = traceSummary(traced.hits, ranges.map((point) => point.kind));
-    if (out === undefined) return { ...head, summary, hits: shown.slice(0, TRACE_LISTED) };
+    if (file === undefined) return { ...head, summary, hits: shown.slice(0, TRACE_LISTED) };
     return { ...head, summary, ...writeOut(file, linesText(shown.map((hit) => JSON.stringify(hit)))) };
   },
 });
@@ -474,7 +474,7 @@ const c64Memmap = defineTool({
     }
     requireOut(fields, ["maxRanges"]);
     requireFields("read", fields, ["start", "end", "maxRanges", "out"]);
-    if (fields.out !== undefined) {
+    if (file !== undefined) {
       const map = await readCoverage(session, start, end);
       return { ...writeOut(file, map), ...basicRomFlaw(romInBasicArea(map, start)) };
     }

@@ -59,14 +59,49 @@ function isProject(folder: string): boolean {
   }
 }
 
+/**
+ * The home folder as the environment gives it and at its real location: the
+ * home folder can be a symbolic link, and the working directory of a process
+ * is a real location.
+ */
+function homeFolders(): string[] {
+  const home = homedir();
+  try {
+    const real = realLocation(home);
+    return real === home ? [home] : [home, real];
+  } catch {
+    return [home];
+  }
+}
+
+/** True when `folder` is the home folder, in either spelling. */
+function isHome(folder: string): boolean {
+  return homeFolders().includes(folder);
+}
+
+/**
+ * True for the root of a file system, the home folder and each folder above
+ * it: they hold the files of the whole machine or user, so they are never a
+ * project without .c64-re-tools/. By text and by real location.
+ */
+function isTop(folder: string): boolean {
+  let spellings = [folder];
+  try {
+    spellings = [folder, realLocation(folder)];
+  } catch {
+    // The text alone.
+  }
+  return spellings.some((each) => dirname(each) === each || homeFolders().some((home) => isInside(each, home)));
+}
+
 /** `start` and each folder above it, nearest first, below the home folder when `start` is under it. */
 function foldersUpFrom(start: string): string[] {
-  const home = homedir();
-  const underHome = start !== home && isInside(home, start);
-  if (start === home) return [];
+  const homes = homeFolders();
+  if (homes.includes(start)) return [];
+  const underHome = homes.some((home) => isInside(home, start));
   const folders: string[] = [];
   for (let folder = start; ; folder = dirname(folder)) {
-    if (underHome && folder === home) break;
+    if (underHome && homes.includes(folder)) break;
     folders.push(folder);
     if (dirname(folder) === folder) break;
   }
@@ -121,7 +156,7 @@ export function nearestEntry(path: string): string {
  * What the project rules find from the folder `start`: the nearest folder at
  * or above it with .c64-re-tools/, below the home folder. Without one, `start`
  * itself, unless it is the root of a file system, the home folder or a folder
- * above it (top), has projects below it, or is a folder of a group that is no
+ * above it (top, isTop), has projects below it, or is a folder of a group that is no
  * project: then why it is in no project, so no write lands outside a project.
  * `plain` marks `start` as a project without .c64-re-tools/.
  */
@@ -131,8 +166,7 @@ function lookUp(start: string): Lookup {
   for (const folder of foldersUpFrom(start)) {
     if (isProject(folder)) return { root: folder };
   }
-  // The root of a file system and the folders down to the home folder hold the files of the whole machine or user.
-  if (dirname(start) === start || isInside(start, homedir())) return { top: true };
+  if (isTop(start)) return { top: true };
   const below = projectsBelow(start);
   if (below.length > 0) return { below };
   // A folder of a group that is no project, for example its docs/: a write there would make it a project of the group.
@@ -153,7 +187,7 @@ export function findProject(cwd: string = process.cwd()): string {
   const start = resolve(cwd);
   const found = lookUp(start);
   if ("root" in found) return found.root;
-  if ("top" in found) throw new Refusal("invalid-input", `${start === homedir() ? "The home folder" : start} is not a project folder. Start in a project folder, or give --project <folder>.`);
+  if ("top" in found) throw new Refusal("invalid-input", `${isHome(start) ? "The home folder" : start} is not a project folder. Start in a project folder, or give --project <folder>.`);
   if ("below" in found) throw new Refusal("invalid-input", `${start} is not a project folder. These folders below it are projects: ${listed(found.below)}. ${SCRIPT_REMEDY} with one of them.`);
   throw new Refusal("invalid-input", `${start} is in the group folder ${found.group.root}, and it is not a project folder. The projects of the group are ${groupProjects(found.group, start)}. ${SCRIPT_REMEDY} with one of them. To make this folder a new project of the group, give the folder itself: .`);
 }
@@ -174,35 +208,32 @@ export function fileProject(file: string, access: "read" | "write"): string {
   let start: string;
   try {
     start = nearestEntry(dirname(resolve(file)));
+    // A file, or a link to nothing, where a folder must be: the folder above it.
+    if (statSync(start, { throwIfNoEntry: false })?.isDirectory() !== true) start = dirname(start);
   } catch (error) {
     throw new Refusal("invalid-input", `${file} cannot be reached: the file system refuses a folder of its path (${(error as NodeJS.ErrnoException).code ?? "an error"}). Give a file in a project folder that you can read.`);
   }
-  if (statSync(start, { throwIfNoEntry: false })?.isDirectory() !== true) start = dirname(start);
   const marked = foldersUpFrom(start).find(isProject);
   if (marked !== undefined) {
     ensureLocal(marked);
     return marked;
   }
-  const started = startLookup();
+  // Each call looks again: a project made below the start folder ends its place as a project.
+  const cwd = resolve(process.cwd());
+  const started = lookUp(cwd);
   const plain = "root" in started && started.plain === true ? started.root : undefined;
   if (plain !== undefined && insideReally(plain, file) !== undefined) return plain;
-  const found = lookUp(start);
-  if ("top" in found) throw new Refusal("invalid-input", `${file} is not in a project folder. Give a file in a folder that has .c64-re-tools/, or start the agent in a project folder.`);
-  const group = "group" in found ? found.group : "below" in found ? groupAt(start) : undefined;
-  if (access === "read" && group !== undefined) return [...group.projects.values()][0]!;
-  if ("below" in found) throw new Refusal("invalid-input", `${file} is in ${start}, and it is not a project folder. These folders below it are projects: ${listed(found.below)}. Give a file in one of them.`);
-  if ("group" in found) throw new Refusal("invalid-input", `${file} is in the group folder ${found.group.root}, and not in a project of the group. The projects of the group are ${groupProjects(found.group, start)}. Give a file in one of them.`);
+  if (isTop(start)) throw new Refusal("invalid-input", `${file} is not in a project folder. Give a file in a folder that has .c64-re-tools/, or start the agent in a project folder.`);
+  const group = groupAt(start) ?? foldersUpFrom(start).slice(1).map(groupAt).find((each) => each !== undefined);
+  if (group !== undefined) {
+    if (access === "read") return [...group.projects.values()][0]!;
+    throw new Refusal("invalid-input", `${file} is in the group folder ${group.root}, and not in a project of the group. The projects of the group are ${groupProjects(group, start)}. Give a file in one of them.`);
+  }
+  // The projects below the folder name the remedy, but only in the start folder: a search elsewhere can read a large part of the disk.
+  const below = insideReally(cwd, start) === undefined ? [] : projectsBelow(start);
+  if (below.length > 0) throw new Refusal("invalid-input", `${file} is in ${start}, and it is not a project folder. These folders below it are projects: ${listed(below)}. Give a file in one of them.`);
   const where = plain === undefined ? "" : `, or is the folder where the agent started, ${plain}, or a folder in it`;
   throw new Refusal("invalid-input", `${file} is not in a project folder. A project folder has .c64-re-tools/${where}.`);
-}
-
-/** The lookup from the folder where the MCP server started. That folder does not change, so the lookup is made once. */
-let startFolder: { cwd: string; found: Lookup } | undefined;
-
-function startLookup(): Lookup {
-  const cwd = resolve(process.cwd());
-  if (startFolder?.cwd !== cwd) startFolder = { cwd, found: lookUp(cwd) };
-  return startFolder.found;
 }
 
 /** The refusal of a group folder as a project: a write there would make it a project, and then it is no group. */
@@ -222,7 +253,8 @@ export function namedProject(folder: string, cwd: string = process.cwd()): strin
   const stat = statSync(path, { throwIfNoEntry: false });
   if (stat === undefined) throw new Refusal("not-found", `There is no folder ${folder}.`);
   if (!stat.isDirectory()) throw new Refusal("invalid-input", `${folder} is not a folder.`);
-  if (path === homedir()) throw new Refusal("invalid-input", "The home folder is not a project folder.");
+  if (isHome(path)) throw new Refusal("invalid-input", "The home folder is not a project folder.");
+  if (isTop(path) && !isProject(path)) throw new Refusal("invalid-input", `${folder} is the root of a file system or a folder above the home folder, and it is not a project folder. Give a project folder.`);
   // A project inside another project is a project of its own, as the lookup from a working directory in it finds.
   const outer = isProject(path) ? undefined : foldersUpFrom(path).slice(1).find(isProject);
   if (outer !== undefined) {
@@ -254,7 +286,7 @@ function inRepository(folder: string): boolean {
  */
 export function groupAt(folder: string): ProjectGroup | undefined {
   const root = resolve(folder);
-  if (root === homedir() || dirname(root) === root) return undefined;
+  if (isHome(root) || dirname(root) === root) return undefined;
   if (foldersUpFrom(root).some(isProject) || !inRepository(root)) return undefined;
   let entries;
   try {
@@ -290,7 +322,7 @@ export function newProjectFolder(folder: string, currentRoot: string): { root: s
   const root = resolve(currentRoot, folder);
   const zip = `${root}.zip`;
   if (dirname(root) === root) throw new Refusal("invalid-input", `${folder} is the root of a file system. Give a folder for the new project.`);
-  if (root === homedir()) throw new Refusal("invalid-input", "The home folder cannot be the folder of a new project.");
+  if (isHome(root)) throw new Refusal("invalid-input", "The home folder cannot be the folder of a new project.");
   if (isInside(currentRoot, root)) throw new Refusal("invalid-input", `${folder} is inside the project ${currentRoot}. Give a folder outside it, for example ../${basename(root)}.`);
   if (isInside(root, currentRoot)) throw new Refusal("invalid-input", `${folder} holds the project ${currentRoot}. Give a folder outside it.`);
   const outer = foldersUpFrom(root).slice(1).find(isProject);
@@ -345,8 +377,8 @@ export function projectRoot(): string {
   return root;
 }
 
-/** The real location of `path`: the real location of its longest part that exists, and the rest as it is. */
-function realLocation(path: string): string {
+/** The real location of `path`: the real location of its longest part that exists, and the rest as it is. Throws an error of the file system as nearestEntry does. */
+export function realLocation(path: string): string {
   const existing = nearestEntry(path);
   return join(realpathSync(existing), relative(existing, path));
 }

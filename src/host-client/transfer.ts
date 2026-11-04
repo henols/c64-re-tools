@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { checkOutputPath, fileProject, isInside, projectRoot, readGroup, resolveProjectFile, resolveReadFile, writeProblem } from "../project.ts";
+import { checkOutputPath, fileProject, isInside, projectRoot, readGroup, realLocation, resolveProjectFile, resolveReadFile, writeProblem } from "../project.ts";
 import { isRefusal } from "../errors.ts";
 import { MAX_ATTACHMENT_BYTES } from "../protocol/framing.ts";
 import { WireFailure } from "../protocol/messages.ts";
@@ -227,8 +227,16 @@ export function readSourceTree(sourceRoot: string, includes: readonly string[], 
     } catch {
       real = undefined;
     }
-    // The real location decides: an absolute folder can reach the project folder through a link, for example /tmp to /private/tmp.
-    if (!isInside(project, real ?? candidate)) throw outside;
+    // The real location decides, also of a folder that does not exist: an absolute folder can reach the project folder through a link, for example /tmp to /private/tmp.
+    let located = real ?? candidate;
+    if (real === undefined) {
+      try {
+        located = realLocation(candidate);
+      } catch {
+        // The path as given.
+      }
+    }
+    if (!isInside(project, located)) throw outside;
     if (real === undefined || !statSync(real).isDirectory()) throw missing(folder);
     return { folder, real };
   });

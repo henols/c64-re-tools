@@ -140,7 +140,7 @@ const c64Snapshot = defineTool({
     if (action === "save") {
       requireFields(action, fields, ["name", "out"], ["name"]);
       const saved = await session.snapshot({ action, name: fields.name! });
-      return fields.out === undefined ? saved : { ...saved, ...writeOut(out, await session.snapshotExport(fields.name!)) };
+      return out === undefined ? saved : { ...saved, ...writeOut(out, await session.snapshotExport(fields.name!)) };
     }
     requireFields(action, fields, ["name"], ["name"]);
     return session.snapshot({ action, name: fields.name! });
