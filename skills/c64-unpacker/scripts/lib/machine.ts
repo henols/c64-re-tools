@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { type AddressRange, formatC64Address, hexWord, prgOf, spriteData, spritePointer, vicScreenMemory } from "#src/c64.ts";
 import { resetToReady } from "#src/host-client/entry-state.ts";
 import { writeRefusal, writeReported, type Written } from "#src/host-client/transfer.ts";
+import { isRefusal } from "#src/errors.ts";
 import { MAX_WATCH_SIZE } from "#src/host-client/tools.ts";
 import { lastOpcode, readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { startScreenRanges } from "#src/knowledge/read.ts";
@@ -206,6 +207,10 @@ export function writeCapture(
 const RAM_UNDER_IO = { kind: "memory", address: 0x0001, operator: "eq", value: 0, mask: 0x03, space: "c64", view: "cpu" } as const;
 /** The most stops at a store that the RAM check runs on after: a guard, as the emulator gives the dummy read of a store to a watchpoint only on request. */
 const MAX_STORE_STOPS = 256;
+/** The RAM check runs in parts of this many frames, and ends when its time is over between two parts. */
+const CHECK_PART_FRAMES = 25;
+/** The most time of the RAM check. A condition on each read of the watched I/O area makes the emulator slower. */
+export const MAX_CHECK_MS = 30_000;
 const ENTRY_SNAPSHOT = "capture-entry";
 
 /**
@@ -240,12 +245,14 @@ export async function fromHere<T>(client: Pick<ViceSessionClient, "snapshot">, w
  * reads as an I/O read. The first read of a range removes the watchpoints of the range, so the run stops at most once
  * for each range. A stop comes after the instruction that made the access: an indexed store reads its address before
  * it writes it, and that read is no read of the program, so the run goes on. A check that ends before its frames (after
- * MAX_STORE_STOPS such stops, a JAM, another stop) gives the ranges without a read as `undecided`, not unread. The machine then goes back to where it was.
+ * MAX_STORE_STOPS such stops, a JAM, another stop, a frame that the emulator did not give in time, or after `limitMs`)
+ * gives the ranges without a read as `undecided`, not unread: the check never fails the capture. The machine then goes back to where it was.
  */
 export async function readAsRam<T extends AddressRange>(
   client: Pick<ViceSessionClient, "snapshot" | "watchpoint" | "observe" | "execution" | "cpuHistory">,
   ranges: readonly T[],
   frames: number,
+  limitMs = MAX_CHECK_MS,
 ): Promise<{ read: T[]; undecided: T[] }> {
   // The watchpoint ids of each range: a watchpoint covers at most MAX_WATCH_SIZE bytes.
   const points = new Map<number, number>();
@@ -265,18 +272,28 @@ export async function readAsRam<T extends AddressRange>(
       const anchor = { line: timing!.rasterLine, cycle: timing!.rasterCycle };
       let left = frames;
       let storeStops = 0;
+      const deadline = Date.now() + limitMs;
       for (;;) {
         if (left <= 0 || read.size === ranges.length) {
           complete = true;
           break;
         }
-        const run = await client.execution({ action: "advance-frames", count: left, space: "c64", anchor });
-        left -= run.advancedFrames ?? 0;
-        // "frames": all frames ran. A stop in the last frame still counts.
+        if (Date.now() >= deadline) break;
+        const count = Math.min(left, CHECK_PART_FRAMES);
+        let run: Awaited<ReturnType<typeof client.execution>>;
+        try {
+          run = await client.execution({ action: "advance-frames", count, space: "c64", anchor });
+        } catch (error) {
+          // The emulator did not give a frame in time: the check ends, the capture goes on.
+          if (isRefusal(error) && error.code === "operation-failed") break;
+          throw error;
+        }
+        // "frames": the frames of the part ran. A stop in its last frame still counts.
         if (run.stopReason === "frames") {
-          left = 0;
+          left -= count;
           continue;
         }
+        left -= run.advancedFrames ?? 0;
         const index = run.pointId === undefined ? undefined : points.get(run.pointId);
         if (run.stopReason !== "watchpoint" || index === undefined) break;
         const opcode = await lastOpcode(client);

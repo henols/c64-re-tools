@@ -12,6 +12,7 @@ import { inspect, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/
 import { capturedProgram, fromHere, readAsRam, removeStaleFiles, vicRam } from "../../skills/c64-unpacker/scripts/lib/machine.ts";
 import { callReturn, captureSegments, droppedRanges, executedIn, notExecutedUnderIo, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
 import { COVERAGE } from "../../src/c64.ts";
+import { WireFailure } from "../../src/protocol/messages.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
 
@@ -459,7 +460,7 @@ test("a capture again into its folder removes the segment PRGs and the drive RAM
  * A stand-in emulator for the RAM check: each run stops at a watchpoint with the next of `stops` (the range index and the
  * opcode in the CPU history), and after the last one runs all frames. With "stores", each run stops at a store.
  */
-function ramCheckClient(stops: Array<{ range: number; opcode: number } | "jam"> | "stores") {
+function ramCheckClient(stops: Array<{ range: number; opcode: number } | "jam" | "late"> | "stores") {
   const ranges = new Map<number, number>();
   let next = 0;
   let last = 0;
@@ -478,6 +479,7 @@ function ramCheckClient(stops: Array<{ range: number; opcode: number } | "jam"> 
       const stop = stops === "stores" ? { range: 1, opcode: 0x9d } : stops[next++];
       if (stop === undefined) return { state: "stopped", advancedFrames: 250, stopReason: "frames" };
       if (stop === "jam") return { state: "stopped", advancedFrames: 10, stopReason: "jam" };
+      if (stop === "late") throw new WireFailure("operation-failed", "The emulator did not reach the next frame in time.");
       last = stop.opcode;
       const id = [...ranges].find(([, range]) => range === stop.range)![0];
       return { state: "stopped", advancedFrames: 0, stopReason: "watchpoint", pointId: id };
@@ -495,6 +497,9 @@ test("the RAM check under the I/O area takes no stop after a store as a read, an
   assert.deepEqual(await readAsRam(ramCheckClient("stores"), ranges, 250), { read: [], undecided: ranges });
   // A JAM before the frames ran: the range without a read is not decided.
   assert.deepEqual(await readAsRam(ramCheckClient([{ range: 0, opcode: 0xad }, "jam"]), ranges, 250), { read: [ranges[0]], undecided: [ranges[1]] });
+  // A frame that does not come in time, and a check whose time is over, end the check without a failure.
+  assert.deepEqual(await readAsRam(ramCheckClient(["late"]), ranges, 250), { read: [], undecided: ranges });
+  assert.deepEqual(await readAsRam(ramCheckClient([]), ranges, 250, 0), { read: [], undecided: ranges });
 });
 
 test("fromHere removes its snapshot also when the restore fails, and throws the error of the work with the failed restore in it", async () => {
