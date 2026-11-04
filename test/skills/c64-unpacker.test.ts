@@ -373,6 +373,11 @@ test("a capture entry that no stage wrote is in the loaded bytes: the range of t
     { start: 0xc000, end: 0xc0ff, writtenBy: 0 },
   ]);
   assert.deepEqual(captureSegments([{ entry: 0x8000, wrote: [range(0xa000, 0xa0ff)] }], 0x81ff, { loaded: range(0x0801, 0x9fff) }), [{ start: 0x0801, end: 0xa0ff, loaded: true }], "a block that touches the loaded range joins it");
+  // A block that overlaps the loaded range over the start of the I/O area: the join is cut there.
+  assert.deepEqual(captureSegments([{ entry: 0x8000, wrote: [range(0xd000, 0xd7ff)] }], 0x81ff, { loaded: range(0x0801, 0xd3ff) }), [
+    { start: 0x0801, end: 0xcfff, loaded: true },
+    { start: 0xd000, end: 0xd7ff, loaded: true },
+  ]);
   // The RAM under the I/O area stays a segment of its own, also next to the loaded range.
   assert.deepEqual(captureSegments([{ entry: 0x8000, wrote: [range(0xd000, 0xdfff)] }], 0x81ff, { loaded: range(0x0801, 0xcfff) }), [
     { start: 0x0801, end: 0xcfff, loaded: true },
@@ -460,7 +465,7 @@ test("a capture again into its folder removes the segment PRGs and the drive RAM
  * A stand-in emulator for the RAM check: each run stops at a watchpoint with the next of `stops` (the range index and the
  * opcode in the CPU history), and after the last one runs all frames. With "stores", each run stops at a store.
  */
-function ramCheckClient(stops: Array<{ range: number; opcode: number } | "jam" | "late"> | "stores") {
+function ramCheckClient(stops: Array<{ range: number; opcode: number } | "jam" | "late"> | "stores", refuseAdd?: WireFailure) {
   const ranges = new Map<number, number>();
   let next = 0;
   let last = 0;
@@ -469,6 +474,7 @@ function ramCheckClient(stops: Array<{ range: number; opcode: number } | "jam" |
     observe: async () => ({ timing: { rasterLine: 0, rasterCycle: 0 } }),
     watchpoint: async (params: { action: string; address?: number; id?: number }) => {
       if (params.action === "add") {
+        if (refuseAdd !== undefined) throw refuseAdd;
         const id = ranges.size + 1;
         ranges.set(id, params.address! < 0xd200 ? 0 : 1);
         return { id };
@@ -500,6 +506,9 @@ test("the RAM check under the I/O area takes no stop after a store as a read, an
   // A frame that does not come in time, and a check whose time is over, end the check without a failure.
   assert.deepEqual(await readAsRam(ramCheckClient(["late"]), ranges, 250), { read: [], undecided: ranges });
   assert.deepEqual(await readAsRam(ramCheckClient([]), ranges, 250, 0), { read: [], undecided: ranges });
+  // A watchpoint that the emulator refuses ends the check too; a lost session fails it.
+  assert.deepEqual(await readAsRam(ramCheckClient([], new WireFailure("invalid-input", "no condition")), ranges, 250), { read: [], undecided: ranges });
+  await assert.rejects(readAsRam(ramCheckClient([], new WireFailure("machine-unavailable", "lost")), ranges, 250), /lost/);
 });
 
 test("fromHere removes its snapshot also when the restore fails, and throws the error of the work with the failed restore in it", async () => {

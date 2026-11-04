@@ -284,14 +284,7 @@ export async function readAsRam<T extends AddressRange>(
         }
         if (Date.now() >= deadline) break;
         const count = Math.min(left, CHECK_PART_FRAMES);
-        let run: Awaited<ReturnType<typeof client.execution>>;
-        try {
-          run = await client.execution({ action: "advance-frames", count, space: "c64", anchor });
-        } catch (error) {
-          // The emulator did not give a frame in time: the check ends, the capture goes on.
-          if (isRefusal(error) && error.code === "operation-failed") break;
-          throw error;
-        }
+        const run = await client.execution({ action: "advance-frames", count, space: "c64", anchor });
         // "frames": the frames of the part ran. A stop in its last frame still counts.
         if (run.stopReason === "frames") {
           left -= count;
@@ -312,8 +305,14 @@ export async function readAsRam<T extends AddressRange>(
           points.delete(id);
         }
       }
+    } catch (error) {
+      // A refusal (a point or a condition that the emulator does not take, a frame that does not come in time) ends the
+      // check with the unread ranges undecided, and the capture goes on. A lost session fails.
+      if (!isRefusal(error) || error.code === "machine-unavailable") throw error;
     } finally {
-      for (const id of points.keys()) await client.watchpoint({ action: "remove", id });
+      for (const id of points.keys()) await client.watchpoint({ action: "remove", id }).catch((error: unknown) => {
+        if (!isRefusal(error) || error.code === "machine-unavailable") throw error;
+      });
     }
   });
   return { read: ranges.filter((_, index) => read.has(index)), undecided: complete ? [] : ranges.filter((_, index) => !read.has(index)) };

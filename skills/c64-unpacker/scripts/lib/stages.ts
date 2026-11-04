@@ -195,7 +195,8 @@ export function captureSegments(
     joined.end = Math.max(joined.end, segment.end);
     return false;
   });
-  return [...apart, joined].sort((a, b) => a.start - b.start);
+  // A join over a bound of the I/O area is cut there: the RAM under it stays a segment of its own.
+  return [...apart, ...cutAtIoArea(joined).map((piece) => ({ ...piece, loaded: true as const }))].sort((a, b) => a.start - b.start);
 }
 
 /**
