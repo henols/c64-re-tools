@@ -476,7 +476,7 @@ An operand expression tells the generated source how to write the operand of one
 
 - `join` joins the batches of agents that name the program at the same time. See "Batches of parallel agents" of `<skill>/references/batches.md`.
 - `join` also takes one batch. Then `writes` shows the writes of that batch, and `join` checks the batch as it checks more batches.
-- Without `--apply`, `join` writes no knowledge. `body` holds `writes`, `repeated` and `choices`. `writes` lists the joined writes. `choices` lists each place where the batches gave different values, with the value that stays.
+- Without `--apply`, `join` writes no knowledge. But it does all the checks of `--apply`. When the knowledge refuses a write, `join` gives the same error as with `--apply`. `body` holds `writes`, `repeated` and `choices`. `writes` lists the joined writes. `choices` lists each place where the batches gave different values, with the value that stays.
 - Examine `choices` and `writes`. `nextAction` is the same `join` with `--apply`. Run it when the choices agree with your task.
 - With `--apply`, `join` writes the joined writes as one revision, or nothing when the knowledge refuses one write. Then `body` holds `revision`, `writes`, `replaced`, `repeated` and `choices`, as for `apply`.
 - When one name or one module file is at two addresses, `join` writes nothing and gives the error `conflict`. Correct the batches that the `error` names. Then do `join` again.

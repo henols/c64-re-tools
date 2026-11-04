@@ -113,8 +113,11 @@ function freshen(db: DatabaseSync, root: string): void {
   storeHashes(db, textHashes(files));
 }
 
-/** The project of each index opened for a write: its writes go to the text too. */
+/** The project of each index opened for a write or a trial: its writes go to the text too, except in a trial. */
 const projects = new WeakMap<DatabaseSync, string>();
+
+/** The databases of a trial: each transaction on them is a savepoint in the one transaction of the trial. */
+const trials = new WeakSet<DatabaseSync>();
 
 /**
  * Opens the project's knowledge read-only, made fresh from the text first. A
@@ -165,22 +168,50 @@ export function openForWrite(root: string = projectRoot()): DatabaseSync {
 }
 
 /**
- * Runs one write on the project's knowledge and closes it. When the project
- * has no knowledge yet, `work` first runs on an empty database in memory: a
- * write that is refused there creates no .c64-re-tools/. `work` must change
- * nothing outside the database it gets.
+ * Runs `work` on the project's knowledge as a trial, and closes it: every
+ * check of a write runs, and a write sees the writes before it, but all of
+ * them roll back at the end, so neither the knowledge text nor the index
+ * changes. Without knowledge text, `work` runs on an empty database in
+ * memory, and the trial creates nothing. `work` must change nothing outside
+ * the database it gets.
  */
-export function withWrite<T>(work: (db: DatabaseSync) => T, root: string = projectRoot()): T {
-  if (!existsSync(textPath(root))) {
-    const trial = new DatabaseSync(":memory:");
+export function withTrial<T>(work: (db: DatabaseSync) => T, root: string = projectRoot()): T {
+  let db: DatabaseSync;
+  if (existsSync(textPath(root))) {
+    db = openIndex(root);
+    // A transaction makes the index fresh from the text first: that rolls back too.
+    projects.set(db, root);
+  } else {
+    db = new DatabaseSync(":memory:");
     try {
-      configure(trial);
-      ensureSchema(trial);
-      work(trial);
-    } finally {
-      trial.close();
+      configure(db);
+      ensureSchema(db);
+    } catch (error) {
+      db.close();
+      throw error;
     }
   }
+  trials.add(db);
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      return work(db);
+    } finally {
+      db.exec("ROLLBACK");
+    }
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Runs one write on the project's knowledge and closes it. When the project
+ * has no knowledge yet, `work` first runs as a trial: a write that is refused
+ * there creates no .c64-re-tools/. `work` must change nothing outside the
+ * database it gets.
+ */
+export function withWrite<T>(work: (db: DatabaseSync) => T, root: string = projectRoot()): T {
+  if (!existsSync(textPath(root))) withTrial(work, root);
   const db = openForWrite(root);
   try {
     return work(db);
@@ -218,19 +249,24 @@ function writeText(db: DatabaseSync, root: string, before: string): void {
  * Runs `work` in one immediate transaction: all of it commits, or none of it
  * does. On the knowledge of a project, the index is made fresh from the text
  * first, and a work that adds a revision writes the changed knowledge files.
+ * In a trial (withTrial), it is a savepoint that writes no text: the trial rolls all of it back at its end.
  */
 export function transaction<T>(db: DatabaseSync, work: () => T): T {
   const root = projects.get(db);
-  db.exec("BEGIN IMMEDIATE");
+  const trial = trials.has(db);
+  db.exec(trial ? "SAVEPOINT work" : "BEGIN IMMEDIATE");
   try {
     if (root !== undefined) freshen(db, root);
     const before = root === undefined ? "0" : newest(db);
     const result = work();
-    if (root !== undefined && newest(db) !== before) writeText(db, root, before);
-    db.exec("COMMIT");
+    if (trial) db.exec("RELEASE work");
+    else {
+      if (root !== undefined && newest(db) !== before) writeText(db, root, before);
+      db.exec("COMMIT");
+    }
     return result;
   } catch (error) {
-    db.exec("ROLLBACK");
+    db.exec(trial ? "ROLLBACK TO work; RELEASE work" : "ROLLBACK");
     throw error;
   }
 }

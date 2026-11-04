@@ -13,7 +13,7 @@ import { IO_RAM } from "#src/host-client/coverage.ts";
 import { readImage } from "#src/host-client/image.ts";
 import { readProjectFile, readProjectJson, writeReported } from "#src/host-client/transfer.ts";
 import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
-import { withRead, withWrite } from "#src/knowledge/database.ts";
+import { withRead, withTrial, withWrite } from "#src/knowledge/database.ts";
 import { OPERAND_SELECTS, operandText, type OperandSelect } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, historyOfMacro, historyOfSwitch, revision, revisionCounts, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
@@ -1334,7 +1334,7 @@ const JOIN: CommandSpec = {
   name: "join",
   summary: "Joins the batches of agents that worked in parallel into one list of writes, and shows it. One batch shows its own writes. With --apply, it writes the list as one revision, or nothing when one write is refused.",
   subjects: [{ name: "<batch>", help: 'a batch: a list of writes, or {"owner": {"start": "$1000", "end": "$1fff"}, "ops": [...]}', list: true }],
-  options: { ...WRITE, apply: { kind: "flag", help: "write the joined writes to the project knowledge as one revision. Without it, the result only shows them" }, ...LIST },
+  options: { ...WRITE, apply: { kind: "flag", help: "write the joined writes to the project knowledge as one revision. Without it, the script does every check of --apply, writes nothing and shows the writes" }, ...LIST },
   notes: "At an address in the owner range of a batch, its name, comment, operand and module win, and its regions come last. One name or one module file at two addresses writes nothing.",
   run: (call) => {
     const batches: Batch[] = call.subjects.map((file) => {
@@ -1366,6 +1366,8 @@ const JOIN: CommandSpec = {
     }
     const shown = { repeated: joined.repeated, choices: joined.choices.map(choice) };
     if (call.flag("apply")) return { ...withWrite((db) => applied(db, contextOf(call), joined.ops)), ...shown };
+    // The writes run as a trial: every check of --apply runs, and nothing is written.
+    withTrial((db) => applied(db, contextOf(call), joined.ops));
     const body = { writes: listed(joined.ops.map(batchJson), call.count("max-listed")!, (write) => write, MORE), ...shown };
     return reply(body, { hint: "Examine each item of choices and writes. Then nextAction writes them to the project knowledge as one revision.", nextAction: call.next("join", ...call.subjects, "--apply") });
   },

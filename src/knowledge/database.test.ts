@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { Refusal } from "../errors.ts";
-import { indexPath, openForRead, openForWrite, textPath, transaction, withWrite } from "./database.ts";
+import { indexPath, openForRead, openForWrite, textPath, transaction, withTrial, withWrite } from "./database.ts";
 import { currentRevision, symbolAt } from "./read.ts";
 import { ensureSchema, INDEX_VERSION } from "./schema.ts";
 import { REVISION_ID } from "./text.ts";
@@ -210,6 +210,21 @@ test("a refused write in a project without knowledge creates nothing, and an acc
   db.close();
   assert.throws(() => withWrite((db) => renameSymbol(db, { ...context, expectedRevision: "0" }, { address: 0x2200, name: "late" }), root), failsWith("stale-revision"));
   assert.throws(() => withWrite((db) => removeSymbol(db, context, { address: 0x2200 }), root), failsWith("not-found"));
+});
+
+test("a trial runs every check of a write and changes neither the text nor the index, and without knowledge it creates nothing", () => {
+  const root = project();
+  const context = { origin: "llm" as const };
+  assert.equal(withTrial((db) => renameSymbol(db, context, { address: 0x2100, name: "main" }), root).current.name, "main");
+  assert.equal(existsSync(join(root, ".c64-re-tools")), false);
+  withWrite((db) => renameSymbol(db, context, { address: 0x2100, name: "main" }), root);
+  const files = () => ({ text: readdirSync(textPath(root)).map((file) => [file, text(root, file)]), index: readFileSync(indexPath(root)) });
+  const before = files();
+  assert.notEqual(withTrial((db) => renameSymbol(db, context, { address: 0x2200, name: "other" }), root).revision, null);
+  // A write of the trial sees the writes before it.
+  const twice = (db: DatabaseSync) => [0x2200, 0x2300].map((address) => renameSymbol(db, context, { address, name: "other" }));
+  assert.throws(() => withTrial(twice, root), failsWith("conflict"));
+  assert.deepEqual(files(), before);
 });
 
 test("a read opens the index read-only and never changes the text", () => {

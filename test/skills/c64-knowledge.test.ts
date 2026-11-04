@@ -366,6 +366,11 @@ test("join shows one batch or the batches of parallel agents as one list of writ
   const written = knowledge(root, "join", "a.json", "b.json", "--apply", "--reason", "the names of two agents");
   assert.equal(written.status, 0, JSON.stringify(written.json));
   assert.deepEqual({ ...written.json, revision: typeof written.json.revision }, { revision: "string", writes: 3, replaced: [], repeated: 0, choices: shown.choices });
+  // Without --apply, the writes run as a trial: the knowledge refuses a write as with --apply.
+  writeFileSync(join(root, "d.json"), JSON.stringify([{ op: "uncomment", address: "$3000", placement: "side" }]));
+  const refused = knowledge(root, "join", "d.json").json.error as { code: string; message: string };
+  assert.equal(refused.code, "not-found");
+  assert.match(refused.message, /^Write 1: There is no side comment at \$3000\./);
 });
 
 test("listing reads the program and the coverage in the knowledge", () => {
