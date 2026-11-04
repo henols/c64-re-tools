@@ -584,4 +584,9 @@ test("a data name at an executed start that the knowledge names as code is only 
   assert.deepEqual(result.conflicts.map((conflict) => (conflict.category === "symbol" ? conflict.address : undefined)), [0x2020]);
   assert.deepEqual(result.names, { added: 1, changed: 0, retired: 1, unchanged: 0, suppressed: 0, onExecutedCode: 1 }, "only d2020 is added; l2010 is retired");
   assert.deepEqual(analyzerNamesAt(db, 0x2010), [], "the data name on executed code is not recorded");
+  // A data name that an earlier run recorded there, before a run executed it, leaves on a rerun with the same name.
+  importFindings(db, findings("dxa", 0x2000, 0x20ff, { authoritative: { symbols: false, regions: true, references: false }, symbols: [{ address: 0x2010, name: "d2010", kind: "data" }] }));
+  const again = importFindings(db, findings("dxa", 0x2000, 0x20ff, { authoritative: { symbols: false, regions: true, references: false }, symbols: [{ address: 0x2010, name: "d2010", kind: "data" }], executed: (address) => address === 0x2010 }));
+  assert.deepEqual(again.names, { added: 0, changed: 0, retired: 1, unchanged: 0, suppressed: 0, onExecutedCode: 1 });
+  assert.deepEqual(analyzerNamesAt(db, 0x2010), []);
 });

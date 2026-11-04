@@ -197,9 +197,21 @@ function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindi
   const wanted = new Map(findings.symbols.map((symbol) => [symbol.address, symbol]));
   const settled = new Set<number>();
   const replaced = new Set<number>();
+  const dualUse = (address: number) => regionsOverlapping(db, address, address, space).some((row) => row.type === "dual-use");
+  // A data name on executed code that the knowledge names as code is only counted, and not recorded.
+  const onExecutedCode = (finding: { address: number; kind: SymbolKind }) => {
+    const current = symbolAt(db, finding.address, space);
+    return current !== undefined && isCode(current.kind) && !isCode(finding.kind) && !dualUse(finding.address) && findings.executed?.(finding.address) === true;
+  };
   for (const range of coverage) {
     for (const own of ownNames(db, analyzer, range, space)) {
       const finding = wanted.get(own.address);
+      // The analyzer's own name where the finding is only counted leaves, also when it is the same name.
+      if (finding !== undefined && onExecutedCode(finding)) {
+        change.close("analyzer_names", "space = ? AND address = ? AND origin = ?", space, own.address, analyzer);
+        result.names.retired++;
+        continue;
+      }
       // A seeded run gives back the name of the user or the LLM: the analyzer's own name there stays.
       const echo = finding !== undefined && symbolAt(db, own.address, space)?.name === finding.name;
       if (echo || (finding !== undefined && finding.name === own.name && finding.kind === own.kind)) {
@@ -212,17 +224,12 @@ function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindi
       else replaced.add(own.address);
     }
   }
-  const dualUse = (address: number) => regionsOverlapping(db, address, address, space).some((row) => row.type === "dual-use");
   for (const finding of findings.symbols) {
-    const current = symbolAt(db, finding.address, space);
-    // A data name on executed code that the knowledge names as code is only counted, and not recorded.
-    const onExecutedCode = current !== undefined && isCode(current.kind) && !isCode(finding.kind) && !dualUse(finding.address) && findings.executed?.(finding.address) === true;
-    if (onExecutedCode) {
+    if (onExecutedCode(finding)) {
       result.names.onExecutedCode++;
-      // The analyzer's own name that the finding replaces is closed above.
-      if (replaced.has(finding.address)) result.names.retired++;
       continue;
     }
+    const current = symbolAt(db, finding.address, space);
     if (current !== undefined && isCode(current.kind) !== isCode(finding.kind) && !dualUse(finding.address)) {
       result.conflicts.push({ category: "symbol", address: finding.address, reason: "kind", current, finding: { name: finding.name, kind: finding.kind } });
     }
