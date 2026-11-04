@@ -13,7 +13,7 @@ import { knowledgeNames } from "#src/knowledge/names.ts";
 import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
 import { analyze as analyzeWithDecompiler } from "#src/native/decompiler/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
-import { DECOMPILER_LIMITS, type RefusedSeed, type SeedReport } from "#src/native/types.ts";
+import { DECOMPILER_LIMITS, DXA_LIMITS, type RefusedSeed, type SeedReport } from "#src/native/types.ts";
 import { openForRead, withRead, withWrite } from "#src/knowledge/database.ts";
 import { analyzedBytes, operandImages, programCoverage, requireProgram } from "#src/knowledge/program.ts";
 import { applyBatch, type BatchOperation } from "#src/knowledge/write.ts";
@@ -22,7 +22,7 @@ import { currentRevision, listMacros, listMacroUses, listPatches, listReferences
 import { CODE_REGION_TYPES, DEFAULT_SPACE, SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
 import { platformAddresses, platformNames, platformNamesFor, romUseOfProgram, type RomUse } from "#src/platform.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call } from "#src/script.ts";
-import { codeEntries, coverageConflicts, imageReader, writtenNotExecuted, explainGaps, type GapReason, type ImageByte } from "./lib/coverage.ts";
+import { codeEntries, coverageConflicts, imageReader, referenceTargets, writtenNotExecuted, explainGaps, type GapReason, type ImageByte } from "./lib/coverage.ts";
 import { decidedFromKnowledge, dxaFindings, decompilerFindings, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
 import { instructionList } from "./lib/instructions.ts";
@@ -314,20 +314,23 @@ async function analyze(call: Call): Promise<unknown> {
   const dataRanges = [...seeds.dataRanges];
   for (const range of [...idioms.dataRanges, ...fromRom]) if (!dataRanges.some((seed) => range.start <= seed.end && range.end >= seed.start)) dataRanges.push(range);
   seeds.dataRanges = dataRanges.slice(0, DECOMPILER_LIMITS.dataRanges);
-  // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound:
-  // at most DECOMPILER_LIMITS.entryPoints (1024) entry points for both analyzers, and for the decompiler at most
-  // DECOMPILER_LIMITS.codeStarts (8192) coverage flow starts that are code in a routine. coverageSeeds gives what was used.
-  // The decompiler takes the coverage as code starts without a function. DXA has one list, without the coverage starts
-  // that it reaches by fall-through from another seed, for example the instruction after a JSR.
+  // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, then for DXA the
+  // jump and call targets of the knowledge, up to the seed bound of the analyzer: at most 1024 entry points for the decompiler
+  // and 8192 for DXA, and for the decompiler at most DECOMPILER_LIMITS.codeStarts (8192) coverage flow starts that are code
+  // in a routine. coverageSeeds gives what was used. The decompiler takes the coverage as code starts without a function.
+  // DXA has one list, without the coverage starts that it reaches by fall-through from another seed, for example the
+  // instruction after a JSR. Each target stays a seed: DXA drops routes that fall-through would show as reached.
+  const limits = analyzer === "dxa" ? DXA_LIMITS : DECOMPILER_LIMITS;
+  const targets = analyzer === "dxa" ? referenceTargets(reader, inProgram, dataRanges, space) : [];
   const fallThrough = (from: readonly number[]) => (coverage === undefined ? new Set<number>() : dxaFallThrough(from, coverage, inProgram, seeds.dataRanges));
   const reached = analyzer === "dxa" ? fallThrough([...known, ...idioms.entryPoints, ...fromCoverage]) : new Set<number>();
   const kinds = analyzer === "dxa" || coverage === undefined ? { routines: fromCoverage.filter((entry) => !reached.has(entry)), codeStarts: [] } : coverageSeedKinds(coverage, inProgram);
-  const ordered = [...new Set([...known, ...idioms.entryPoints, ...kinds.routines])];
-  seeds.entryPoints = ordered.slice(0, DECOMPILER_LIMITS.entryPoints).sort((a, b) => a - b);
+  const ordered = [...new Set([...known, ...idioms.entryPoints, ...kinds.routines, ...targets])];
+  seeds.entryPoints = ordered.slice(0, limits.entryPoints).sort((a, b) => a - b);
   const allCodeStarts = kinds.codeStarts.filter((entry) => !seeds.entryPoints.includes(entry));
-  const codeStarts = allCodeStarts.slice(0, DECOMPILER_LIMITS.codeStarts);
+  const codeStarts = allCodeStarts.slice(0, limits.codeStarts);
   // The seeds over the limits of the analyzer: it never sees them.
-  const cut = { analyzer, entryPoints: ordered.slice(DECOMPILER_LIMITS.entryPoints), codeStarts: allCodeStarts.slice(DECOMPILER_LIMITS.codeStarts), dataRanges: dataRanges.slice(DECOMPILER_LIMITS.dataRanges) };
+  const cut = { analyzer, entryPoints: ordered.slice(limits.entryPoints), codeStarts: allCodeStarts.slice(limits.codeStarts), dataRanges: dataRanges.slice(limits.dataRanges) };
   const overLimit = { entryPoints: cut.entryPoints.length, codeStarts: cut.codeStarts.length, dataRanges: cut.dataRanges.length };
   const romUsed = fromRom.filter((range) => seeds.dataRanges.includes(range)).length;
   // DXA also decodes a coverage start that it did not get, when a seed that it got reaches the start by fall-through.

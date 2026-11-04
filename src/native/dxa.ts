@@ -11,7 +11,7 @@ import { stripVTControlCharacters } from "node:util";
 import { describeError, Refusal } from "../errors.ts";
 import { hexWord, SYMBOL_NAME } from "../c64.ts";
 import { WireFailure } from "../protocol/messages.ts";
-import { checkDxaResult, checkRequestBounds, imageRange, seedsInside, type DxaParams, type DxaResult, type SeedReport } from "./types.ts";
+import { checkDxaResult, checkRequestBounds, DXA_LIMITS, imageRange, seedsInside, type DxaParams, type DxaResult, type SeedReport } from "./types.ts";
 import { Workspace } from "./staging.ts";
 import { DXA, findTool } from "./discover.ts";
 import { outputTail, runTool, runToolOrFail, type ToolContext } from "./run.ts";
@@ -117,7 +117,7 @@ export async function analyze(
   image: Buffer,
   context: ToolContext,
 ): Promise<{ result: DxaResult; attachments: Buffer[]; seeds: SeedReport }> {
-  checkRequestBounds(params);
+  checkRequestBounds(params, DXA_LIMITS);
   const executable = findTool(DXA, context.env);
   const { start, end } = imageRange(params.imageKind, image);
   const { entryPoints, dataRanges, report } = seedsInside(params, start, end);

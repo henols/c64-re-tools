@@ -1,13 +1,13 @@
 // Runtime evidence for static analysis: the coverage as entry points,
-// user/LLM code regions and JMP tables as entry points, and the check that
-// shows analyzer data over executed code.
+// user/LLM code regions, JMP tables and jump and call targets as entry
+// points, and the check that shows analyzer data over executed code.
 
 import type { DatabaseSync } from "node:sqlite";
 
-import { COVERAGE } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, inRanges } from "#src/c64.ts";
 import type { RefusedSeed, RefusedSeedReason } from "#src/native/types.ts";
 import { listReferences, listRegions, type RegionRow } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, isAnalyzer, isSemantic, type Analyzer, type Space } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, INSTRUCTION_REGION_TYPES, isAnalyzer, isSemantic, type Analyzer, type Space } from "#src/knowledge/schema.ts";
 
 /** The byte at an address of the analyzed image, or undefined outside it. */
 export type ImageByte = (address: number) => number | undefined;
@@ -32,6 +32,25 @@ export function codeEntries(db: DatabaseSync | undefined, image: ImageByte, spac
     }
   }
   return entries;
+}
+
+/**
+ * The targets of the jump and call references from code in the knowledge, of
+ * any origin, inside the image: entry points for DXA. DXA drops code that it
+ * reaches on one route only when another route runs into an instruction, for
+ * example into the operand of a BIT skip; which code it drops changes with
+ * the seeds. A target in a data range would make that range code, and DXA
+ * cannot decode both instructions of a dual-use region: such targets are left out.
+ */
+export function referenceTargets(db: DatabaseSync | undefined, image: ImageByte, dataRanges: readonly AddressRange[], space: Space = DEFAULT_SPACE): number[] {
+  const regions = listRegions(db, undefined, undefined, undefined, space);
+  const code = regions.filter((region) => INSTRUCTION_REGION_TYPES.includes(region.type));
+  const dualUse = regions.filter((region) => region.type === "dual-use");
+  const targets = new Set<number>();
+  for (const reference of listReferences(db, undefined, undefined, undefined, space)) {
+    if ((reference.kind === "jump" || reference.kind === "call") && inRanges(code, reference.from)) targets.add(reference.to);
+  }
+  return [...targets].filter((address) => image(address) !== undefined && !inRanges(dataRanges, address) && !inRanges(dualUse, address)).sort((a, b) => a - b);
 }
 
 /** Analyzer data regions that hold executed instruction starts: the coverage shows code there. */

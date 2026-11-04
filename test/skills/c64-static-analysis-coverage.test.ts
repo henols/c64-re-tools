@@ -12,9 +12,9 @@ import { COVERAGE, coverageEntries, coverageSeedKinds, dxaFallThrough, executedS
 import { openForRead, openForWrite, withWrite } from "../../src/knowledge/database.ts";
 import { importFindings } from "../../src/knowledge/import.ts";
 import { regionsOverlapping } from "../../src/knowledge/read.ts";
-import { classifyRegion, renameSymbol } from "../../src/knowledge/write.ts";
+import { addReference, classifyRegion, renameSymbol } from "../../src/knowledge/write.ts";
 import { DXA, findTool } from "../../src/native/discover.ts";
-import { codeEntries, coverageConflicts, explainGaps, imageReader, writtenNotExecuted } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
+import { codeEntries, coverageConflicts, explainGaps, imageReader, referenceTargets, writtenNotExecuted, type ImageByte } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
 import { VECTORED_ROUTINE, vectoredPrg } from "../fixtures/prg/vectored.ts";
 import { importCoverage, importImage, importPrg } from "../fixtures/program.ts";
 import { readEnvelope } from "../kit.ts";
@@ -130,6 +130,34 @@ test("code regions and JMP tables are entry points, and analyzer data over execu
   db.close();
 });
 
+test("the jump and call targets from code of any origin are DXA entry points, but not in data, in dual-use bytes or outside the image", () => {
+  const db = openForWrite(fresh());
+  importFindings(db, {
+    analyzer: "decompiler",
+    coverage: [{ start: 0x4000, end: 0x4fff }],
+    authoritative: { symbols: true, regions: true, references: true },
+    symbols: [],
+    regions: [{ start: 0x4000, end: 0x40ff, type: "code" }, { start: 0x4100, end: 0x41ff, type: "bytes" }],
+    references: [
+      { from: 0x4000, to: 0x4050, kind: "jump" },
+      { from: 0x4003, to: 0x4060, kind: "call" },
+      // A read is no flow.
+      { from: 0x4006, to: 0x4070, kind: "read" },
+      // Into a data range, into dual-use bytes, and out of the image.
+      { from: 0x4009, to: 0x4080, kind: "jump" },
+      { from: 0x400c, to: 0x4091, kind: "jump" },
+      { from: 0x400f, to: 0x9000, kind: "call" },
+      // From bytes that the knowledge holds as data.
+      { from: 0x4100, to: 0x40a0, kind: "jump" },
+    ],
+  });
+  classifyRegion(db, { origin: "llm" }, { start: 0x4090, end: 0x4092, type: "dual-use" });
+  addReference(db, { origin: "llm" }, { from: 0x4012, to: 0x40b0, kind: "jump" });
+  const image: ImageByte = (address) => (address >= 0x4000 && address <= 0x4fff ? 0xea : undefined);
+  assert.deepEqual(referenceTargets(db, image, [{ start: 0x4080, end: 0x408f }]), [0x4050, 0x4060, 0x40b0]);
+  db.close();
+});
+
 test("analyzer code on bytes that a run wrote and never executed is listed with the instructions that reach it", () => {
   const db = openForWrite(fresh());
   importFindings(db, {
@@ -224,6 +252,28 @@ test("with coverage, DXA finds the code that only a vector reaches", { skip: dxa
   assert.deepEqual(seeded.coverageSeeds, { entryPoints: 2, used: 2, romOnlyRanges: 0, romOnlyUsed: 0 }, JSON.stringify(seeded));
   assert.equal(codeAt(VECTORED_ROUTINE), "code");
   assert.deepEqual(seeded.coverageConflicts, []);
+});
+
+test("with the jump targets of the decompiler, DXA keeps the code that only a branch reaches when that route runs into a BIT operand", { skip: dxaSkip, timeout: 120_000 }, () => {
+  // $1000 LDA $60 / BMI $1009 / DEC $60 / BEQ $1012 / RTS; $1009 BEQ $100c / RTS
+  // $100c DEC $66 / BMI $1016 / RTS: only the BEQ at $1009 reaches it. $1011 NOP is not used.
+  // $1012 LDA $29 / BNE $1016; $1016 LDA $65 / BNE $1020 / INC $64 / BCS $1023 / NOP / NOP
+  // $1020 LDA #$07 / $1022 BIT $00a9, whose operand $1023 is LDA #$00 / STA $64 / RTS
+  const code = [0xa5, 0x60, 0x30, 0x05, 0xc6, 0x60, 0xf0, 0x0a, 0x60, 0xf0, 0x01, 0x60, 0xc6, 0x66, 0x30, 0x06, 0x60, 0xea, 0xa5, 0x29];
+  const root = fresh();
+  importPrg(root, Uint8Array.from([0x00, 0x10, ...code, 0xd0, 0x00, 0xa5, 0x65, 0xd0, 0x06, 0xe6, 0x64, 0xb0, 0x05, 0xea, 0xea, 0xa9, 0x07, 0x2c, 0xa9, 0x00, 0x85, 0x64, 0x60]));
+  const dxaTypeAt = (address: number) => {
+    const db = openForRead(root);
+    const region = regionsOverlapping(db, address, address).find((row) => row.origin === "dxa");
+    db?.close();
+    return region?.type;
+  };
+  bodyOf(analyzeIn(root, "--analyzer", "dxa", "--entry", "$1000"));
+  assert.equal(dxaTypeAt(0x100c), "bytes", "from the entry alone, DXA drops the route that runs into the BIT operand");
+  bodyOf(analyzeIn(root, "--entry", "$1000"));
+  const again = bodyOf(analyzeIn(root, "--analyzer", "dxa", "--entry", "$1000")) as { conflicts: unknown[] };
+  assert.equal(dxaTypeAt(0x100c), "code");
+  assert.deepEqual(again.conflicts, []);
 });
 
 test("with coverage, a branch target after an RTS is no decompiler function, and no executed start is missing", { timeout: 120_000 }, () => {

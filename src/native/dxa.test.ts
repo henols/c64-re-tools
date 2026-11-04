@@ -158,7 +158,7 @@ test("a request beyond the seed bounds is refused by name before dxa runs", asyn
   const many = (count: number) => Array.from({ length: count }, (_, index) => index);
   const env = { PATH: "" };
   const refused = (message: string) => (error: unknown) => error instanceof WireFailure && error.code === "invalid-input" && error.message === message;
-  await assert.rejects(analyze({ ...SEEDS, entryPoints: many(1025) }, PRG, context(env)), refused("The request has 1025 entry points. Give at most 1024 entry points."));
+  await assert.rejects(analyze({ ...SEEDS, entryPoints: many(8193) }, PRG, context(env)), refused("The request has 8193 entry points. Give at most 8192 entry points."));
   await assert.rejects(analyze({ ...SEEDS, dataRanges: many(1025).map((start) => ({ start, end: start })) }, PRG, context(env)), refused("The request has 1025 data ranges. Give at most 1024 data ranges."));
   await assert.rejects(analyze({ ...SEEDS, labels: many(4097).map((address) => ({ address, name: "x" })) }, PRG, context(env)), refused("The request has 4097 labels. Give at most 4096 labels."));
 });

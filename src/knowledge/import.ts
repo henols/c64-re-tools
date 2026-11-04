@@ -95,7 +95,10 @@ export interface ImportResult {
   /** The new revision, or null when nothing changed. */
   revision: string | null;
   /** The analyzer names. */
-  names: ImportCounts;
+  names: ImportCounts & {
+    /** Data names at an executed instruction start that the knowledge names as code: no conflict. */
+    onExecutedCode: number;
+  };
   regions: ImportCounts & {
     /** Data findings on executed code that the knowledge holds as code: not written, and no conflict. */
     onExecutedCode: number;
@@ -184,7 +187,9 @@ function ownNames(db: DatabaseSync, analyzer: Analyzer, range: AddressRange, spa
  * the analyzer's own names in its coverage. A name that the user or the LLM
  * gave the address already is not kept twice. A code or data kind that
  * disagrees with the name of the address is a conflict, except on dual-use
- * bytes: they are code at one time and data at another.
+ * bytes: they are code at one time and data at another. A data name at an
+ * executed instruction start that the knowledge names as code leaves nothing
+ * to decide: it is only counted, as a data region there.
  */
 function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
@@ -211,7 +216,8 @@ function importNames(db: DatabaseSync, change: Change, findings: NormalizedFindi
   for (const finding of findings.symbols) {
     const current = symbolAt(db, finding.address, space);
     if (current !== undefined && isCode(current.kind) !== isCode(finding.kind) && !dualUse(finding.address)) {
-      result.conflicts.push({ category: "symbol", address: finding.address, reason: "kind", current, finding: { name: finding.name, kind: finding.kind } });
+      if (isCode(current.kind) && findings.executed?.(finding.address) === true) result.names.onExecutedCode++;
+      else result.conflicts.push({ category: "symbol", address: finding.address, reason: "kind", current, finding: { name: finding.name, kind: finding.kind } });
     }
     if (settled.has(finding.address)) continue;
     if (current?.name === finding.name) {
@@ -464,7 +470,7 @@ export function importFindings(db: DatabaseSync, findings: NormalizedFindings, c
   const coverage = validateFindings(findings);
   return transaction(db, () => {
     const change = new Change(db, { origin: findings.analyzer, ...context }, `import-${findings.analyzer}`);
-    const result: ImportResult = { revision: null, names: counts(), regions: { ...counts(), onExecutedCode: 0 }, references: { ...counts(), inData: 0 }, conflicts: [] };
+    const result: ImportResult = { revision: null, names: { ...counts(), onExecutedCode: 0 }, regions: { ...counts(), onExecutedCode: 0 }, references: { ...counts(), inData: 0 }, conflicts: [] };
     importNames(db, change, findings, coverage, result);
     importRegions(db, change, findings, coverage, result);
     importReferences(db, change, findings, coverage, result);
