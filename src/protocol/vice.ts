@@ -76,7 +76,8 @@ export const CONDITION_REGISTERS = ["a", "x", "y", "sp"] as const;
 
 export type Condition =
   | { kind: "register"; register: (typeof CONDITION_REGISTERS)[number]; operator: Comparison; value: number }
-  | { kind: "memory"; address: number; operator: Comparison; value: number; space: Space; view: MemoryView }
+  /** `mask`: the bits of the byte that the comparison takes; all of them when it is not given. */
+  | { kind: "memory"; address: number; operator: Comparison; value: number; space: Space; view: MemoryView; mask?: number }
   | { kind: "raster"; line: number; cycle?: number };
 
 /** Raster lines and cycles per line of each video standard. */
@@ -995,12 +996,13 @@ function validateCondition(value: unknown): Condition {
       return { kind: "register", register: value.register, operator: value.operator, value: byte(value.value, "value") };
     }
     case "memory": {
-      onlyFields(value, ["kind", "address", "operator", "value", "space", "view"], "the condition");
+      onlyFields(value, ["kind", "address", "operator", "value", "space", "view", "mask"], "the condition");
       const address = validAddress(value.address, "condition address");
       if (!isOneOf(COMPARISONS, value.operator)) invalid(`condition operator must be one of ${COMPARISONS.join(", ")}`);
       const space = validSpace(value.space, "condition space");
       const view = validView(value.view, "condition view");
-      return { kind: "memory", address, operator: value.operator, value: byte(value.value, "value"), space, view };
+      const condition: Condition = { kind: "memory", address, operator: value.operator, value: byte(value.value, "value"), space, view };
+      return value.mask === undefined ? condition : { ...condition, mask: byte(value.mask, "mask") };
     }
     case "raster": {
       onlyFields(value, ["kind", "line", "cycle"], "the condition");

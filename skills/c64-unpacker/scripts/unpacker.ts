@@ -12,7 +12,7 @@ import { type AddressRange, COVERAGE, EXECUTE, formatC64Address, formatC64Range,
 import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { IO_RAM, markIoRamWrites, readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
 import { readActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
-import { WireFailure } from "#src/host-client/tools.ts";
+import { MAX_WATCH_SIZE, WireFailure } from "#src/host-client/tools.ts";
 import { readPrg } from "#src/host-client/image.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { knowledgeAt, knowledgeNames } from "#src/knowledge/names.ts";
@@ -527,6 +527,54 @@ async function usedAfter(client: ViceSessionClient): Promise<(address: number) =
   }
 }
 
+/**
+ * The CPU reads the RAM under the I/O area when bits 0 and 1 of $01 (LORAM and HIRAM) are clear; else a read there gives
+ * an I/O register or the character ROM. As the condition of a watchpoint, the emulator tests it at each read, so the
+ * reads of I/O registers (a raster wait, an interrupt acknowledge) do not stop the run.
+ */
+const RAM_UNDER_IO = { kind: "memory", address: 0x0001, operator: "eq", value: 0, mask: 0x03, space: "c64", view: "cpu" } as const;
+
+/**
+ * Runs the program on from its entry for the frames of usedAfter, with read watchpoints that stop only at a read of
+ * the RAM under the I/O area, and gives the ranges that the program read there as RAM. The memory map gives each of
+ * these reads as an I/O read. The first read of a range removes the watchpoints of the range, so the run stops at most
+ * once for each range. The machine then goes back to the entry.
+ */
+async function readAsRam<T extends AddressRange>(client: ViceSessionClient, ranges: readonly T[]): Promise<T[]> {
+  await client.snapshot({ action: "save", name: ENTRY_SNAPSHOT });
+  // The watchpoint ids of each range: a watchpoint covers at most MAX_WATCH_SIZE bytes.
+  const points = new Map<number, number>();
+  const read = new Set<number>();
+  try {
+    for (const [index, range] of ranges.entries()) {
+      for (let address = range.start; address <= range.end; address += MAX_WATCH_SIZE) {
+        const size = Math.min(MAX_WATCH_SIZE, range.end - address + 1);
+        points.set((await client.watchpoint({ action: "add", address, size, access: "read", space: "c64", condition: RAM_UNDER_IO })).id, index);
+      }
+    }
+    // The frames end where the frames of usedAfter end.
+    const anchor = await rasterAt(client);
+    let left = AFTER_ENTRY_FRAMES;
+    while (left > 0 && read.size < ranges.length) {
+      const run = await client.execution({ action: "advance-frames", count: left, space: "c64", anchor });
+      left -= run.advancedFrames ?? 0;
+      const index = run.pointId === undefined ? undefined : points.get(run.pointId);
+      if (run.stopReason !== "watchpoint" || index === undefined) break;
+      read.add(index);
+      for (const [id, of] of [...points]) {
+        if (of !== index) continue;
+        await client.watchpoint({ action: "remove", id });
+        points.delete(id);
+      }
+    }
+  } finally {
+    for (const id of points.keys()) await client.watchpoint({ action: "remove", id });
+    await client.snapshot({ action: "restore", name: ENTRY_SNAPSHOT });
+    await client.snapshot({ action: "remove", name: ENTRY_SNAPSHOT });
+  }
+  return ranges.filter((_, index) => read.has(index));
+}
+
 /** Why a capture can wait for --until in vain: a step ran over it. */
 function passedInStep(until: number, step: number): string {
   return `The CPU executed ${formatC64Address(until)} in step ${step}, before the wait for --until started. A press step runs frames. Make the steps stop before the program gets to that address, or give an --until address that the program gets to later.`;
@@ -561,7 +609,10 @@ async function capture(
     const used = options.range === undefined ? await usedAfter(client) : undefined;
     const found = used === undefined ? [options.range!] : captureSegments(followed.stages, registers.pc, { loaded: { start: load, end: Math.min(0xffff, load + bytes.length - 3) }, used });
     const segments = withoutRanges(found, options.exclude);
-    const underIo = used === undefined ? [] : notExecutedUnderIo(segments, used, vicRam(state.io, memory)).map(formatC64RangeFields);
+    // The memory map cannot show a read of the RAM under the I/O area: a run with watchpoints finds the parts that the program read as RAM.
+    const notExecuted = used === undefined ? [] : notExecutedUnderIo(segments, used, vicRam(state.io, memory));
+    const readUnderIo = notExecuted.length === 0 ? [] : await readAsRam(client, notExecuted);
+    const underIo = notExecuted.filter((range) => !readUnderIo.includes(range)).map(formatC64RangeFields);
     // The written ranges that the leftover rule took out of the segments. A --range takes no rule.
     const dropped = (options.range === undefined ? droppedRanges(followed.stages, registers.pc, [...found, ...options.exclude]) : []).map((range) => ({
       ...formatC64RangeFields(range),
@@ -600,6 +651,7 @@ async function capture(
         ...(removed.length === 0 ? {} : { removed }),
         segments: segments.map((segment) => ({ ...formatC64RangeFields(segment), ...("loaded" in segment ? { loaded: true } : {}) })),
         ...(underIo.length === 0 ? {} : { notExecutedUnderIo: underIo }),
+        ...(readUnderIo.length === 0 ? {} : { readUnderIo: readUnderIo.map(formatC64RangeFields) }),
         ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(formatC64RangeFields) }),
         ...(dropped.length === 0 ? {} : { dropped }),
         stages: showStages(followed.stages),
@@ -698,7 +750,7 @@ function captured(call: Call, { output, failed }: { output: Record<string, unkno
       dropped === 0 ? undefined : `The segments do not hold ${dropped} bytes that the stages wrote, because they are in blocks with the entry of a later stage. dropped gives their ranges. Make sure that the program does not use these bytes.`,
       underIo.length === 0
         ? undefined
-        : `In the RAM under the I/O area, the program executed no code in ${underIo.join(", ")} after the entry. The memory map cannot show reads of this RAM. Make sure that the program uses these bytes. If it does not, give each of these ranges as --exclude and capture again.`,
+        : `In the RAM under the I/O area, the program did not execute or read ${underIo.join(", ")} in the ${AFTER_ENTRY_FRAMES} frames after the entry. Make sure that the program does not use these bytes later. If it does not, give each of these ranges as --exclude and capture again.`,
       `Then put the capture ${call.string("out")!}/image.json into the project knowledge.`,
     ]),
   });

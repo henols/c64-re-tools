@@ -64,7 +64,8 @@ export function conditionExpression(condition: Condition, space: Space): string 
           "A memory target or a memory condition tests only space c64 memory. For the drive, use a watchpoint in space drive8, or a c64_run_until address target in space drive8.",
         );
       }
-      return `(@${condition.view}:${formatC64Address(condition.address)} ${operator(condition.operator)} ${formatC64Byte(condition.value)})`;
+      const byte = `@${condition.view}:${formatC64Address(condition.address)}`;
+      return `(${condition.mask === undefined ? byte : `(${byte} & ${formatC64Byte(condition.mask)})`} ${operator(condition.operator)} ${formatC64Byte(condition.value)})`;
     }
     case "raster": {
       const line = `(RL == $${condition.line.toString(16)})`;
