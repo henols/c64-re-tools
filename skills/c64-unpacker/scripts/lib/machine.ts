@@ -231,8 +231,12 @@ export async function fromHere<T>(client: Pick<ViceSessionClient, "snapshot">, w
   const restored = await attempt(() => client.snapshot({ action: "restore", name: ENTRY_SNAPSHOT }));
   const removed = await attempt(() => client.snapshot({ action: "remove", name: ENTRY_SNAPSHOT }));
   if ("error" in done) {
-    if ("error" in restored && done.error instanceof Error) done.error.message = `${done.error.message.replace(/\.?$/, ".")} The machine did not go back to the snapshot: ${(restored.error as Error).message}`;
-    throw done.error;
+    if (!("error" in restored)) throw done.error;
+    // The failed restore is in the error of the work, also when the work threw no Error.
+    const error = done.error instanceof Error ? done.error : new Error(String(done.error));
+    const why = restored.error instanceof Error ? restored.error.message : String(restored.error);
+    error.message = `${error.message.replace(/\.?$/, ".")} The machine did not go back to the snapshot: ${why}`;
+    throw error;
   }
   if ("error" in restored) throw restored.error;
   if ("error" in removed) throw removed.error;

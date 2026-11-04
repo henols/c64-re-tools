@@ -519,6 +519,9 @@ test("fromHere removes its snapshot also when the restore fails, and throws the 
   const both = client(true);
   await assert.rejects(fromHere(both.client, async () => Promise.reject(new Error("work failed"))), /^Error: work failed\. The machine did not go back to the snapshot: restore failed$/);
   assert.deepEqual(both.actions, ["save", "restore", "remove"]);
+  // A work that throws no Error still names the failed restore.
+  const text = client(true);
+  await assert.rejects(fromHere(text.client, async () => Promise.reject("work failed")), /^Error: work failed\. The machine did not go back to the snapshot: restore failed$/);
   const restore = client(true);
   await assert.rejects(fromHere(restore.client, async () => 1), /restore failed/);
   assert.deepEqual(restore.actions, ["save", "restore", "remove"]);

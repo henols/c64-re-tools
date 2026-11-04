@@ -141,7 +141,7 @@ export class C64RunSession {
    * A core that does not answer within the limit is stopped: every command then fails.
    */
   command(text: string, limitMs = commandLimitMs(text)): Promise<string> {
-    if (INPUT_COMMANDS.test(text)) return Promise.reject(new Error(`c64run ${text.split(" ")[0]}: send input with key() or joy()`));
+    if (INPUT_COMMANDS.test(text)) return Promise.reject(new WireFailure("operation-failed", `c64run ${text.split(" ")[0]}: send input with key() or joy()`));
     return this.#send(text, limitMs);
   }
 

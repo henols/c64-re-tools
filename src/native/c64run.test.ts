@@ -74,7 +74,7 @@ test("key and joy report each input with its tick to the listener, and no input 
       [{ kind: "key", code: 0x8a, down: true }, 42],
       [{ kind: "joy", masks: [0, 0x10] }, 42],
     ]);
-    await assert.rejects(session.command("key 8a up"), /key\(\) or joy\(\)/);
+    await assert.rejects(session.command("key 8a up"), (error: unknown) => error instanceof WireFailure && error.code === "operation-failed" && /key\(\) or joy\(\)/.test(error.message));
     await assert.rejects(session.command("joy 0 0"), /key\(\) or joy\(\)/);
   } finally {
     await session.close();
