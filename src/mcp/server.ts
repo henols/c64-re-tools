@@ -91,12 +91,8 @@ export function requireFields(action: string, given: Record<string, unknown>, al
   }
 }
 
-/**
- * Checks the fields that go with out: project only with out, and the
- * fields of `notWithOut` only without it.
- */
-export function requireOut(given: { out?: unknown; project?: unknown } & Record<string, unknown>, notWithOut: readonly string[] = []): void {
-  if (given.out === undefined && given.project !== undefined) throw new WireFailure("invalid-input", "project is used only with out.");
+/** Checks the fields that go with out: the fields of `notWithOut` only without it. */
+export function requireOut(given: { out?: unknown } & Record<string, unknown>, notWithOut: readonly string[]): void {
   for (const field of notWithOut) {
     if (given.out !== undefined && given[field] !== undefined) throw new WireFailure("invalid-input", `${field} is not used with out.`);
   }
@@ -223,8 +219,8 @@ async function runCall(
   if (!parsed.success) return { failed: { code: "invalid-input", message: describeIssues(parsed.error, tool.inputSchema) } };
   try {
     // An out path is checked before the tool runs: a refused path must not lose the work or leave its side effects.
-    const fields = parsed.data as { out?: unknown; project?: unknown };
-    if (typeof fields.out === "string") checkOut(fields.out, typeof fields.project === "string" ? fields.project : undefined);
+    const fields = parsed.data as { out?: unknown };
+    if (typeof fields.out === "string") checkOut(fields.out);
     let output: unknown;
     try {
       output = await tool.run(parsed.data, await session());
@@ -261,8 +257,8 @@ const INSTRUCTIONS =
   "Space c64 is the computer. Space drive8 is the CPU of the 1541 disk drive. " +
   "Memory view cpu gives what the CPU sees now, with ROM and I/O where the memory configuration puts them. Memory view ram gives the RAM under them. " +
   "A write to memory or registers needs a stopped CPU: stop it with c64_execution action pause. " +
-  "Paths are relative to the project folder, the folder that holds .c64-re-tools/. " +
-  "With out, a tool writes a large result to a project file in place of the result.";
+  "Give each path as an absolute path, for example /home/me/game/build/game.prg. A tool reads and writes only the files of a project folder. " +
+  "With out, a tool writes a large result to a file in place of the result. The result then gives the absolute path of the file.";
 
 export function createMcpServer(options: { tools: readonly ToolDefinition[]; session: SessionSource; log?: (line: string) => void }): Server {
   const tools = new Map(options.tools.map((tool) => [tool.name, tool]));

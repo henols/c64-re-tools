@@ -5,7 +5,7 @@
 // and registers against the values that the run file gives.
 
 import { existsSync } from "node:fs";
-import { posix } from "node:path";
+import { isAbsolute, posix } from "node:path";
 
 import { formatC64Address, formatC64Byte, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
 import { screenText } from "#src/graphics.ts";
@@ -18,7 +18,7 @@ import { isInteger, isObject, MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS,
 import { readProjectFile, readProjectJson, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { checkSnapshotFile } from "#src/media.ts";
-import { checkOutputPath, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, resolveProjectPath } from "#src/project.ts";
+import { checkOutputPath, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, readRelative, resolveProjectPath } from "#src/project.ts";
 import { namesOf } from "./scenario.ts";
 import { namesStartScreen, passStartScreen } from "./start-screen.ts";
 
@@ -446,9 +446,10 @@ export interface KeptPath {
  * run.json, results.json and each file that the run wrote into `out`, and
  * each file in .c64-re-tools/local/ that the run file starts from (the
  * program, the snapshot, the symbols and the snapshot steps) in inputs/. The
- * run file gets the new paths of those files only; another path stays as it
- * is. All files are read before the first write, and the target must not
- * exist, so a refusal leaves nothing behind.
+ * run file gets the new paths of those files; another absolute path becomes
+ * relative to the project folder, and a relative path stays as it is. All
+ * files are read before the first write, and the target must not exist, so
+ * a refusal leaves nothing behind.
  */
 export function keepRun(path: string, out: string, target: string): { out: string; files: Written[]; paths: KeptPath[] } {
   const run = readRun(path);
@@ -511,8 +512,10 @@ export function keepRun(path: string, out: string, target: string): { out: strin
     return input.to;
   };
   const moved = (holder: Record<string, unknown>, key: string, field: string) => {
-    const to = keep(field, holder[key]);
+    const value = holder[key];
+    const to = keep(field, value);
     if (to !== undefined) holder[key] = to;
+    else if (typeof value === "string" && isAbsolute(value)) holder[key] = readRelative(value);
   };
   moved(raw.start, "program", "start.program");
   moved(raw.start, "snapshot", "start.snapshot");

@@ -5,14 +5,15 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import { Refusal } from "./errors.ts";
-import { findProject, groupAt, groupOf, namedProject, newProjectFolder, projectRelative, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath, resolveReadFile, resolveReadPath } from "./project.ts";
+import { ensureLocal, fileProject, findProject, groupAt, groupOf, namedProject, newProjectFolder, projectRelative, projectRoot, readRelative, resolveProjectFile, resolveProjectPath, resolveReadFile, resolveReadPath } from "./project.ts";
 
 const root = process.cwd();
 
-test("project paths stay under the harness working directory", () => {
+test("a project path is relative to the project folder or absolute, and stays inside it", () => {
   assert.equal(resolveProjectPath("src/main.a", root), resolve(root, "src/main.a"));
+  assert.equal(resolveProjectPath(resolve(root, "src", "main.a"), root), resolve(root, "src/main.a"));
   assert.throws(() => resolveProjectPath("../outside", root), /leads out of the project folder/);
-  assert.throws(() => resolveProjectPath(resolve(root, "absolute"), root), /is not relative/);
+  assert.throws(() => resolveProjectPath(resolve(root, "..", "outside"), root), /leads out of the project folder/);
 });
 
 test("project files must really be inside the project, also through symbolic links", () => {
@@ -86,13 +87,10 @@ test("a folder with projects below it refuses and lists them; a plain folder is 
       () => findProject(workspace),
       refusal("invalid-input", new RegExp(`These folders below it are projects: hover-bovver, ${join("more", "boulder-dash").replaceAll("\\", "\\\\")}\\. Give --project <folder>`)),
     );
-    assert.throws(() => findProject(workspace, { remedy: "Give project: <folder>" }), refusal("invalid-input", /Give project: <folder> with one of them/));
-    assert.equal(resolveProject("hover-bovver", workspace), join(workspace, "hover-bovver"));
 
     const plain = join(home, "plain");
     mkdirSync(join(plain, "src"), { recursive: true });
     assert.equal(findProject(plain), plain);
-    assert.equal(resolveProject(undefined, plain), plain);
   });
 });
 
@@ -157,15 +155,15 @@ test("a project gets .c64-re-tools/local/ with a .gitignore that ignores everyth
   withHome((home) => {
     const game = join(home, "game");
     mkdirSync(join(game, ".c64-re-tools"), { recursive: true });
-    assert.equal(resolveProject(undefined, join(game)), game);
+    ensureLocal(game);
     assert.match(readFileSync(join(game, ".c64-re-tools", "local", ".gitignore"), "utf8"), /^\*$/m);
     writeFileSync(join(game, ".c64-re-tools", "local", ".gitignore"), "kept\n");
-    resolveProject("game", home);
+    ensureLocal(game);
     assert.equal(readFileSync(join(game, ".c64-re-tools", "local", ".gitignore"), "utf8"), "kept\n", "an existing .gitignore stays");
 
     const plain = join(home, "plain");
     mkdirSync(plain);
-    resolveProject(undefined, plain);
+    ensureLocal(plain);
     assert.equal(existsSync(join(plain, ".c64-re-tools")), false);
   });
 });
@@ -237,22 +235,59 @@ test("in a group, the lookup refuses a folder that is no project, a group folder
     // A folder of the group that is no project: a write there would make it a project of the group.
     assert.throws(() => findProject(join(game, "docs", "pages")), refusal("invalid-input", /docs\/pages is in the group folder .*fist, and it is not a project folder\. The projects of the group are \.\.\/\.\.\/v1, \.\.\/\.\.\/v2\. Give --project <folder> with one of them\. To make this folder a new project of the group, give the folder itself: \.$/));
     assert.throws(() => findProject(join(game, "v3")), refusal("invalid-input", /The projects of the group are \.\.\/v1, \.\.\/v2/));
-    assert.throws(() => resolveProject(undefined, join(game, "docs"), { remedy: "Give project: <folder>" }), refusal("invalid-input", /Give project: <folder> with one of them/));
     assert.equal(findProject(join(game, "v1")), join(game, "v1"));
-    // A new version is named with its folder.
-    assert.equal(resolveProject("v3", game), join(game, "v3"));
-    // The group folder is no project.
-    assert.throws(() => resolveProject(".", game, { remedy: "Give project: <folder>" }), refusal("invalid-input", /fist is a group folder, not a project folder\. These folders in it are projects: v1, v2\. Give project: <folder> with one of them\.$/));
-    assert.equal(existsSync(join(game, ".c64-re-tools")), false);
 
     // A read of a version reaches the group folder; a write does not.
     const v2 = join(game, "v2");
     assert.equal(resolveReadPath("../v1/game.prg", v2), join(game, "v1", "game.prg"));
+    assert.equal(resolveReadPath(join(game, "v1", "game.prg"), v2), join(game, "v1", "game.prg"));
+    assert.equal(readRelative(join(game, "v1", "game.prg"), v2), "../v1/game.prg");
     assert.equal(resolveReadFile("../v1/game.prg", v2), realpathSync(join(game, "v1", "game.prg")));
-    assert.throws(() => resolveReadPath("../../other.prg", v2), /leads out of the group folder of the project/);
+    assert.throws(() => resolveReadPath("../../other.prg", v2), /leads out of the group folder .*fist of the project/);
     assert.throws(() => resolveReadFile("outside-link", v2), /leads out of the group folder of the project through a symbolic link/);
     assert.throws(() => resolveProjectPath("../v1/game.prg", v2), /leads out of the project folder/);
     // A project in no group reads only in its folder.
     assert.throws(() => resolveReadPath("../games/other.prg", join(home, "alone")), /leads out of the project folder/);
+  });
+});
+
+test("the project of a file of an MCP tool is the project at or above it by the project rules", () => {
+  withHome((home) => {
+    // The field run: the agent starts in a folder that holds several projects.
+    const games = join(home, "games");
+    const bruce = join(games, "bruce");
+    mkdirSync(join(bruce, ".c64-re-tools"), { recursive: true });
+    mkdirSync(join(bruce, "build"));
+    mkdirSync(join(games, "fist", ".c64-re-tools"), { recursive: true });
+    assert.equal(fileProject(join(bruce, "build", "game.prg"), "read"), bruce);
+    // A new file in a new folder: the lookup starts at the first folder above it that exists.
+    assert.equal(fileProject(join(bruce, "dumps", "new", "mem.bin"), "write"), bruce);
+    assert.equal(existsSync(join(bruce, ".c64-re-tools", "local", ".gitignore")), true);
+    // A project inside a project is a project of its own.
+    const disk2 = join(bruce, "disk2");
+    mkdirSync(join(disk2, ".c64-re-tools"), { recursive: true });
+    assert.equal(fileProject(join(disk2, "game.d64"), "read"), disk2);
+    // A plain folder without projects below it is a project by the rules.
+    const plain = join(home, "plain");
+    mkdirSync(join(plain, "build"), { recursive: true });
+    assert.equal(fileProject(join(plain, "build", "game.prg"), "read"), join(plain, "build"));
+
+    assert.throws(() => fileProject(join(games, "notes.bin"), "write"), refusal("invalid-input", /games, and it is not a project folder\. These folders below it are projects: bruce, fist\. Give a file in one of them\.$/));
+    assert.throws(() => fileProject(join(home, "x.bin"), "write"), refusal("invalid-input", /the home folder is not a project folder\. Give a file in a project folder\.$/));
+  });
+});
+
+test("an MCP tool reads in the group folder of a project, and writes only in a project", () => {
+  withHome((home) => {
+    const repository = join(home, "games");
+    const game = join(repository, "fist");
+    for (const version of ["v1", "v2"]) mkdirSync(join(game, version, ".c64-re-tools"), { recursive: true });
+    mkdirSync(join(repository, ".git"));
+    mkdirSync(join(game, "shared"));
+    writeFileSync(join(game, "shared", "game.prg"), "x");
+    const root = fileProject(join(game, "shared", "game.prg"), "read");
+    assert.equal(resolveReadFile(join(game, "shared", "game.prg"), root), realpathSync(join(game, "shared", "game.prg")));
+    assert.equal(fileProject(join(game, "notes.prg"), "read"), join(game, "v1"));
+    assert.throws(() => fileProject(join(game, "shared", "out.bin"), "write"), refusal("invalid-input", /is in the group folder .*fist, and not in a project of the group\. The projects of the group are \.\.\/v1, \.\.\/v2\. Give a file in one of them\.$/));
   });
 });

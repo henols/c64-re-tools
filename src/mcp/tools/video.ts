@@ -6,9 +6,9 @@ import { z } from "zod";
 import { formatC64Address, formatSprite, formatVicii } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { CIA_SELECTIONS, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, MAX_OBSERVE_BYTES, MAX_OBSERVE_RANGES, SPACES, VICII_MODES, type ObserveParams } from "../../protocol/vice.ts";
-import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
+import { OutInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, Byte, MemoryViewInput, SpaceInput } from "../inputs.ts";
-import { AddressOutput, defineTool, HexData, requireFields, requireOut, ToolOutput, TransientName } from "../server.ts";
+import { AddressOutput, defineTool, HexData, requireFields, ToolOutput, TransientName } from "../server.ts";
 import { c64Registers } from "./memory.ts";
 
 const Color = z.number().int().min(0).max(15);
@@ -134,7 +134,7 @@ const c64Screen = defineTool({
   title: "Capture and compare the C64 screen",
   description:
     "Action capture returns the last frame the C64 drew, with its borders, as a PNG image, plus its width and height in pixels. " +
-    "With out, capture writes the PNG to that project file, and compare writes its difference image there. The result then has no image. " +
+    "With out, capture writes the PNG to that file, and compare writes its difference image there. The result then has no image. " +
     "With baseline, the session also keeps that frame under the name. " +
     "Action compare compares the current frame with a baseline, pixel by pixel. mask lists rectangles to ignore. " +
     "A mask that covers the whole frame is invalid input. comparedPixels is the number of pixels outside the mask. " +
@@ -151,7 +151,6 @@ const c64Screen = defineTool({
       mask: z.array(Rectangle).max(MAX_MASK_RECTANGLES).optional().describe("compare only: rectangles to ignore, in frame pixels"),
       includeDiff: z.boolean().optional().describe("compare only: also return a difference image"),
       out: OutInput.optional(),
-      project: ProjectInput.optional().describe("capture and compare with out only: the project folder, relative to the folder where the agent started. Give it when that folder is not in a project and has projects below it"),
     })
     .strict(),
   outputSchema: z.object({
@@ -171,23 +170,21 @@ const c64Screen = defineTool({
   async run(input, session) {
     const { action, ...fields } = input;
     if (action === "capture") {
-      requireOut(fields);
-      requireFields(action, fields, ["baseline", "out", "project"]);
+      requireFields(action, fields, ["baseline", "out"]);
       const shot = await session.screenCapture(fields.baseline);
       const result = { width: shot.width, height: shot.height, ...(shot.baseline === undefined ? {} : { baseline: shot.baseline }) };
-      if (fields.out !== undefined) return { ...result, ...writeOut(fields.out, Buffer.from(shot.png, "base64"), fields.project) };
+      if (fields.out !== undefined) return { ...result, ...writeOut(fields.out, Buffer.from(shot.png, "base64")) };
       return new ToolOutput(result, [{ type: "image", data: shot.png, mimeType: "image/png" }]);
     }
     if (action === "compare") {
-      requireOut(fields);
-      requireFields(action, fields, ["baseline", "maxMismatchRatio", "mask", "includeDiff", "out", "project"], ["baseline"]);
+      requireFields(action, fields, ["baseline", "maxMismatchRatio", "mask", "includeDiff", "out"], ["baseline"]);
       const { diffPng, ...result } = await session.screenCompare({
         baseline: fields.baseline!,
         maxMismatchRatio: fields.maxMismatchRatio ?? 0,
         mask: fields.mask ?? [],
         includeDiff: (fields.includeDiff ?? false) || fields.out !== undefined,
       });
-      if (fields.out !== undefined && diffPng !== undefined) return { ...result, ...writeOut(fields.out, Buffer.from(diffPng, "base64"), fields.project) };
+      if (fields.out !== undefined && diffPng !== undefined) return { ...result, ...writeOut(fields.out, Buffer.from(diffPng, "base64")) };
       return diffPng === undefined ? result : new ToolOutput(result, [{ type: "image", data: diffPng, mimeType: "image/png" }]);
     }
     if (action === "list") {

@@ -1,8 +1,10 @@
 // The project: the nearest folder at or above the working directory that
 // holds .c64-re-tools/, below the home folder, the way git finds .git. A skill
-// script names it with --project <folder> and an MCP tool with `project`. Every
-// project path is relative to that folder. .c64-re-tools/local/ holds what
-// the agent saves for itself and ignores itself in git.
+// script can name it with --project <folder>; a project path of a script is
+// relative to that folder, or absolute inside it. An MCP tool takes absolute
+// paths only, and the project of a file is the project at or above it
+// (fileProject). .c64-re-tools/local/ holds what the agent saves for itself
+// and ignores itself in git.
 
 import { Refusal } from "./errors.ts";
 import { accessSync, constants, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
@@ -36,11 +38,7 @@ const SEARCH_DEPTH = 3;
 /** At most this many projects are named in a refusal. */
 const LISTED_PROJECTS = 20;
 
-/** How a refusal tells the caller to name a project: "--project <folder>" for a script, "project" for an MCP tool. */
-export interface ProjectRemedy {
-  remedy?: string;
-}
-
+/** How a refusal of a script tells the caller to name a project. */
 const SCRIPT_REMEDY = "Give --project <folder>";
 
 /** The folder that --project chose for this process, or undefined. */
@@ -102,37 +100,71 @@ function listed(projects: readonly string[]): string {
 }
 
 /**
- * The project of the working directory `cwd` by the project rules: the nearest
- * folder at or above it with .c64-re-tools/, below the home folder. Without
- * one, `cwd` itself, unless projects are below it or it is the home folder:
- * then a Refusal names them and the remedy, so no write lands outside a
- * project.
+ * What the project rules find from the folder `start`: the nearest folder at
+ * or above it with .c64-re-tools/, below the home folder. Without one, `start`
+ * itself, unless it is the home folder, has projects below it, or is a folder
+ * of a group that is no project: then why it is in no project, so no write
+ * lands outside a project.
  */
-export function findProject(cwd: string = process.cwd(), options: ProjectRemedy = {}): string {
-  const start = resolve(cwd);
-  const remedy = options.remedy ?? SCRIPT_REMEDY;
+type Lookup = { root: string } | { home: true } | { below: string[] } | { group: ProjectGroup };
+
+function lookUp(start: string): Lookup {
   for (const folder of foldersUpFrom(start)) {
-    if (isProject(folder)) return folder;
+    if (isProject(folder)) return { root: folder };
   }
-  if (start === homedir()) {
-    throw new Refusal("invalid-input", `The home folder is not a project folder. Start in a project folder, or ${remedy.charAt(0).toLowerCase()}${remedy.slice(1)}.`);
-  }
+  if (start === homedir()) return { home: true };
   const below = projectsBelow(start);
-  if (below.length > 0) {
-    throw new Refusal("invalid-input", `${start} is not a project folder. These folders below it are projects: ${listed(below)}. ${remedy} with one of them.`);
-  }
+  if (below.length > 0) return { below };
   // A folder of a group that is no project, for example its docs/: a write there would make it a project of the group.
   const group = foldersUpFrom(start).slice(1).map(groupAt).find((each) => each !== undefined);
-  if (group !== undefined) {
-    const projects = [...group.projects.values()].map((project) => relative(start, project).split(sep).join("/"));
-    throw new Refusal("invalid-input", `${start} is in the group folder ${group.root}, and it is not a project folder. The projects of the group are ${listed(projects)}. ${remedy} with one of them. To make this folder a new project of the group, give the folder itself: .`);
+  return group === undefined ? { root: start } : { group };
+}
+
+/** The projects of a group, relative to `start` and with /. */
+function groupProjects(group: ProjectGroup, start: string): string {
+  return listed([...group.projects.values()].map((project) => relative(start, project).split(sep).join("/")));
+}
+
+/**
+ * The project of the working directory `cwd` by the project rules (lookUp).
+ * A folder in no project is a Refusal that names the projects and the remedy.
+ */
+export function findProject(cwd: string = process.cwd()): string {
+  const start = resolve(cwd);
+  const found = lookUp(start);
+  if ("root" in found) return found.root;
+  if ("home" in found) throw new Refusal("invalid-input", `The home folder is not a project folder. Start in a project folder, or give --project <folder>.`);
+  if ("below" in found) throw new Refusal("invalid-input", `${start} is not a project folder. These folders below it are projects: ${listed(found.below)}. ${SCRIPT_REMEDY} with one of them.`);
+  throw new Refusal("invalid-input", `${start} is in the group folder ${found.group.root}, and it is not a project folder. The projects of the group are ${groupProjects(found.group, start)}. ${SCRIPT_REMEDY} with one of them. To make this folder a new project of the group, give the folder itself: .`);
+}
+
+/**
+ * The project of the absolute path `file` that an MCP tool reads or writes:
+ * the project rules (lookUp) from the folder of the file, or from the first
+ * folder above it that exists, because a new file can be in a new folder. A
+ * file that a tool only reads can also be in a group folder outside its
+ * projects: then the project is the first project of the group, whose reads
+ * reach the group folder. Any other file in no project is a Refusal with the
+ * remedy.
+ */
+export function fileProject(file: string, access: "read" | "write"): string {
+  let start = dirname(resolve(file));
+  while (statSync(start, { throwIfNoEntry: false })?.isDirectory() !== true && dirname(start) !== start) start = dirname(start);
+  const found = lookUp(start);
+  if ("root" in found) {
+    ensureLocal(found.root);
+    return found.root;
   }
-  return start;
+  if ("home" in found) throw new Refusal("invalid-input", `${file} is in the home folder, and the home folder is not a project folder. Give a file in a project folder.`);
+  const group = "group" in found ? found.group : groupAt(start);
+  if (access === "read" && group !== undefined) return [...group.projects.values()][0]!;
+  if ("below" in found) throw new Refusal("invalid-input", `${file} is in ${start}, and it is not a project folder. These folders below it are projects: ${listed(found.below)}. Give a file in one of them.`);
+  throw new Refusal("invalid-input", `${file} is in the group folder ${found.group.root}, and not in a project of the group. The projects of the group are ${groupProjects(found.group, start)}. Give a file in one of them.`);
 }
 
 /** The refusal of a group folder as a project: a write there would make it a project, and then it is no group. */
-function groupRefusal(path: string, group: ProjectGroup, remedy: string): Refusal {
-  return new Refusal("invalid-input", `${path} is a group folder, not a project folder. These folders in it are projects: ${listed([...group.projects.keys()])}. ${remedy} with one of them.`);
+function groupRefusal(path: string, group: ProjectGroup): Refusal {
+  return new Refusal("invalid-input", `${path} is a group folder, not a project folder. These folders in it are projects: ${listed([...group.projects.keys()])}. ${SCRIPT_REMEDY} with one of them.`);
 }
 
 /**
@@ -245,15 +277,6 @@ export function ensureLocal(root: string): void {
   }
 }
 
-/** The project of an MCP call or another caller without process state: `folder` when given, else the project lookup from `cwd`. */
-export function resolveProject(folder: string | undefined, cwd: string = process.cwd(), options: ProjectRemedy = {}): string {
-  const root = folder === undefined ? findProject(cwd, options) : namedProject(folder, cwd);
-  const group = folder === undefined ? undefined : groupAt(root);
-  if (group !== undefined) throw groupRefusal(root, group, options.remedy ?? SCRIPT_REMEDY);
-  ensureLocal(root);
-  return root;
-}
-
 /** Sets the project of this process from --project. Refuses a folder that the rules refuse. */
 export function useProject(folder: string): void {
   chosen = namedProject(folder);
@@ -267,7 +290,7 @@ export function namedGroup(): ProjectGroup | undefined {
 
 /** The project folder of this process: the --project choice, else the project lookup from the working directory. A group folder is refused. */
 export function projectRoot(): string {
-  if (chosenGroup !== undefined) throw groupRefusal(chosenGroup.root, chosenGroup, SCRIPT_REMEDY);
+  if (chosenGroup !== undefined) throw groupRefusal(chosenGroup.root, chosenGroup);
   let root = chosen;
   if (root === undefined) {
     const cwd = process.cwd();
@@ -279,17 +302,17 @@ export function projectRoot(): string {
   return root;
 }
 
+/** The remedy of a project path that leads out of its folder: the two forms that a script takes. */
+const INSIDE_REMEDY = "Give a path inside it, relative to the project folder or absolute.";
+
+/** The absolute path of a project path: relative to the project folder `root`, or absolute. It must stay inside the project folder. */
 export function resolveProjectPath(path: string, root = projectRoot()): string {
   if (path.length === 0) {
     throw new Refusal("invalid-input", "A project path must not be empty.");
   }
-  if (isAbsolute(path)) {
-    throw new Refusal("invalid-input", `${path} is not relative: give a path relative to the project folder.`);
-  }
-
   const candidate = resolve(root, path);
   if (isInside(root, candidate)) return candidate;
-  throw new Refusal("invalid-input", `${path} leads out of the project folder: give a path that stays inside it.`);
+  throw new Refusal("invalid-input", `${path} leads out of the project folder ${root}. ${INSIDE_REMEDY}`);
 }
 
 /** The folder of the committed knowledge text in PROJECT_DIRECTORY. */
@@ -353,7 +376,7 @@ export function writeProblem(error: unknown, path: string, what?: string): strin
 export function checkOutputPath(path: string, kind: OutputKind, options: { root?: string; what?: string } = {}): string {
   const root = options.root ?? projectRoot();
   const what = options.what;
-  const outside = () => new Refusal("invalid-input", `${what ?? path}: give a path relative to the project folder that stays inside it, not ${path}.`);
+  const outside = () => new Refusal("invalid-input", `${what === undefined ? "" : `${what}: `}${path} leads out of the project folder ${root}. Give a path that stays inside it.`);
   const problem = (error: unknown) => {
     const message = writeProblem(error, path, what);
     return message === undefined ? error : new Refusal("invalid-input", message);
@@ -443,17 +466,22 @@ export function readGroup(root: string): ProjectGroup | undefined {
 }
 
 /**
- * Resolves a path that a command only reads, relative to the project folder,
- * as resolveProjectPath does. In a group the path can also lead into the group
- * folder, so a version reads the files of the other versions, for example
- * ../v1/releases/game.prg. A write stays in the project.
+ * Resolves a path that a command only reads, relative to the project folder
+ * or absolute, as resolveProjectPath does. In a group the path can also lead
+ * into the group folder, so a version reads the files of the other versions,
+ * for example ../v1/releases/game.prg. A write stays in the project.
  */
 export function resolveReadPath(path: string, root = projectRoot()): string {
   const group = readGroup(root);
-  if (group === undefined || path.length === 0 || isAbsolute(path)) return resolveProjectPath(path, root);
+  if (group === undefined || path.length === 0) return resolveProjectPath(path, root);
   const candidate = resolve(root, path);
   if (isInside(group.root, candidate)) return candidate;
-  throw new Refusal("invalid-input", `${path} leads out of the group folder of the project: give a path that stays inside it.`);
+  throw new Refusal("invalid-input", `${path} leads out of the group folder ${group.root} of the project. ${INSIDE_REMEDY}`);
+}
+
+/** A path that a command reads, in the one spelling that a project file keeps: relative to the project folder, with /. A path into the group folder starts with ../. Refuses a path as resolveReadPath does. */
+export function readRelative(path: string, root = projectRoot()): string {
+  return relative(root, resolveReadPath(path, root)).split(sep).join("/");
 }
 
 /** resolveReadPath to an existing entry whose real location is inside the project, or in a group inside the group folder, as resolveProjectFile does. */

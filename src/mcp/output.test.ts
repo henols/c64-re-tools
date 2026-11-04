@@ -12,22 +12,21 @@ const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-out-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const project = join(scratch, "project");
 const outside = join(scratch, "outside");
-mkdirSync(project);
+mkdirSync(join(project, ".c64-re-tools"), { recursive: true });
 mkdirSync(outside);
 
 const refused = (error: unknown) => error instanceof WireFailure && error.code === "invalid-input";
 
-test("out writes the bytes to a project file, makes its directories and overwrites", () => {
-  const first = writeOut("dumps/ram.bin", Buffer.from([1, 2, 3]), project);
-  assert.deepEqual(first, { out: "dumps/ram.bin", bytes: 3, sha256: createHash("sha256").update(Buffer.from([1, 2, 3])).digest("hex") });
-  writeOut("dumps/ram.bin", "text\n", project);
+test("out writes the bytes to the absolute path of a project file, makes its directories, overwrites and gives the absolute path", () => {
+  const first = writeOut(join(project, "dumps", "..", "dumps", "ram.bin"), Buffer.from([1, 2, 3]));
+  assert.deepEqual(first, { out: join(project, "dumps", "ram.bin"), bytes: 3, sha256: createHash("sha256").update(Buffer.from([1, 2, 3])).digest("hex") });
+  writeOut(join(project, "dumps", "ram.bin"), "text\n");
   assert.equal(readFileSync(join(project, "dumps", "ram.bin"), "utf8"), "text\n");
 });
 
-test("out refuses a path outside the project, also through a symbolic link", { skip: process.platform === "win32" ? "symbolic links need extra rights on Windows" : false }, () => {
-  for (const path of ["../escape.bin", join(outside, "abs.bin")]) assert.throws(() => writeOut(path, "x", project), refused, path);
+test("out refuses a path that leads out of the project through a symbolic link", { skip: process.platform === "win32" ? "symbolic links need extra rights on Windows" : false }, () => {
   symlinkSync(outside, join(project, "linked-dir"));
-  assert.throws(() => writeOut("linked-dir/x.bin", "x", project), refused);
+  assert.throws(() => writeOut(join(project, "linked-dir", "x.bin"), "x"), refused);
   symlinkSync(join(outside, "target.bin"), join(project, "linked-file.bin"));
-  assert.throws(() => writeOut("linked-file.bin", "x", project), refused);
+  assert.throws(() => writeOut(join(project, "linked-file.bin"), "x"), refused);
 });

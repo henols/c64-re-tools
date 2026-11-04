@@ -8,7 +8,7 @@ import { WireFailure } from "../../protocol/messages.ts";
 import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_TRACE_FRAMES, MAX_TRACE_HITS, MAX_TRACE_POINTS, TRACE_KINDS, TRACE_ENDS, MAX_MEMMAP_RANGES, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type TraceHit, type TraceKind, type Watchpoint } from "../../protocol/vice.ts";
 import { readCoverage } from "../../host-client/coverage.ts";
 import { readMemoryInParts } from "../../host-client/vice-session.ts";
-import { linesText, OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
+import { linesText, OutInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, Byte, SpaceInput, TOOL_INPUTS } from "../inputs.ts";
 import { AddressOutput, ConditionOutput, defineTool, HexData, requireFields, requireOut, showCondition, toCondition } from "../server.ts";
 import { spaced } from "./memory.ts";
@@ -141,10 +141,10 @@ const c64CpuHistory = defineTool({
     `limit is the number of instructions (1 to ${MAX_HISTORY}, default 50). ` +
     "Each entry gives the address, the bytes, the instruction and the registers a, x, y and sp before the instruction executed. " +
     "In space c64, it also gives the raster line and cycle when the instruction started. " +
-    "With out, it writes the entries as text lines to that project file, and the result gives the file in place of the entries. " +
+    "With out, it writes the entries as text lines to that file, and the result gives the file in place of the entries. " +
     "After a JAM, the emulator records no history until the next reset. If the CPU ran again after a snapshot restore, this tool refuses. Then use c64_reset, or use c64_trace. " +
     "This does not change the run state of the machine.",
-  inputSchema: z.object({ limit: z.number().int().min(1).max(MAX_HISTORY).default(50), space: SpaceInput, out: OutInput.optional(), project: ProjectInput.optional() }).strict(),
+  inputSchema: z.object({ limit: z.number().int().min(1).max(MAX_HISTORY).default(50), space: SpaceInput, out: OutInput.optional() }).strict(),
   outputSchema: z.object({
     entries: z.array(
       z.object({
@@ -164,15 +164,14 @@ const c64CpuHistory = defineTool({
   }),
   readOnly: false,
   async run(input, session) {
-    const { out, project, ...request } = input;
-    requireOut(input);
+    const { out, ...request } = input;
     const { entries } = await session.cpuHistory(request);
     if (out === undefined) return { entries: entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
     const lines = entries.map((entry) => {
       const raster = entry.rasterLine === undefined ? "" : `  line ${entry.rasterLine} cycle ${entry.rasterCycle ?? 0}`;
       return `${formatC64Address(entry.address)}  ${spaced(entry.bytes).padEnd(9)} ${entry.text.padEnd(16)} a=${hexByte(entry.a)} x=${hexByte(entry.x)} y=${hexByte(entry.y)} sp=${hexByte(entry.sp)}${raster}`;
     });
-    return { count: entries.length, ...writeOut(out, linesText(lines), project) };
+    return { count: entries.length, ...writeOut(out, linesText(lines)) };
   },
 });
 
@@ -260,7 +259,7 @@ const c64Trace = defineTool({
     "A read or write hit also gives the address that the instruction used, and value, the byte that it read or wrote. " +
     "At $D000-$DFFF only a load or a store gives value: a read after the access can give another byte. " +
     `The trace ends after frames frames (1 to ${MAX_TRACE_FRAMES}), at maxHits hits (at most ${MAX_TRACE_HITS}), or at a breakpoint, a watchpoint or a JAM. ` +
-    `The result lists the first ${TRACE_LISTED} hits. With out, it writes all hits as JSON lines to that project file, and the result gives no hits. ` +
+    `The result lists the first ${TRACE_LISTED} hits. With out, it writes all hits as JSON lines to that file, and the result gives no hits. ` +
     "summary counts all hits, also with out. " +
     `summary.byAddress gives the read and write hits of each address, most hits first, at most ${SUMMARY_LISTED}. An address with read hits and write hits has an item for each kind. ` +
     `Each item gives kind, hits and values, the values from low to high, at most ${SUMMARY_VALUES}. moreValues is the number of the other values. pcs are the pcs with the most hits at the address, at most ${SUMMARY_PCS}. ` +
@@ -274,7 +273,6 @@ const c64Trace = defineTool({
       frames: z.number().int().min(1).max(MAX_TRACE_FRAMES),
       maxHits: z.number().int().min(1).max(MAX_TRACE_HITS).default(MAX_TRACE_HITS),
       out: OutInput.optional(),
-      project: ProjectInput.optional(),
     })
     .strict(),
   outputSchema: z.object({
@@ -306,8 +304,7 @@ const c64Trace = defineTool({
   }),
   readOnly: false,
   async run(input, session) {
-    const { out, project, points, ...request } = input;
-    requireOut(input);
+    const { out, points, ...request } = input;
     const ranges = points.map((point) => ({ kind: point.kind, start: point.start, end: point.end ?? point.start }));
     if (ranges.some((point) => point.end < point.start)) throw new WireFailure("invalid-input", "A point end must not be before its start.");
     const traced = await session.trace({ points: ranges, ...request });
@@ -315,7 +312,7 @@ const c64Trace = defineTool({
     const head = { end: traced.end, frames: traced.frames, pc: formatC64Address(traced.pc), count: traced.hits.length };
     const summary = traceSummary(traced.hits, ranges.map((point) => point.kind));
     if (out === undefined) return { ...head, summary, hits: shown.slice(0, TRACE_LISTED) };
-    return { ...head, summary, ...writeOut(out, linesText(shown.map((hit) => JSON.stringify(hit))), project) };
+    return { ...head, summary, ...writeOut(out, linesText(shown.map((hit) => JSON.stringify(hit)))) };
   },
 });
 
@@ -414,7 +411,7 @@ const c64Memmap = defineTool({
     "Action read gives ranges of addresses with the same access (execute, read, write) from start to end. Each range also tells if the access was in RAM, ROM or I/O. " +
     `It gives at most maxRanges ranges (1 to ${MAX_MEMMAP_RANGES}, default 256). Addresses the CPU did not touch are not in the result. ` +
     "If more ranges follow, the result also gives truncated: true and next. Read again with start set to next. " +
-    "With out, read writes a coverage map to that project file, one byte for each address from start to end. " +
+    "With out, read writes a coverage map to that file, one byte for each address from start to end. " +
     "Bits 0 to 2 are RAM read, write and execute. Bits 3 and 4 are ROM read and execute. Bits 5 to 7 are I/O read, write and execute. " +
     "Execute is set only on the first byte of each executed instruction. Thus read gives a new range at each instruction of code. For code, use summary or read with out. " +
     "A read on a byte right after executed code, or at a return address, can be a dummy read that the CPU does not use. " +
@@ -429,8 +426,7 @@ const c64Memmap = defineTool({
       start: AddressInput.optional().describe("read and summary. Default $0000"),
       end: AddressInput.optional().describe("read and summary. Default $ffff"),
       maxRanges: z.number().int().min(1).max(MAX_MEMMAP_RANGES).optional().describe("read without out only. Default 256"),
-      out: OutInput.optional().describe("read only: write a coverage map to this project file, one byte for each address. An existing file is overwritten. The result then gives the file, the number of bytes and a SHA-256"),
-      project: ProjectInput.optional().describe("read with out only: the project folder, relative to the folder where the agent started. Give it when that folder is not in a project and has projects below it"),
+      out: OutInput.optional().describe("read only: write a coverage map to this file, the absolute path of a file in a project folder, one byte for each address. An existing file is overwritten. The result then gives the absolute path of the file, the number of bytes and a SHA-256"),
     })
     .strict(),
   outputSchema: z.object({
@@ -477,10 +473,10 @@ const c64Memmap = defineTool({
       };
     }
     requireOut(fields, ["maxRanges"]);
-    requireFields("read", fields, ["start", "end", "maxRanges", "out", "project"]);
+    requireFields("read", fields, ["start", "end", "maxRanges", "out"]);
     if (fields.out !== undefined) {
       const map = await readCoverage(session, start, end);
-      return { ...writeOut(fields.out, map, fields.project), ...basicRomFlaw(romInBasicArea(map, start)) };
+      return { ...writeOut(fields.out, map), ...basicRomFlaw(romInBasicArea(map, start)) };
     }
     const result = await session.memmap({ action: "read", start, end, maxRanges: fields.maxRanges ?? 256 });
     const ranges = result.ranges.map((range) => ({

@@ -119,11 +119,11 @@ function recordingCore(name: string, from: string, marks = true): { path: string
   return { path, log };
 }
 
-test("record starts the coverage as the record file tells, and the summary gives where it started", { skip: process.platform === "win32" ? "the stand-in replay core is a shell script" : false }, () => {
+test("record starts the coverage as the record file tells, the summary gives where it started, and the recording keeps the program relative to the project folder", { skip: process.platform === "win32" ? "the stand-in replay core is a shell script" : false }, () => {
   writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
-  const record = (name: string, coverage: string | undefined, from: string) => {
+  const record = (name: string, coverage: string | undefined, from: string, program = "game.prg") => {
     const core = recordingCore(`c64run-${name}`, from);
-    const run = spawnSync(process.execPath, [...process.execArgv, resolve(home, "skills/c64-testing/scripts/testing.ts"), "record", file(`${name}.json`, { name, program: "game.prg", symbols: "none", ...(coverage === undefined ? {} : { coverage }), steps: [{ frames: 10 }] }), "--out", `tests/recordings/${name}`], {
+    const run = spawnSync(process.execPath, [...process.execArgv, resolve(home, "skills/c64-testing/scripts/testing.ts"), "record", file(`${name}.json`, { name, program, symbols: "none", ...(coverage === undefined ? {} : { coverage }), steps: [{ frames: 10 }] }), "--out", `tests/recordings/${name}`], {
       cwd: project,
       encoding: "utf8",
       env: { ...process.env, C64RT_C64RUN: core.path },
@@ -137,9 +137,10 @@ test("record starts the coverage as the record file tells, and the summary gives
   const input = record("by-input", undefined, "ok from tick=982800 pc=1aed");
   assert.ok(input.commands.includes("coverage on-input"));
   assert.deepEqual(input.body.coverageFrom, { frame: 50, pc: "$1aed" });
-  const address = record("by-address", "$1aed", "ok not-started");
+  const address = record("by-address", "$1aed", "ok not-started", join(project, "game.prg"));
   assert.ok(address.commands.includes("coverage on-pc 1aed"));
   assert.deepEqual([address.body.recorded, address.body.coverageFrom, address.body.executed], [true, null, 0]);
+  assert.equal(JSON.parse(readFileSync(join(project, "tests", "recordings", "by-address", "recording.json"), "utf8")).program, "game.prg");
 });
 
 test("a record into the folder of an earlier recording names each file that the knowledge gives as evidence and that the record changed", { skip: process.platform === "win32" ? "the stand-in replay core is a shell script" : false }, () => {

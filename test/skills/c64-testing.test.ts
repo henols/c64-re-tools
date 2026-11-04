@@ -537,7 +537,7 @@ test("diff refuses --address for snapshots and observations, and --ntsc for memo
   assert.equal(await differ("obs.json:a", "obs.json:b", { ntsc: true }), "--ntsc is only for two snapshot files (.vsf), which restore in an emulator. Observations compare as they are: leave out --ntsc.");
 });
 
-test("keep copies a run, its results and the files of the local folder that it starts from, and changes only the paths of those files", async () => {
+test("keep copies a run, its results and the files of the local folder that it starts from, changes the paths of those files, and makes an absolute path relative", async () => {
   const files: Record<string, string> = {
     ".c64-re-tools/local/snapshots/room0.vsf": "first",
     ".c64-re-tools/local/other/room0.vsf": "second",
@@ -556,7 +556,7 @@ test("keep copies a run, its results and the files of the local folder that it s
     { screen: "room1" },
     { snapshot: ".c64-re-tools/local/snapshots/room0.vsf" },
     { snapshot: ".c64-re-tools/local/other/room0.vsf" },
-    { snapshot: "snapshots/shared.vsf" },
+    { snapshot: join(project, "snapshots", "shared.vsf") },
     { save: "room2" },
   ];
   const run = scenarioFile("rooms-run.json", { name: "rooms", start: { snapshot: ".c64-re-tools/local/snapshots/room0.vsf" }, symbols: ".c64-re-tools/local/names.json", steps });
@@ -569,7 +569,7 @@ test("keep copies a run, its results and the files of the local folder that it s
     [["start.snapshot", first], ["symbols", "runs/rooms/inputs/names.json"], ["step 3: snapshot", first], ["step 4: snapshot", second]],
   );
   const copy = JSON.parse(readFileSync(join(project, "runs/rooms/run.json"), "utf8"));
-  assert.deepEqual(copy, { name: "rooms", start: { snapshot: first }, symbols: "runs/rooms/inputs/names.json", steps: [steps[0], steps[1], { snapshot: first }, { snapshot: second }, steps[4], steps[5]] });
+  assert.deepEqual(copy, { name: "rooms", start: { snapshot: first }, symbols: "runs/rooms/inputs/names.json", steps: [steps[0], steps[1], { snapshot: first }, { snapshot: second }, { snapshot: "snapshots/shared.vsf" }, steps[5]] });
   for (const [path, text] of [[first, "first"], [second, "second"], ["runs/rooms/room1.png", "png"], ["runs/rooms/room2.vsf", "save"]]) assert.equal(readFileSync(join(project, path!), "utf8"), text);
   assert.ok(existsSync(join(project, "runs/rooms/results.json")));
   assert.deepEqual(kept.files.map((file) => file.out).sort(), [first, second, "runs/rooms/inputs/names.json", "runs/rooms/results.json", "runs/rooms/room1.png", "runs/rooms/room2.vsf", "runs/rooms/run.json"].sort());

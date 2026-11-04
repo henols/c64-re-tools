@@ -6,7 +6,7 @@ import { after, test } from "node:test";
 
 import { MAX_ATTACHMENT_BYTES } from "../protocol/framing.ts";
 import { WireFailure } from "../protocol/messages.ts";
-import { readProjectFile, readProjectTree, readSourceTree, writeProjectFile } from "./transfer.ts";
+import { readProjectFile, readProjectTree, readSourceTree, toolFile, writeProjectFile } from "./transfer.ts";
 
 const sandbox = mkdtempSync(join(tmpdir(), "c64-re-tools-transfer-"));
 const project = join(sandbox, "project");
@@ -19,6 +19,12 @@ after(() => rmSync(sandbox, { recursive: true, force: true }));
 
 const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;
 
+test("a file of an MCP tool is an absolute path, in the project at or above it", () => {
+  mkdirSync(join(project, ".c64-re-tools"), { recursive: true });
+  assert.deepEqual(toolFile(join(project, "releases", "..", "releases", "Game.D64"), "read"), { file: join(project, "releases", "Game.D64"), root: project });
+  assert.throws(() => toolFile("releases/Game.D64", "read"), (error: unknown) => failsWith("invalid-input")(error) && /Give the absolute path of the file\.$/.test((error as Error).message));
+});
+
 test("a project file is read as bytes with its lowercase extension as type", () => {
   assert.deepEqual(readProjectFile("releases/Game.D64", { root: project }), { bytes: Buffer.from([1, 2, 3]), type: "d64" });
   assert.deepEqual(readProjectFile("noext", { root: project }), { bytes: Buffer.from([9]), type: "" });
@@ -26,7 +32,6 @@ test("a project file is read as bytes with its lowercase extension as type", () 
 
 test("paths outside the project, missing files, directories and large files are refused", () => {
   assert.throws(() => readProjectFile("missing.prg", { root: project }), failsWith("not-found"));
-  assert.throws(() => readProjectFile(join(project, "noext"), { root: project }), failsWith("invalid-input"));
   assert.throws(() => readProjectFile("../outside.prg", { root: project }), failsWith("invalid-input"));
   assert.throws(() => readProjectFile("escape.prg", { root: project }), failsWith("invalid-input"));
   assert.throws(() => readProjectFile("releases", { root: project }), failsWith("invalid-input"));
@@ -115,7 +120,7 @@ test("a source tree starts at the lowest folder of the source root and its inclu
   writeFileSync(join(game, "src", "lib", "macros.asm"), "macros");
   writeFileSync(join(game, "build", "tables.asm"), "tables");
   writeFileSync(join(game, "art", "title.bin"), "art");
-  const read = readSourceTree("game/src", ["../build", "lib", "../build/"], { root: project });
+  const read = readSourceTree("game/src", ["../build", "lib", "../build/", join(game, "build")], { root: project });
   assert.deepEqual(read.files, [
     { path: "src/boot.asm", size: 4 },
     { path: "src/lib/macros.asm", size: 6 },
@@ -123,10 +128,10 @@ test("a source tree starts at the lowest folder of the source root and its inclu
   ]);
   assert.deepEqual(read.contents.map(String), ["boot", "macros", "tables"]);
   assert.equal(read.sourceDir, "src");
-  assert.deepEqual(read.includeDirs, ["../build", "lib", "../build"]);
+  assert.deepEqual(read.includeDirs, ["../build", "lib", "../build", "../build"]);
   // Without an include folder outside it, the tree is the source root as readProjectTree reads it.
   assert.deepEqual(readSourceTree("game/src", ["lib"], { root: project }), { ...readProjectTree("game/src", { root: project }), sourceDir: "", includeDirs: ["lib"] });
-  for (const folder of ["../../..", join(game, "build")]) {
+  for (const folder of ["../../..", sandbox]) {
     assert.throws(() => readSourceTree("game/src", [folder], { root: project }), (error: unknown) => failsWith("invalid-input")(error) && (error as Error).message.startsWith(`The include folder ${folder} is outside the project folder.`));
   }
   for (const folder of ["../nope", "boot.asm", "../empty"]) {

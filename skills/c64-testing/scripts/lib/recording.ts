@@ -19,6 +19,7 @@ import { isInteger, isObject } from "#src/host-client/tools.ts";
 import { readProjectFile, readProjectJson, type Written } from "#src/host-client/transfer.ts";
 import { RECORDING_FILES } from "#src/knowledge/recording-files.ts";
 import { LOADER_JUMP, startScreenLabels } from "#src/knowledge/start-screen.ts";
+import { readRelative } from "#src/project.ts";
 import { sha256 } from "#src/knowledge/text.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "#src/native/c64run.ts";
 import type { Workspace } from "#src/native/staging.ts";
@@ -673,9 +674,10 @@ export async function record(
   const recording: Recording = {
     format: RECORDING_FORMAT,
     name: file.name,
-    program: file.program,
+    // A recording is kept with the project: its paths are relative to the project folder, also when the record file gives them absolute.
+    program: readRelative(file.program),
     sha256: sha256(prg),
-    symbols: file.symbols,
+    symbols: file.symbols === "knowledge" || file.symbols === "none" ? file.symbols : readRelative(file.symbols),
     load: file.load,
     ...(file.compare === undefined ? {} : { compare: file.compare }),
     inputs: file.inputs,
