@@ -342,7 +342,7 @@ Errors of this group:
 | `addresses`, `addresses-split` | A table of addresses: one table of 16-bit values, or a low-byte table and then a high-byte table. |
 | `rts-addresses`, `rts-addresses-split` | The same, with each value the target minus 1, for a PHA, PHA, RTS dispatch. |
 | `jumps` | A table of `JMP abs` instructions. Each 3-byte entry is an entry point. It is code. |
-| `workspace` | RAM that the program writes at run time. Its bytes in the image do not matter. |
+| `workspace` | RAM that the program writes at run time. The check of the source compares these bytes in each release too. When a release has other bytes here, record them with `patch --from-release`. Or capture that release again, and exclude the bytes that the program does not read. |
 | `unused` | Bytes that nothing executes or reads. |
 | `dual-use` | Code at one time, and data or a vector at another time. No analyzer finding conflicts with it. |
 
