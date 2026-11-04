@@ -311,16 +311,16 @@ async function analyze(call: Call): Promise<unknown> {
   // Idiom tables and the RAM under ROM that the runs never used are data for this run too; semantic data ranges come first.
   // A range with an entry point of the knowledge or --entry in it is left out: that code stays code.
   const fromRom = coverage === undefined ? [] : romOnlyRanges(coverage, byteAt).filter((range) => !known.some((entry) => entry >= range.start && entry <= range.end));
+  const limits = analyzer === "dxa" ? DXA_LIMITS : DECOMPILER_LIMITS;
   const dataRanges = [...seeds.dataRanges];
   for (const range of [...idioms.dataRanges, ...fromRom]) if (!dataRanges.some((seed) => range.start <= seed.end && range.end >= seed.start)) dataRanges.push(range);
-  seeds.dataRanges = dataRanges.slice(0, DECOMPILER_LIMITS.dataRanges);
+  seeds.dataRanges = dataRanges.slice(0, limits.dataRanges);
   // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, then for DXA the
   // jump and call targets of the knowledge, up to the seed bound of the analyzer: at most 1024 entry points for the decompiler
   // and 8192 for DXA, and for the decompiler at most DECOMPILER_LIMITS.codeStarts (8192) coverage flow starts that are code
   // in a routine. coverageSeeds gives what was used. The decompiler takes the coverage as code starts without a function.
   // DXA has one list, without the coverage starts that it reaches by fall-through from another seed, for example the
   // instruction after a JSR. Each target stays a seed: DXA drops routes that fall-through would show as reached.
-  const limits = analyzer === "dxa" ? DXA_LIMITS : DECOMPILER_LIMITS;
   const targets = analyzer === "dxa" ? referenceTargets(reader, analyzer, inProgram, { data: dataRanges, dualUse: idioms.findings.regions.filter((region) => region.type === "dual-use") }, space) : [];
   const fallThrough = (from: readonly number[]) => (coverage === undefined ? new Set<number>() : dxaFallThrough(from, coverage, inProgram, seeds.dataRanges));
   const reached = analyzer === "dxa" ? fallThrough([...known, ...idioms.entryPoints, ...fromCoverage]) : new Set<number>();
