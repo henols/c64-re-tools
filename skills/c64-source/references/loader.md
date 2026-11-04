@@ -9,6 +9,7 @@ This file gives the loader program of `generate --out <dir> --loader`, the field
 - `loader.program` is the loader program. `loader.symbols` is its symbols file. The symbols file holds the labels of `loader.asm`, `main.asm` and `start_screen_stage.asm`. Give the two files to a test of the loader program.
 - The loader program has the switch values of `config.asm`. With the defaults, it is the clean program: no copy protection, all corrections and no leftovers. The entry state is the state of the base release.
 - The name of the loader program changes with the switch values. Then the script removes the loader program of the earlier run and its symbols.
+- This can remove `build/clean_loader.prg`, the loader program of the defaults. It is the default build. Then `hint` tells you how to make it again. To keep it, do not change `config.asm`. Get the loader program of other switch values from a build. See "The loader of other switch values".
 - The loader program sets the entry state of the capture and jumps to the entry. It sets the memory, $00/$01, the registers, the VIC-II, the colour RAM, the raster line and the CIA timers.
 - The loader changes the free stack byte below the stack pointer (`stackByte`). It does not set the SID, the time of day of the CIAs, the CIA interrupt flags or the interrupt registers of the VIC-II. A program that reads SID voice 3 for random numbers can thus give a different result. When you compare the reference and the rebuild, observe after the program sets its own random numbers.
 - For the loader program of a release, build `loader.asm` with the build option `--release <label>`. This is possible only when `loader.packed` is not in the result. That loader program also does not have the leftovers.
@@ -31,7 +32,7 @@ The build writes no loader program in these cases. `loader.reason` tells why.
 - The start screen is of a captured stage, and the source has no `start_screen_stage.asm`.
 - The memory has no room for the show stage.
 
-Do the action that `loader.reason` gives.
+Do the action that `loader.reason` gives. When it tells you to set the switch values in `config.asm`, the generation of the source with the loader removes `build/clean_loader.prg`. See "The loader program".
 
 ## The fields of the loader
 

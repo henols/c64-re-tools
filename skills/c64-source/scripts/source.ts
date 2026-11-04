@@ -57,7 +57,7 @@ import {
   type LoaderPlan,
 } from "./lib/loader.ts";
 import { instructionWith, OPCODES } from "#src/opcodes.ts";
-import { capturedColourRam, LOADER_JUMP, START_SCREEN_CONTINUE, START_SCREEN_FILE, START_SCREEN_WAIT, type StartScreenPlan } from "#src/knowledge/start-screen.ts";
+import { capturedColourRam, LOADER_JUMP, START_SCREEN_CONTINUE, START_SCREEN_FILE, START_SCREEN_WAIT, startScreenLabels, type StartScreenPlan } from "#src/knowledge/start-screen.ts";
 import { packStage, type PackedStage, STAGE_FILE, type StageBytes, type StagePart } from "#src/stage.ts";
 import { freeName, planDrops, readmeText, rewriteTest } from "./lib/export.ts";
 import type { UnresolvedFlow } from "#src/knowledge/separate.ts";
@@ -615,6 +615,9 @@ const LOADER_FILES: ReadonlySet<string> = new Set(["loader.asm", START_SCREEN_FI
 
 /** The source files of the show stage. A run writes them only with a loader program whose check ran, so only such a run removes them. */
 const STAGE_FILES: ReadonlySet<string> = new Set([START_SCREEN_FILE, STAGE_FILE]);
+
+/** The loader program of the defaults of config.asm: the default build of a source with a loader. */
+const DEFAULT_LOADER = `${BUILD_DIRECTORY}/${buildName("loader.asm", { values: new Map(), defaults: new Map() })}.prg`;
 
 /** A loader program that generate wrote: its build name, as buildName gives it for loader.asm. */
 const LOADER_PROGRAM = /^(clean|custom_[a-z0-9_]+|release_[A-Za-z0-9_]+)_loader\.prg$/;
@@ -1206,17 +1209,21 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
   writeFileSync(resolveProjectPath(checkPath), program);
   // The unpack runs before the copier, or before the show stage, which then starts the loader.
   const unpackFrames = (cycles: number | undefined) => (cycles === undefined ? LOADER_FRAMES : RUN_LIMIT_FRAMES + Math.ceil(cycles / PAL_FRAME_CYCLES));
-  const copierFrames = packed === undefined ? RUN_LIMIT_FRAMES : unpackFrames(packed.cycles);
+  // A build with START_SCREEN = 0 or LEFTOVERS = 1 has the labels of the start screen, but goes on at once: the check waits only for a start screen that shows.
+  const shows = (symbols: readonly AssembledSymbol[]) => startScreenLabels(new Map(symbols.map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]))) !== undefined;
+  const stageShown = stage !== undefined && shows(stage.symbols);
+  // A show stage that goes on at once unpacks the loader right after its own unpack.
+  const copierFrames = (packed === undefined ? RUN_LIMIT_FRAMES : unpackFrames(packed.cycles)) + (stage === undefined || stageShown ? 0 : unpackFrames(stage.packed.cycles));
   // The check compares the bytes of the screen of the stage: a routine of the stage can change its other bytes.
   const stageByte = (address: number) => {
     const part = stage!.parts.find((item) => address >= item.start && address < item.start + item.body.length)!;
     return part.body[address - part.start]!;
   };
   const screenParts = stage === undefined ? [] : startScreenRanges(stageRow!).map(({ range }) => ({ start: range.start, body: Uint8Array.from({ length: range.end - range.start + 1 }, (_, offset) => stageByte(range.start + offset)) }));
-  const stageRun = stage === undefined ? {} : { stage: { name: stageRow!.stage!, wait: stage.wait, continue: stage.continue, screen: stage.screen, parts: screenParts, ...(stage.colourRam === undefined ? {} : { colourRam: stage.colourRam }), frames: unpackFrames(stage.packed.cycles) + LOADER_FRAMES } };
+  const stageRun = stage === undefined || !stageShown ? {} : { stage: { name: stageRow!.stage!, wait: stage.wait, continue: stage.continue, screen: stage.screen, parts: screenParts, ...(stage.colourRam === undefined ? {} : { colourRam: stage.colourRam }), frames: unpackFrames(stage.packed.cycles) + LOADER_FRAMES } };
   let ran: LoaderRun;
   try {
-    ran = await runLoader(checkPath, program, loader, state, { jump, copierSource, fileByte, copierFrames, ...(startScreen === undefined ? {} : { startScreen }), ...stageRun }, expected);
+    ran = await runLoader(checkPath, program, loader, state, { jump, copierSource, fileByte, copierFrames, ...(startScreen === undefined || !shows(loaderBuilt.symbols) ? {} : { startScreen }), ...stageRun }, expected);
   } catch (error) {
     if (!isRefusal(error)) throw error;
     const what = loaderPrograms().length > 0 ? "kept the loader program of an earlier run" : "wrote no loader program";
@@ -1596,9 +1603,18 @@ function generateReply(call: Call, body: Record<string, unknown>): Reply {
   }
   if ([body.asBytes, body.operandsAsNumbers, body.macrosAsInstructions, body.patchesNotWritten].some(isCut)) steps.push("To see all items of a list, give a larger --max-listed.");
   const staleLoader = body.staleLoader as { noEntryState?: boolean } | undefined;
-  // The reference is made from the source: it is the step after this run, also when the run has no finding.
-  const reference = body.staleReference === undefined ? "" : " The reference pages in staleReference are from an earlier revision of this source. Generate the reference pages again from this source.";
-  if (steps.length === 0 && staleLoader === undefined) return reply(body, { hint: `Read the source. Record names, comments, regions and modules in the project knowledge. Then generate again.${reference}` });
+  // The default loader program goes when config.asm has other values, and the replays of the default build need it.
+  const loaderGone = body.config !== undefined && ((body.removed as string[] | undefined) ?? []).includes(DEFAULT_LOADER);
+  // The notes after the steps. The reference is made from the source: it is the step after this run, also when the run has no finding.
+  const notes = [
+    ...(loaderGone
+      ? [`The run removed the default loader program ${DEFAULT_LOADER}, because config.asm does not have the default switch values (config.notDefault). To make it again, set the defaults in config.asm, and generate with --loader. To get the loader program of other switch values without a change to the source, build main.asm with the build option --switch.`]
+      : []),
+    ...(body.staleReference === undefined ? [] : ["The reference pages in staleReference are from an earlier revision of this source. Generate the reference pages again from this source."]),
+  ]
+    .map((note) => ` ${note}`)
+    .join("");
+  if (steps.length === 0 && staleLoader === undefined) return reply(body, { hint: `Read the source. Record names, comments, regions and modules in the project knowledge. Then generate again.${notes}` });
   if (again) steps.push("Then generate again.");
   // The run with --loader writes the loader again, so it is the next action also for the other findings.
   const loaderAgain = staleLoader !== undefined && staleLoader.noEntryState !== true;
@@ -1606,7 +1622,7 @@ function generateReply(call: Call, body: Record<string, unknown>): Reply {
     steps.push("The loader files in staleLoader.files are of another knowledge revision or toolkit version, and the run kept them.");
     steps.push(loaderAgain ? "To write the loader of this revision, generate with --loader." : "The knowledge has no entry state, so --loader cannot write them again. Remove them when the build does not use them.");
   }
-  return reply(body, { hint: `${steps.join(" ")}${reference}`, ...(again || loaderAgain ? { nextAction: generateAgain(call, call.flag("loader") || loaderAgain) } : {}) });
+  return reply(body, { hint: `${steps.join(" ")}${notes}`, ...(again || loaderAgain ? { nextAction: generateAgain(call, call.flag("loader") || loaderAgain) } : {}) });
 }
 
 /** The hint of an export result: the action for a failed stage, or the next steps for the new project. */
