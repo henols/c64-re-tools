@@ -593,6 +593,7 @@ test("a patch puts code in a range of the image under a switch", () => {
     (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && error.message === "The patch code is at least 8 bytes, and the range $8a85-$8a87 has 3. Make the code shorter, or make the range larger.",
   );
   assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code: "!byte $ea, $ea\n!word $1234" }), /at least 4 bytes/);
+  assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code: ";".repeat(8001) }), (error: unknown) => failsWith("invalid-input")(error) && /at most 8000 characters/.test((error as Error).message));
   for (const code of ["!fill 3, $ea", "nop\nasl a\nrts ; done", "jsr $1234", "+inc16 ptr\nlda #1\nlda #2", "loop lda #1\nlda #2"]) setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code });
   assert.deepEqual(["lda+2 $12", "!fill $10", "bne .skip\n.skip", "!text \"ab\""].map(leastPatchBytes), [3, 16, undefined, undefined]);
 
@@ -620,6 +621,8 @@ test("a switch has a kind, a default and the releases that have it on; the base 
   for (const kind of ["protection", "trainer", "cheat", "crack"] as const) assert.throws(() => setSwitch(db, context, { name: "OTHER", kind, default: 1 }), /off in the default build/, kind);
   assert.throws(() => setSwitch(db, context, { name: "OTHER", kind: "change" }), /needs a default/);
   assert.throws(() => setSwitch(db, context, { name: "OTHER", kind: "fix", releases: ["V3"] }), /There is no release V3/);
+  // The base release of the C64 is not the base release of another space.
+  assert.throws(() => setSwitch(db, context, { space: "loading", name: "OTHER", kind: "fix" }), (error: unknown) => failsWith("not-found")(error) && /--base --space loading\)/.test((error as Error).message));
   assert.throws(() => setSwitch(db, context, { name: "RELEASE_V2", kind: "fix" }), /does not start with RELEASE_/);
   assert.throws(() => setSwitch(db, context, { name: "VICSCN", kind: "fix" }), /is a C64 platform name/);
   renameSymbol(db, llm, { address: 0x2000, name: "LIVES" });

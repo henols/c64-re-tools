@@ -7,7 +7,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "../errors.ts";
 import { type AddressRange, COVERAGE, formatC64Address, formatC64Byte, formatC64Range, inRanges, mergeRanges, prgOf, rangesWhere } from "../c64.ts";
-import { COVERAGE_KINDS, DEFAULT_SPACE, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
+import { COVERAGE_KINDS, DEFAULT_SPACE, inSpace, MEMORY_ROW, type CoverageKind, type Space } from "./schema.ts";
 import { coverageRuns } from "./read.ts";
 import { sha256 } from "./text.ts";
 import { checkAddress, checkSpace, write, type Evidence, type OperandImage, type WriteContext } from "./write.ts";
@@ -180,6 +180,28 @@ function gained(before: Map<CoverageKind, Uint8Array>, after: Map<CoverageKind, 
   return count;
 }
 
+/** True at each address that a run executed: in RAM, in a ROM or in the I/O area. */
+function executedIn(maps: Map<CoverageKind, Uint8Array>): (address: number) => boolean {
+  const executes = (["x", "rom-x", "io-x"] as const).map((kind) => maps.get(kind)!);
+  return (address) => executes.some((map) => map[address] === 1);
+}
+
+/** What one import did to the coverage of a space. */
+export interface CoverageImport {
+  space: Space;
+  imported: string[];
+  replaced: string[];
+  known: string[];
+  /** The ranges of accesses that the coverage gained and lost, of all kinds. */
+  added: number;
+  removed: number;
+  /** At an address: gained when the runs now execute it and did not before, lost when they no longer execute it, else undefined. */
+  executeChange: (address: number) => ExecuteChange | undefined;
+}
+
+/** How an import changed what the runs execute at an address. */
+export type ExecuteChange = "gained" | "lost";
+
 /**
  * Puts coverage maps into the coverage of a space. The knowledge keeps the
  * ranges of each map by its project path; the coverage of the space is the
@@ -193,7 +215,7 @@ export function addCoverage(
   db: DatabaseSync,
   context: WriteContext,
   request: { space?: Space; maps: CoverageMap[] },
-): { revision: string | null; current: { space: Space; imported: string[]; replaced: string[]; known: string[]; added: number; removed: number } } {
+): { revision: string | null; current: CoverageImport } {
   checkSpace(request);
   const space = request.space ?? DEFAULT_SPACE;
   for (const map of request.maps) {
@@ -210,7 +232,15 @@ export function addCoverage(
   const fresh = hashed.filter((map) => !isKnown(map));
   const evidence: Evidence[] = [...(context.evidence ?? []), ...fresh.map((map): Evidence => ({ kind: "coverage", ref: map.name, sha256: map.sha256, ...(space === DEFAULT_SPACE ? {} : { space }) }))];
   return write(db, { ...context, evidence }, "coverage", (change) => {
-    const result = { space, imported: fresh.map((map) => map.name), replaced: fresh.filter((map) => latest.has(map.name) && latest.get(map.name) !== map.sha256).map((map) => map.name), known: hashed.filter((map) => !fresh.includes(map)).map((map) => map.name), added: 0, removed: 0 };
+    const result: CoverageImport = {
+      space,
+      imported: fresh.map((map) => map.name),
+      replaced: fresh.filter((map) => latest.has(map.name) && latest.get(map.name) !== map.sha256).map((map) => map.name),
+      known: hashed.filter((map) => !fresh.includes(map)).map((map) => map.name),
+      added: 0,
+      removed: 0,
+      executeChange: () => undefined,
+    };
     if (fresh.length === 0) return result;
     // A revision for each import, also when the coverage does not change: the maps are its evidence.
     change.id();
@@ -228,6 +258,12 @@ export function addCoverage(
     const after = currentCoverage(db, space);
     result.added = gained(before, after);
     result.removed = gained(after, before);
+    // One value for each address: a lookup of a comment costs one read, also for many short ranges.
+    const was = executedIn(before);
+    const is = executedIn(after);
+    const changes = new Uint8Array(SIZE);
+    for (let address = 0; address < SIZE; address++) if (was(address) !== is(address)) changes[address] = is(address) ? 1 : 2;
+    result.executeChange = (address) => (changes[address] === 1 ? "gained" : changes[address] === 2 ? "lost" : undefined);
     return result;
   });
 }
@@ -330,8 +366,7 @@ export function programEntry(db: DatabaseSync | undefined, space: Space = DEFAUL
 export function requireProgram(db: DatabaseSync | undefined, space: Space = DEFAULT_SPACE): ProgramImage {
   const image = programImage(db, space);
   if (image !== undefined) return image;
-  const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
-  throw new Refusal("not-found", `The knowledge has no program${where}. Put the program into the project knowledge${where}: a PRG, or the image.json of a capture.`);
+  throw new Refusal("not-found", `The knowledge has no program${inSpace(space)}. Put the program into the project knowledge${inSpace(space)}: a PRG, or the image.json of a capture.`);
 }
 
 /** The pages of an entry state: $0000-$03ff as the capture wrote them, 256 bytes as hex for each page. */
@@ -434,7 +469,7 @@ const PATCH_LINE_BYTES = 8;
 export function releaseCode(db: DatabaseSync | undefined, label: string, start: number, end: number, space: Space = DEFAULT_SPACE): string {
   const range = formatC64Range({ start, end });
   const release = db?.prepare("SELECT base FROM current_releases WHERE space = ? AND label = ?").get(space, label) as { base: number } | undefined;
-  if (release === undefined) throw new Refusal("not-found", `There is no release ${label}${space === DEFAULT_SPACE ? "" : ` in ${space}`}. Record it first with its file.`);
+  if (release === undefined) throw new Refusal("not-found", `There is no release ${label}${inSpace(space)}. Record it first with its file.`);
   if (release.base === 1) throw new Refusal("invalid-input", `${label} is the base release: its bytes are the program, and a patch holds the bytes of the other state. Give the release that has the other bytes in ${range}.`);
   const image = releaseImage(db, label, space)!;
   for (let address = start; address <= end; address++) {

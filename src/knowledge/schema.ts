@@ -132,6 +132,12 @@ export const DEFAULT_SPACE: Space = "c64";
 /** The space of a request: the C64 when it names none. */
 export const spaceOf = (request: { space?: Space }): Space => request.space ?? DEFAULT_SPACE;
 
+/** A space other than the C64 in a message: " in <space>". */
+export const inSpace = (space: Space): string => (space === DEFAULT_SPACE ? "" : ` in ${space}`);
+
+/** The option of a command for a space other than the C64 in a message: " --space <space>". */
+export const spaceOption = (space: Space): string => (space === DEFAULT_SPACE ? "" : ` --space ${space}`);
+
 /** The order of the spaces: the C64, the drive, the loading, then the banks by number. */
 export const spaceOrder = (space: Space): number => (space === "c64" ? -3 : space === "drive8" ? -2 : space === "loading" ? -1 : Number(space.slice(4)));
 const SPACE_CHECK = "space IN ('c64', 'drive8', 'loading') OR space GLOB 'bank[0-9]' OR space GLOB 'bank[1-9][0-9]' OR space GLOB 'bank[12][0-9][0-9]'";

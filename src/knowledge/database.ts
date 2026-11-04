@@ -116,6 +116,16 @@ function freshen(db: DatabaseSync, root: string): void {
 /** The project of each index opened for a write: its writes go to the text too. */
 const projects = new WeakMap<DatabaseSync, string>();
 
+/** Makes the index fresh from the text. The write lock is taken only when the text changed: a read does not wait for a long write that keeps the index fresh. */
+function refreshIndex(root: string): void {
+  const index = openIndex(root);
+  try {
+    if (!sameHashes(currentHashes(root), storedHashes(index))) transaction(index, () => freshen(index, root));
+  } finally {
+    index.close();
+  }
+}
+
 /**
  * Opens the project's knowledge read-only, made fresh from the text first. A
  * read never changes the knowledge. Returns undefined when the project has no
@@ -123,13 +133,7 @@ const projects = new WeakMap<DatabaseSync, string>();
  */
 export function openForRead(root: string = projectRoot()): DatabaseSync | undefined {
   if (!existsSync(textPath(root))) return undefined;
-  const index = openIndex(root);
-  try {
-    // The lock is taken only when the text changed: a read does not wait for a long write that keeps the index fresh.
-    if (!sameHashes(currentHashes(root), storedHashes(index))) transaction(index, () => freshen(index, root));
-  } finally {
-    index.close();
-  }
+  refreshIndex(root);
   return open(indexPath(root), true);
 }
 
@@ -164,23 +168,72 @@ export function openForWrite(root: string = projectRoot()): DatabaseSync {
   return db;
 }
 
+/** An empty database in memory with the schema of this build. */
+function memoryDatabase(): DatabaseSync {
+  const db = new DatabaseSync(":memory:");
+  try {
+    configure(db);
+    ensureSchema(db);
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+  return db;
+}
+
 /**
- * Runs one write on the project's knowledge and closes it. When the project
- * has no knowledge yet, `work` first runs on an empty database in memory: a
- * write that is refused there creates no .c64-re-tools/. `work` must change
+ * A copy in memory of the index of the project, made fresh from the text
+ * first. The copy reads the index in one read transaction: it takes no write
+ * lock, so a write of another process does not wait for the work on the copy.
+ */
+function memoryCopy(root: string): DatabaseSync {
+  refreshIndex(root);
+  const db = memoryDatabase();
+  try {
+    db.prepare("ATTACH DATABASE ? AS project").run(indexPath(root));
+    // The tables come in the order of the index: the foreign keys are checked by the index, not again here.
+    db.exec("PRAGMA foreign_keys = OFF; BEGIN");
+    try {
+      const tables = db.prepare("SELECT name FROM project.sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as Array<{ name: string }>;
+      for (const { name } of tables) db.exec(`DELETE FROM main."${name}"; INSERT INTO main."${name}" SELECT * FROM project."${name}"`);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+    db.exec("DETACH DATABASE project; PRAGMA foreign_keys = ON");
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+  return db;
+}
+
+/**
+ * Runs `work` on a copy in memory of the project's knowledge, and closes it:
+ * every check of a write runs, and a write sees the writes before it, but
+ * neither the knowledge text nor the index changes, and the index is not
+ * locked while `work` runs. Without knowledge text, `work` runs on an empty
+ * database in memory, and the trial creates nothing. `work` must change
  * nothing outside the database it gets.
  */
-export function withWrite<T>(work: (db: DatabaseSync) => T, root: string = projectRoot()): T {
-  if (!existsSync(textPath(root))) {
-    const trial = new DatabaseSync(":memory:");
-    try {
-      configure(trial);
-      ensureSchema(trial);
-      work(trial);
-    } finally {
-      trial.close();
-    }
+export function withTrial<T>(work: (db: DatabaseSync) => T, root: string = projectRoot()): T {
+  const db = existsSync(textPath(root)) ? memoryCopy(root) : memoryDatabase();
+  try {
+    return work(db);
+  } finally {
+    db.close();
   }
+}
+
+/**
+ * Runs one write on the project's knowledge and closes it. When the project
+ * has no knowledge yet, `work` first runs as a trial: a write that is refused
+ * there creates no .c64-re-tools/. `work` must change nothing outside the
+ * database it gets.
+ */
+export function withWrite<T>(work: (db: DatabaseSync) => T, root: string = projectRoot()): T {
+  if (!existsSync(textPath(root))) withTrial(work, root);
   const db = openForWrite(root);
   try {
     return work(db);
