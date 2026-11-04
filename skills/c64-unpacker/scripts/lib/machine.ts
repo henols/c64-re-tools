@@ -208,15 +208,30 @@ const RAM_UNDER_IO = { kind: "memory", address: 0x0001, operator: "eq", value: 0
 const MAX_STORE_STOPS = 256;
 const ENTRY_SNAPSHOT = "capture-entry";
 
-/** Runs `work` from where the machine is, and then puts the machine back there, also when `work` fails. */
+/**
+ * Runs `work` from where the machine is, and then puts the machine back there, also when `work` fails. The snapshot is
+ * removed also when the restore fails. The first failure is thrown: of `work`, with a failed restore named in it, else
+ * of the restore, else of the remove.
+ */
 export async function fromHere<T>(client: Pick<ViceSessionClient, "snapshot">, work: () => Promise<T>): Promise<T> {
   await client.snapshot({ action: "save", name: ENTRY_SNAPSHOT });
-  try {
-    return await work();
-  } finally {
-    await client.snapshot({ action: "restore", name: ENTRY_SNAPSHOT });
-    await client.snapshot({ action: "remove", name: ENTRY_SNAPSHOT });
+  const attempt = async <U>(run: () => Promise<U>): Promise<{ value: U } | { error: unknown }> => {
+    try {
+      return { value: await run() };
+    } catch (error) {
+      return { error };
+    }
+  };
+  const done = await attempt(work);
+  const restored = await attempt(() => client.snapshot({ action: "restore", name: ENTRY_SNAPSHOT }));
+  const removed = await attempt(() => client.snapshot({ action: "remove", name: ENTRY_SNAPSHOT }));
+  if ("error" in done) {
+    if ("error" in restored && done.error instanceof Error) done.error.message = `${done.error.message.replace(/\.?$/, ".")} The machine did not go back to the snapshot: ${(restored.error as Error).message}`;
+    throw done.error;
   }
+  if ("error" in restored) throw restored.error;
+  if ("error" in removed) throw removed.error;
+  return done.value;
 }
 
 /**
@@ -224,8 +239,8 @@ export async function fromHere<T>(client: Pick<ViceSessionClient, "snapshot">, w
  * under the I/O area, and gives the ranges that the program read there as RAM. The memory map gives each of these
  * reads as an I/O read. The first read of a range removes the watchpoints of the range, so the run stops at most once
  * for each range. A stop comes after the instruction that made the access: an indexed store reads its address before
- * it writes it, and that read is no read of the program, so the run goes on. After MAX_STORE_STOPS such stops the
- * check ends: the ranges without a read are then `undecided`, not unread. The machine then goes back to where it was.
+ * it writes it, and that read is no read of the program, so the run goes on. A check that ends before its frames (after
+ * MAX_STORE_STOPS such stops, a JAM, another stop) gives the ranges without a read as `undecided`, not unread. The machine then goes back to where it was.
  */
 export async function readAsRam<T extends AddressRange>(
   client: Pick<ViceSessionClient, "snapshot" | "watchpoint" | "observe" | "execution" | "cpuHistory">,
@@ -235,7 +250,8 @@ export async function readAsRam<T extends AddressRange>(
   // The watchpoint ids of each range: a watchpoint covers at most MAX_WATCH_SIZE bytes.
   const points = new Map<number, number>();
   const read = new Set<number>();
-  let complete = true;
+  // Only a check that ran all its frames, or found a read in each range, tells which ranges the program did not read.
+  let complete = false;
   await fromHere(client, async () => {
     try {
       for (const [index, range] of ranges.entries()) {
@@ -249,17 +265,23 @@ export async function readAsRam<T extends AddressRange>(
       const anchor = { line: timing!.rasterLine, cycle: timing!.rasterCycle };
       let left = frames;
       let storeStops = 0;
-      while (left > 0 && read.size < ranges.length) {
+      for (;;) {
+        if (left <= 0 || read.size === ranges.length) {
+          complete = true;
+          break;
+        }
         const run = await client.execution({ action: "advance-frames", count: left, space: "c64", anchor });
         left -= run.advancedFrames ?? 0;
+        // "frames": all frames ran. A stop in the last frame still counts.
+        if (run.stopReason === "frames") {
+          left = 0;
+          continue;
+        }
         const index = run.pointId === undefined ? undefined : points.get(run.pointId);
         if (run.stopReason !== "watchpoint" || index === undefined) break;
         const opcode = await lastOpcode(client);
         if (opcode !== undefined && isStore(opcode)) {
-          if (++storeStops > MAX_STORE_STOPS) {
-            complete = false;
-            break;
-          }
+          if (++storeStops > MAX_STORE_STOPS) break;
           continue;
         }
         read.add(index);
