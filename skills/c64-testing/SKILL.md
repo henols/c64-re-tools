@@ -230,7 +230,7 @@ The script does the steps of the record file on the reference program. Then it w
 - `reason`: with a FAIL, why the session did not complete.
 - `evidence`: only when the project knowledge gives a file of `--out` as evidence, and this record changed the file. Each item has the `file`, its `state` and the `revisions` that give the file.
 - `entryStateDiffers`: the ranges of `$0002`-`$03ff` where the program at its entry has other bytes than the entry state of the project knowledge. The script compares only when it examines the entry. The script does not compare the free part of the stack page. It does not compare the KERNAL bytes that change by time alone: the jiffy clock and the cursor blink. It does not compare the load pointer at `$00ac`-`$00ad`, which the start sets. When no byte is different, the body has no `entryStateDiffers`.
-- `entryState`: a note in place of `entryStateDiffers` when the program came to its entry while a key was down, or during a press step. A new capture cannot remove that difference. Do not capture again for it.
+- `entryState`: a note in place of `entryStateDiffers`. The program came to its entry during the input of the session. Input is a key, a joystick that is not centered, or the keys of a `type` step. A new capture cannot remove that difference. Do not capture again for it.
 
 Do this for each result:
 
@@ -290,7 +290,7 @@ A `$` address is an address of the reference. On the rebuild, it moves with the 
 - `startScreen`: `skipped` when the rebuild started after its start screen.
 - `idleReads`: the number of input reads of the rebuild that the recording had no value for.
 - `entryStateDiffers`: only for a rebuild with a loader. The ranges of `$0002`-`$03ff` where the reference at its entry has other bytes than the entry state of the project knowledge. The loader writes that entry state. The script does not compare the free part of the stack page. It does not compare the KERNAL bytes that change by time alone: the jiffy clock and the cursor blink. It does not compare the load pointer at `$00ac`-`$00ad`, which the start sets. When no byte is different, the body has no `entryStateDiffers`.
-- `entryState`: a note in place of `entryStateDiffers` when the program came to its entry while a key was down, or during a press step. A new capture cannot remove that difference. Do not capture again for it.
+- `entryState`: a note in place of `entryStateDiffers`. The program came to its entry during the input of the session. Input is a key, a joystick that is not centered, or the keys of a `type` step. A new capture cannot remove that difference. Do not capture again for it.
 - `files`: with `--out` and a FAIL, the RAM of each side at the first different checkpoint.
 - `screen`: with `--screen`, the PNG file of the screen of the reference at the end of the session.
 

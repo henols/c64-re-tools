@@ -138,10 +138,10 @@ export interface Recording {
   ticks: number;
   hash: string;
   /**
-   * The cycles of the key input: each press step, from its first key down to the end of its frames, and each time
-   * that keys were down, from the steps, the play or a RESTORE. None without a key.
+   * The cycles of the input (see trackInput): keys down, a joystick that is not centered, typed keys in the queue,
+   * and each press step to the end of its frames. None without input.
    */
-  keys?: TickSpan[];
+  input?: TickSpan[];
 }
 
 /** The cycles from `from` up to `to`. */
@@ -286,8 +286,8 @@ export function readRecording(folder: string): Recording {
     checkState(compare.state, where);
     if (compare.pin !== undefined) checkState(compare.pin, where, "pin");
   }
-  if (value.keys !== undefined && (!Array.isArray(value.keys) || !value.keys.every((span) => isObject(span) && isInteger(span.from, 0, Number.MAX_SAFE_INTEGER) && isInteger(span.to, 0, Number.MAX_SAFE_INTEGER)))) {
-    fail(`keys must be a list of { from, to } cycles. ${remedy}`);
+  if (value.input !== undefined && (!Array.isArray(value.input) || !value.input.every((span) => isObject(span) && isInteger(span.from, 0, Number.MAX_SAFE_INTEGER) && isInteger(span.to, 0, Number.MAX_SAFE_INTEGER)))) {
+    fail(`input must be a list of { from, to } cycles. ${remedy}`);
   }
   (value.events as unknown[]).forEach((event, index) => {
     const at = `event ${index + 1}`;
@@ -479,28 +479,43 @@ export function entryStateDiffers(program: EntryRam, loader: LoaderEntryState): 
 }
 
 /**
- * The core with the spans of the key input: from a key down while no key is down to the key up that leaves no key
- * down, at the tick that the key command answers. `cover` makes the spans from `from` on one span up to `to`, for
- * the frames of a press step. `spans` closes a span that is still open at `end`.
+ * The core with the spans of the input of a session: from the input that starts while no input is held to the end
+ * of the last one. Input is a key down (a press step, the play, RESTORE), a joystick that is not centered (a joystick
+ * step, the play), and keys of a type step in the KERNAL queue. The key and the joystick commands answer the tick.
+ * `typed` starts the keys of a type step, and `settle` ends them when the queue is empty. `cover` makes the spans from
+ * `from` on one span up to `to`, for the frames of a step. `spans` closes a span that is still open at `end`.
  */
-export function trackKeys(core: C64RunSession): { core: C64RunSession; cover: (from: number, to: number) => void; spans: (end: number) => TickSpan[] } {
+export function trackInput(core: C64RunSession): {
+  core: C64RunSession;
+  typed: (tick: number) => void;
+  settle: () => Promise<void>;
+  cover: (from: number, to: number) => void;
+  spans: (end: number) => TickSpan[];
+} {
   const down = new Set<string>();
+  let joystick = false;
+  let queue = false;
   const spans: TickSpan[] = [];
   let since: number | undefined;
+  const held = () => down.size > 0 || joystick || queue;
+  const change = (tick: number, update: () => void) => {
+    const before = held();
+    update();
+    if (!before && held()) since = tick;
+    else if (before && !held()) {
+      spans.push({ from: since!, to: tick });
+      since = undefined;
+    }
+  };
   const command = async (text: string, limitMs?: number): Promise<string> => {
     const answer = await core.command(text, limitMs);
     const key = /^key ([0-9a-f]+) (down|up)$/.exec(text);
-    if (key !== null) {
-      const tick = Number(/tick=(\d+)/.exec(answer)?.[1] ?? Number.NaN);
-      if (Number.isNaN(tick)) throw new Refusal("operation-failed", `c64run key gave no tick: ${answer}`);
-      if (key[2] === "down") {
-        if (down.size === 0) since = tick;
-        down.add(key[1]!);
-      } else if (down.delete(key[1]!) && down.size === 0) {
-        spans.push({ from: since!, to: tick });
-        since = undefined;
-      }
-    }
+    const joy = /^joy ([0-9a-f]+) ([0-9a-f]+)$/.exec(text);
+    if (key === null && joy === null) return answer;
+    const tick = Number(/tick=(\d+)/.exec(answer)?.[1] ?? Number.NaN);
+    if (Number.isNaN(tick)) throw new Refusal("operation-failed", `c64run ${text.split(" ")[0]} gave no tick: ${answer}`);
+    if (key !== null) change(tick, () => (key[2] === "down" ? down.add(key[1]!) : down.delete(key[1]!)));
+    else change(tick, () => (joystick = joy![1] !== "0" || joy![2] !== "0"));
     return answer;
   };
   // The methods of the core keep the core as `this`: its fields are private.
@@ -511,23 +526,26 @@ export function trackKeys(core: C64RunSession): { core: C64RunSession; cover: (f
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
+  const settle = async () => {
+    if (queue && (await core.peek(QUEUE_LENGTH, 1))[0] === 0) change((await core.status("status")).tick, () => (queue = false));
+  };
   const cover = (from: number, to: number) => {
     const first = spans.findIndex((span) => span.from >= from);
     if (since === undefined && first >= 0) spans.splice(first, spans.length - first, { from, to: Math.max(to, spans.at(-1)!.to) });
   };
-  return { core: tracked, cover, spans: (end) => (since === undefined ? [...spans] : [...spans, { from: since, to: end }]) };
+  return { core: tracked, typed: (tick) => change(tick, () => (queue = true)), settle, cover, spans: (end) => (since === undefined ? [...spans] : [...spans, { from: since, to: end }]) };
 }
 
-/** The note in place of the entry state check when the program came to its entry during the key input. */
-export const ENTRY_DURING_INPUT = "not compared: the program came to its entry during the key input of the session";
+/** The note in place of the entry state check when the program came to its entry during the input. */
+export const ENTRY_DURING_INPUT = "not compared: the program came to its entry during the input of the session";
 
 /**
  * The entry state check of a program at its entry (`tick`) against the entry state that the loader writes: the
  * differing ranges, or nothing when all bytes are the same. A capture stops at the first arrival after its steps, so
- * at an entry during the key input (`keys`) it holds a later state, which no new capture changes: then only the note.
+ * at an entry during the input (`input`) it holds a later state, which no new capture changes: then only the note.
  */
-export function entryStateCheck(program: EntryRam & { tick: number }, keys: readonly TickSpan[], loader: LoaderEntryState): { entryStateDiffers?: Array<{ start: string; end: string }>; entryState?: string } {
-  if (keys.some((span) => program.tick >= span.from && program.tick < span.to)) return { entryState: ENTRY_DURING_INPUT };
+export function entryStateCheck(program: EntryRam & { tick: number }, input: readonly TickSpan[], loader: LoaderEntryState): { entryStateDiffers?: Array<{ start: string; end: string }>; entryState?: string } {
+  if (input.some((span) => program.tick >= span.from && program.tick < span.to)) return { entryState: ENTRY_DURING_INPUT };
   const differs = entryStateDiffers(program, loader);
   return differs.length === 0 ? {} : { entryStateDiffers: differs.map(formatC64RangeFields) };
 }
@@ -700,8 +718,8 @@ export async function record(
   input?: (core: C64RunSession, restore: () => Promise<string | undefined>) => Promise<string | undefined>,
   entry?: number,
 ): Promise<RecordOutcome> {
-  // Every key goes through the key command of the core: a press step, the play and a RESTORE.
-  const tracked = trackKeys(session);
+  // Every key and joystick goes through the key and joy commands of the core: the steps, the play and a RESTORE.
+  const tracked = trackInput(session);
   const core = tracked.core;
   const prg = readProjectFile(file.program).bytes;
   const same = (address: number) => address;
@@ -787,11 +805,14 @@ export async function record(
       }
     } else {
       reason = await runEvent(step, index + 1);
+      // The keys of a type step are input from the start of the step until the KERNAL took them from its queue.
+      if ("type" in step && reason === undefined) tracked.typed(tick);
       if (reason !== undefined) {
         reason = `step ${index + 1}: ${reason}`;
         break;
       }
     }
+    await tracked.settle();
     afterEvent = event;
   }
   // The play runs frames before each RESTORE: a RESTORE never runs where an event of the steps ended.
@@ -809,7 +830,8 @@ export async function record(
         ? `the program did not come to its entry ${formatC64Address(entry)} in the session, where the loader of a rebuild jumps. Make the session go on until the program runs from its entry`
         : eventBeforeEntry(events, came.eventsBefore, entry);
   const end = await core.status("status");
-  const keys = tracked.spans(end.tick);
+  await tracked.settle();
+  const spans = tracked.spans(end.tick);
   const sites = (await core.command("sites")).split(" ").slice(2).map((entry): RecordedSite => {
     const [where, reads, kind] = entry.split(":");
     const [site, addr] = where!.split("/");
@@ -831,7 +853,7 @@ export async function record(
     sites,
     ticks: end.tick,
     hash: end.hash,
-    ...(keys.length === 0 ? {} : { keys }),
+    ...(spans.length === 0 ? {} : { input: spans }),
   };
   return {
     recording,

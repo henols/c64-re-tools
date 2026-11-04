@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
-import { ENTRY_DURING_INPUT, entryStateCheck, entryStateDiffers, firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, loaderEntryState, siteMap, trackKeys } from "../../skills/c64-testing/scripts/lib/recording.ts";
+import { ENTRY_DURING_INPUT, entryStateCheck, entryStateDiffers, firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, loaderEntryState, siteMap, trackInput } from "../../skills/c64-testing/scripts/lib/recording.ts";
 import { rebuildNames, replay, replayAll } from "../../skills/c64-testing/scripts/lib/replay.ts";
 import { Refusal } from "../../src/errors.ts";
 import { C64RUN_PROTOCOL } from "../../src/native/c64run.ts";
@@ -99,8 +99,8 @@ function recordingCore(name: string, from: string, marks = true, pages = new Uin
       `  echo "$cmd $rest" >> ${log}`,
       '  case "$cmd" in',
       `    version) echo "ok c64run protocol=${C64RUN_PROTOCOL} chips=test" ;;`,
-      '    inputs|joy|write) echo "ok" ;;',
-      '    key) echo "ok tick=982800" ;;',
+      '    inputs|write) echo "ok" ;;',
+      '    key|joy) echo "ok tick=982800" ;;',
       '    record) [ "$rest" = off ] || : > "$rest"; echo "ok" ;;',
       '    sites) echo "ok unknown=0" ;;',
       `    marked) if [ ${marks} = true ] && [ -e ${log}.marked ]; then echo "ok tick=990000 phase=00"; else : > ${log}.marked; echo "ok none"; fi ;;`,
@@ -385,19 +385,34 @@ test("the entry state is compared when the program came to its entry after a pre
   assert.deepEqual(entryStateCheck({ sp: 0xf6, ram: new Uint8Array(0x400), tick: 2000 }, presses, loader), {});
 });
 
-test("the key input of a record spans from a key down while no key is down to the key up that leaves none, from any source", async () => {
-  // A stand-in core: each command answers a tick 100 cycles later.
+test("the input of a record spans from an input while none is held to the end of the last one: keys, a joystick and typed keys", async () => {
+  // A stand-in core: each command answers a tick 100 cycles later; the KERNAL queue is empty after the second peek.
   let tick = 0;
-  const core = { command: async () => `ok tick=${(tick += 100)}` } as unknown as Parameters<typeof trackKeys>[0];
-  const tracked = trackKeys(core);
-  // A key of the play, RESTORE (ff) while it is down, then a joystick and a frame that are no key, then a key held at the end.
-  for (const text of ["key 81 down", "key ff down", "key 81 up", "joy 0 10", "frame", "key ff up", "key 82 down"]) await tracked.core.command(text);
+  let peeks = 0;
+  const core = {
+    command: async () => `ok tick=${(tick += 100)}`,
+    status: async () => ({ tick: (tick += 100) }),
+    peek: async () => Uint8Array.of(++peeks < 2 ? 1 : 0),
+  } as unknown as Parameters<typeof trackInput>[0];
+  const tracked = trackInput(core);
+  // A key of the play, RESTORE (ff) while it is down, then a frame that is no input: one span.
+  for (const text of ["key 81 down", "key ff down", "key 81 up", "frame", "key ff up"]) await tracked.core.command(text);
+  // A joystick that leaves the center and comes back: one span.
+  for (const text of ["joy 0 10", "joy 0 0"]) await tracked.core.command(text);
+  // A type step at 750: its keys are input until the queue is empty.
+  tracked.typed(750);
+  await tracked.settle();
+  await tracked.settle();
+  // A key held at the end.
+  await tracked.core.command("key 82 down");
   assert.deepEqual(tracked.spans(9000), [
-    { from: 100, to: 600 },
-    { from: 700, to: 9000 },
+    { from: 100, to: 500 },
+    { from: 600, to: 700 },
+    { from: 750, to: 800 },
+    { from: 900, to: 9000 },
   ]);
-  // A press step of two taps from 1000 to 2000: its key spans become the one span of the step.
-  const step = trackKeys(core);
+  // A press step of two taps from 0 to 5000: its spans become the one span of the step.
+  const step = trackInput(core);
   for (const text of ["key 81 down", "key 81 up", "key 82 down", "key 82 up"]) await step.core.command(text);
   step.cover(0, 5000);
   assert.deepEqual(step.spans(9000), [{ from: 0, to: 5000 }]);

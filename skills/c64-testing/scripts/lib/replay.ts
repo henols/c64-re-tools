@@ -162,7 +162,7 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
       handover = { entry: loader.entry, reference: entered };
       // The loader writes the entry state of the capture: a capture with other input before the entry gives the rebuild another start.
       const state = withRead((db) => loaderEntryState(db, loader.reference));
-      if (state !== undefined) entryState = entryStateCheck(entered, recording.keys ?? [], state);
+      if (state !== undefined) entryState = entryStateCheck(entered, recording.input ?? [], state);
     }
 
     const rebuild: ReplaySubject = { side: "rebuild", program: values.rebuild, symbols: rebuildSymbols };

@@ -686,11 +686,11 @@ int main(int argc, char** argv) {
             for (int i = 0; i < site_count; i++) if (sites[i].pc == pc && sites[i].addr == addr) count = sites[i].count;
             printf("ok count=%llu\n", (unsigned long long)count);
         } else if (!strcmp(cmd, "joy")) {
-            // joy <port 1 mask> <port 2 mask> (hex): 1 up, 2 down, 4 left, 8 right, 10 fire
+            // joy <port 1 mask> <port 2 mask> (hex): 1 up, 2 down, 4 left, 8 right, 10 fire. Answers the tick.
             unsigned j1, j2;
             if (sscanf(line, "%*s %x %x", &j1, &j2) != 2) { printf("err joy: give two masks\n"); continue; }
             c64_joystick(&sys, (uint8_t)j1, (uint8_t)j2);
-            printf("ok\n");
+            printf("ok tick=%llu\n", (unsigned long long)ticks);
         } else if (!strcmp(cmd, "key")) {
             // key <code hex> down|up: 80 + place is the key at matrix place row * 8 + column
             // (80-bf), ff is RESTORE (NMI). chips holds at most 4 keys at once. Answers the tick.

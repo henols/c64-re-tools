@@ -139,7 +139,7 @@ async function recordCommand(call: Call): Promise<Reply> {
     // The recording replays on the reference and on a rebuild without a loader: the event before the entry is no refusal.
     const loader = outcome.loaderProblem === undefined ? "" : `${outcome.loaderProblem}, then record again. Until then, the recording replays on the reference and on a rebuild without a loader, not on a rebuild with a loader. `;
     const state = entry === undefined || outcome.entryRam === undefined ? undefined : loaderEntryState(db, entry);
-    const checked = state === undefined ? {} : entryStateCheck(outcome.entryRam!, outcome.recording.keys ?? [], state);
+    const checked = state === undefined ? {} : entryStateCheck(outcome.entryRam!, outcome.recording.input ?? [], state);
     const entryState = checked.entryStateDiffers === undefined ? "" : `At its entry ${formatC64Address(entry!)}, the program has other bytes than the entry state of the project knowledge in entryStateDiffers. ${ENTRY_STATE_REMEDY} `;
     return reply(
       { result: "PASS", recorded: true, out, ...summary, files, ...(evidence.length === 0 ? {} : { evidence }), ...checked },
