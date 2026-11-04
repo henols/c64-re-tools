@@ -14,7 +14,7 @@ import { importFindings } from "../../src/knowledge/import.ts";
 import { regionsOverlapping } from "../../src/knowledge/read.ts";
 import { addReference, classifyRegion, renameSymbol } from "../../src/knowledge/write.ts";
 import { DXA, findTool } from "../../src/native/discover.ts";
-import { codeEntries, coverageConflicts, explainGaps, imageReader, referenceTargets, writtenNotExecuted, type ImageByte } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
+import { codeEntries, coverageConflicts, explainGaps, imageReader, referenceTargets, withoutOverlaps, writtenNotExecuted, type ImageByte } from "../../skills/c64-static-analysis/scripts/lib/coverage.ts";
 import { VECTORED_ROUTINE, vectoredPrg } from "../fixtures/prg/vectored.ts";
 import { importCoverage, importImage, importPrg } from "../fixtures/program.ts";
 import { readEnvelope } from "../kit.ts";
@@ -156,6 +156,24 @@ test("the jump and call targets from code of any origin are DXA entry points, bu
   const image: ImageByte = (address) => (address >= 0x4000 && address <= 0x4fff ? 0xea : undefined);
   assert.deepEqual(referenceTargets(db, image, [{ start: 0x4080, end: 0x408f }]), [0x4050, 0x4060, 0x40b0]);
   db.close();
+});
+
+test("a refused seed of an instruction that starts in a dual-use region inside another one is a known overlap, not a refused seed", () => {
+  // A BIT skip: $2cec BIT $00a9 holds $2ced LDA #$00. The knowledge has $2ced-$2cee as dual-use.
+  const dualUse = [{ start: 0x2ced, end: 0x2cee }];
+  const refused = withoutOverlaps(
+    [
+      { address: 0x2ced, reason: "inside-instruction", at: 0x2cec },
+      { address: 0x2cec, reason: "into-instruction", at: 0x2ced },
+      { address: 0x3001, reason: "inside-instruction", at: 0x3000 },
+      { address: 0x2cee, reason: "not-decodable" },
+    ],
+    dualUse,
+  );
+  assert.deepEqual(refused, [
+    { address: 0x3001, reason: "inside-instruction", at: 0x3000 },
+    { address: 0x2cee, reason: "not-decodable" },
+  ]);
 });
 
 test("analyzer code on bytes that a run wrote and never executed is listed with the instructions that reach it", () => {

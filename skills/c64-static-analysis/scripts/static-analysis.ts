@@ -22,7 +22,7 @@ import { currentRevision, listMacros, listMacroUses, listPatches, listReferences
 import { CODE_REGION_TYPES, DEFAULT_SPACE, SEMANTIC_ORIGINS, type Analyzer } from "#src/knowledge/schema.ts";
 import { platformAddresses, platformNames, platformNamesFor, romUseOfProgram, type RomUse } from "#src/platform.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call } from "#src/script.ts";
-import { codeEntries, coverageConflicts, imageReader, referenceTargets, writtenNotExecuted, explainGaps, type GapReason, type ImageByte } from "./lib/coverage.ts";
+import { codeEntries, coverageConflicts, imageReader, referenceTargets, withoutOverlaps, writtenNotExecuted, explainGaps, type GapReason, type ImageByte } from "./lib/coverage.ts";
 import { decidedFromKnowledge, dxaFindings, decompilerFindings, seedsFromKnowledge } from "./lib/findings.ts";
 import { findIdioms } from "./lib/idioms.ts";
 import { instructionList } from "./lib/instructions.ts";
@@ -401,21 +401,24 @@ async function analyze(call: Call): Promise<unknown> {
   /**
    * The result from the knowledge after both imports: the fields of both
    * analyzers around the fields that only one gives (`gaps` after the
-   * coverage, `tail` after the idioms), and the hint.
+   * coverage, `tail` after the idioms), and the hint. A seed that the
+   * analysis refused because of a known overlap is not a refused seed: it
+   * is no fault of the knowledge. Read after the idioms, which write dual-use regions.
    */
   const resultOf = (
     db: DatabaseSync | undefined,
-    run: { toolVersion: string | undefined; imported: ReturnType<typeof record>; report: SeedReport; seeds: ReturnType<typeof seedsResult>; found: ReturnType<typeof idiomsResult>; gaps?: Record<string, unknown>; tail: Record<string, unknown> },
+    run: { toolVersion: string | undefined; imported: ReturnType<typeof record>; report: SeedReport; given: Record<string, number>; overLimit: Record<string, number>; found: ReturnType<typeof idiomsResult>; gaps?: Record<string, unknown>; tail: Record<string, unknown> },
   ) => {
     const runOnWritten = coverage === undefined ? [] : writtenNotExecuted(db, analyzer, coverage, space);
     const { factsOf, ...found } = run.found;
+    const refused = withoutOverlaps(run.report.refused, listRegions(db, undefined, "dual-use", undefined, space));
     const body = {
       analyzer,
       ...(run.toolVersion === undefined ? {} : { analyzerVersion: run.toolVersion }),
       ...(space === DEFAULT_SPACE ? {} : { space }),
       ...run.imported,
       conflicts: run.imported.conflicts.map((conflict) => showConflictFacts(conflict, analyzer, factsOf, max)),
-      seeds: run.seeds,
+      seeds: seedsResult(run.given, run.overLimit, { ...run.report, refused }, max),
       ...coverageResult(db),
       ...run.gaps,
       ...(runOnWritten.length === 0 ? {} : { writtenNotExecuted: listed(runOnWritten, max, showWritten) }),
@@ -428,7 +431,7 @@ async function analyze(call: Call): Promise<unknown> {
       macros: { candidates: found.idioms.candidates.macros.count, applied: applyMacros, revision: found.idioms.candidates.macros.revision },
       version: { now: run.toolVersion, last: lastVersion, revision: run.imported.revision },
       retiredReferences: run.imported.changes.references.retired,
-      guards: { refused: toCorrect(run.report.refused, entries), writtenNotExecuted: runOnWritten.length },
+      guards: { refused: toCorrect(refused, entries), writtenNotExecuted: runOnWritten.length },
       cut,
     });
   };
@@ -452,7 +455,8 @@ async function analyze(call: Call): Promise<unknown> {
         toolVersion: result.toolVersion,
         imported,
         report,
-        seeds: seedsResult({ entryPoints: seeds.entryPoints.length, dataRanges: seeds.dataRanges.length }, { entryPoints: overLimit.entryPoints, dataRanges: overLimit.dataRanges }, report, max),
+        given: { entryPoints: seeds.entryPoints.length, dataRanges: seeds.dataRanges.length },
+        overLimit: { entryPoints: overLimit.entryPoints, dataRanges: overLimit.dataRanges },
         found: idiomsResult(db, idiomsImported),
         tail: {
           coverage: result.coverage.map(formatC64RangeFields),
@@ -486,7 +490,8 @@ async function analyze(call: Call): Promise<unknown> {
       toolVersion: result.toolVersion,
       imported,
       report,
-      seeds: seedsResult({ entryPoints: seeds.entryPoints.length, codeStarts: codeStarts.length, dataRanges: seeds.dataRanges.length }, overLimit, report, max),
+      given: { entryPoints: seeds.entryPoints.length, codeStarts: codeStarts.length, dataRanges: seeds.dataRanges.length },
+      overLimit,
       found,
       gaps: coverage === undefined ? {} : { coverageGaps: listed(explained, max, showGap, "a larger --max-listed") },
       tail: {

@@ -160,7 +160,7 @@ Each item of `seeds.refused` and `coverageGaps` has a `reason`. `at` gives the i
 | `not-decodable` | No instruction decodes at the address. Correct the entry point or the routine. |
 | `not-reached` | Only in `coverageGaps`: no flow and no seed reached the start. Give it with `--entry`, or record a routine there. |
 
-A start in a `dual-use` region is a known overlap, for example a BIT skip. It is not a gap.
+A start in a `dual-use` region is a known overlap, for example a BIT skip. It is not a gap. `seeds.refused` does not list a seed that the analysis refused because of a known overlap.
 
 #### The candidates
 

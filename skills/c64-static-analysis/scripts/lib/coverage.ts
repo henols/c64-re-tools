@@ -87,6 +87,21 @@ export function writtenNotExecuted(db: DatabaseSync | undefined, analyzer: Analy
   return found;
 }
 
+/**
+ * The refused seeds without the known overlaps. An instruction that starts
+ * inside another instruction, in a dual-use region, is a known overlap, for
+ * example the second instruction of a BIT skip: one list of instructions cannot
+ * hold both, so the analysis refuses the seed of one of them. That seed is not
+ * a fault of the knowledge.
+ */
+export function withoutOverlaps(refused: readonly RefusedSeed[], dualUse: readonly AddressRange[]): RefusedSeed[] {
+  const inner = (seed: RefusedSeed) => (seed.reason === "inside-instruction" ? seed.address : seed.reason === "into-instruction" ? seed.at : undefined);
+  return refused.filter((seed) => {
+    const start = inner(seed);
+    return start === undefined || !inRanges(dualUse, start);
+  });
+}
+
 /** Why an executed instruction start has no decoded instruction. */
 export interface GapReason {
   address: number;
