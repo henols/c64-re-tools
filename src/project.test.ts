@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, parse, resolve } from "node:path";
 import { test } from "node:test";
 
 import { Refusal } from "./errors.ts";
-import { ensureLocal, fileProject, findProject, groupAt, groupOf, namedProject, newProjectFolder, projectRelative, projectRoot, readRelative, resolveProjectFile, resolveProjectPath, resolveReadFile, resolveReadPath } from "./project.ts";
+import { ensureLocal, fileProject, findProject, groupAt, groupOf, namedProject, nearestEntry, newProjectFolder, projectRelative, projectRoot, refuseAbsoluteInFile, resolveProjectFile, resolveProjectPath, resolveReadFile, resolveReadPath } from "./project.ts";
 
 const root = process.cwd();
 
@@ -75,6 +75,43 @@ test("the lookup stops below the home folder: a .c64-re-tools/ in home makes no 
     assert.equal(findProject(plain), plain);
     assert.throws(() => findProject(home), refusal("invalid-input", /home folder is not a project folder/));
   });
+});
+
+test("the root of a file system and a folder above the home folder are no project without .c64-re-tools/", () => {
+  withHome((home) => {
+    const root = parse(home).root;
+    for (const folder of [root, join(home, "..")]) assert.throws(() => findProject(folder), refusal("invalid-input", /is not a project folder\. Start in a project folder, or give --project <folder>\.$/), folder);
+    const saved = process.cwd();
+    try {
+      // An MCP server that starts above the home folder, for example in /: a file in a plain folder of the home folder is in no project.
+      process.chdir(join(home, ".."));
+      mkdirSync(join(home, ".ssh"));
+      assert.throws(() => fileProject(join(home, ".ssh", "authorized_keys"), "write"), refusal("invalid-input", /is not in a project folder\. A project folder has \.c64-re-tools\/\.$/));
+      assert.throws(() => fileProject(join(root, "x.bin"), "write"), refusal("invalid-input", /is not in a project folder\. Give a file in a folder that has \.c64-re-tools\/, or start the agent in a project folder\.$/));
+    } finally {
+      process.chdir(saved);
+    }
+  });
+});
+
+test("the nearest entry that exists: a missing file or folder goes up, a file in place of a folder is the entry", () => {
+  withHome((home) => {
+    mkdirSync(join(home, "game"));
+    writeFileSync(join(home, "game", "notes.txt"), "x");
+    assert.equal(nearestEntry(join(home, "game", "new", "deep", "x.bin")), join(home, "game"));
+    assert.equal(nearestEntry(join(home, "game", "notes.txt", "x.bin")), join(home, "game", "notes.txt"));
+    assert.equal(nearestEntry(join(home, "game")), join(home, "game"));
+  });
+});
+
+test("a path in a file that the project keeps must be relative, on every system", () => {
+  const fail = (message: string): never => {
+    throw new Refusal("invalid-input", message);
+  };
+  for (const path of ["build/game.prg", "../v1/game.prg", "knowledge"]) refuseAbsoluteInFile(path, "program", fail);
+  for (const path of ["/home/me/game.prg", "C:\\game\\game.prg", "C:/game/game.prg", "\\\\server\\share\\game.prg"]) {
+    assert.throws(() => refuseAbsoluteInFile(path, "start.program", fail), refusal("invalid-input", /^start\.program: give the path relative to the project folder, so the file works in each copy of the project/), path);
+  }
 });
 
 test("a folder with projects below it refuses and lists them; a plain folder is the project", () => {
@@ -241,7 +278,6 @@ test("in a group, the lookup refuses a folder that is no project, a group folder
     const v2 = join(game, "v2");
     assert.equal(resolveReadPath("../v1/game.prg", v2), join(game, "v1", "game.prg"));
     assert.equal(resolveReadPath(join(game, "v1", "game.prg"), v2), join(game, "v1", "game.prg"));
-    assert.equal(readRelative(join(game, "v1", "game.prg"), v2), "../v1/game.prg");
     assert.equal(resolveReadFile("../v1/game.prg", v2), realpathSync(join(game, "v1", "game.prg")));
     assert.throws(() => resolveReadPath("../../other.prg", v2), /leads out of the group folder .*fist of the project/);
     assert.throws(() => resolveReadFile("outside-link", v2), /leads out of the group folder of the project through a symbolic link/);
@@ -269,7 +305,7 @@ test("the project of a file of an MCP tool is the project at or above it by the 
     assert.equal(fileProject(join(disk2, "game.d64"), "read"), disk2);
 
     assert.throws(() => fileProject(join(games, "notes.bin"), "write"), refusal("invalid-input", /games, and it is not a project folder\. These folders below it are projects: bruce, fist\. Give a file in one of them\.$/));
-    assert.throws(() => fileProject(join(home, "x.bin"), "write"), refusal("invalid-input", /the home folder is not a project folder\. Give a file in a project folder\.$/));
+    assert.throws(() => fileProject(join(home, "x.bin"), "write"), refusal("invalid-input", /x\.bin is not in a project folder\. Give a file in a folder that has \.c64-re-tools\/, or start the agent in a project folder\.$/));
   });
 });
 

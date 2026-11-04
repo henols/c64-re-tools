@@ -48,7 +48,7 @@ Get the values for the commands from these places:
 
 ### Paths and the project folder
 
-- Give each path relative to the project folder, or give an absolute path in the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
+- Give each path relative to the project folder. The project folder is the nearest folder at or above the working directory that holds `.c64-re-tools/`.
 - If the working directory is not in a project, give `--project <folder>` to each command. If the working directory has projects below it, the script refuses and lists them.
 - In a group folder, each version of a program is a project. The script refuses the group folder and each folder in it that is not a project. Give `--project` with a project of the group, for example `--project v1`.
 - A path that a command only reads can go into another project of the group, for example `../v1/releases/game.prg`. The command writes only in its own project.

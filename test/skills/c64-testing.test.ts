@@ -64,6 +64,7 @@ test("a scenario needs a name, both subjects, known steps and at least one check
     noObserve: { ...valid, steps: [{ reset: "hard" }] },
     sameCheckpoint: { ...valid, steps: [valid.steps[2], valid.steps[2]] },
     noTimeout: { ...valid, steps: [{ runUntil: { address: "done" } }, valid.steps[2]] },
+    absoluteProgram: { ...valid, reference: { ...valid.reference, program: join(project, "reference.prg") } },
   })) {
     assert.throws(() => readScenario(scenarioFile(`${name}.json`, bad)), Refusal, name);
   }
@@ -424,6 +425,10 @@ test("test and run check every file before the emulator: a missing file is not-f
   assert.equal((await runRefusal("run-missing.json", { name: "r", start: { program: "nope.prg" }, steps: [{ frames: 1 }] })).code, "not-found");
   assert.match((await runRefusal("run-disk.json", { name: "r", start: { program: "game.d64" }, steps: [{ frames: 1 }] })).message, /^run run-disk\.json: start\.program: game\.d64 is a disk image \(\.d64\), not a PRG\. A run starts a PRG/);
   assert.deepEqual(await runRefusal("run-snapshot.json", { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }, { snapshot: "nope.vsf" }] }), { code: "not-found", message: "run run-snapshot.json: step 2: snapshot: There is no file at nope.vsf in the project folder." });
+  // A run file keeps relative paths: it works in each copy of the project.
+  const absolute = await runRefusal("run-absolute.json", { name: "r", start: { program: join(project, "game.prg") }, steps: [{ frames: 1 }] });
+  assert.equal(absolute.code, "invalid-input");
+  assert.match(absolute.message, /start\.program: give the path relative to the project folder/);
   // A run observes all registers or none: a list of names is the form of a scenario.
   assert.match(
     (await runRefusal("run-registers.json", { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }, { observe: "x", registers: ["a"] }] })).message,
@@ -537,7 +542,7 @@ test("diff refuses --address for snapshots and observations, and --ntsc for memo
   assert.equal(await differ("obs.json:a", "obs.json:b", { ntsc: true }), "--ntsc is only for two snapshot files (.vsf), which restore in an emulator. Observations compare as they are: leave out --ntsc.");
 });
 
-test("keep copies a run, its results and the files of the local folder that it starts from, changes the paths of those files, and makes an absolute path relative", async () => {
+test("keep copies a run, its results and the files of the local folder that it starts from, and changes only the paths of those files", async () => {
   const files: Record<string, string> = {
     ".c64-re-tools/local/snapshots/room0.vsf": "first",
     ".c64-re-tools/local/other/room0.vsf": "second",
@@ -556,7 +561,7 @@ test("keep copies a run, its results and the files of the local folder that it s
     { screen: "room1" },
     { snapshot: ".c64-re-tools/local/snapshots/room0.vsf" },
     { snapshot: ".c64-re-tools/local/other/room0.vsf" },
-    { snapshot: join(project, "snapshots", "shared.vsf") },
+    { snapshot: "snapshots/shared.vsf" },
     { save: "room2" },
   ];
   const run = scenarioFile("rooms-run.json", { name: "rooms", start: { snapshot: ".c64-re-tools/local/snapshots/room0.vsf" }, symbols: ".c64-re-tools/local/names.json", steps });
@@ -569,7 +574,7 @@ test("keep copies a run, its results and the files of the local folder that it s
     [["start.snapshot", first], ["symbols", "runs/rooms/inputs/names.json"], ["step 3: snapshot", first], ["step 4: snapshot", second]],
   );
   const copy = JSON.parse(readFileSync(join(project, "runs/rooms/run.json"), "utf8"));
-  assert.deepEqual(copy, { name: "rooms", start: { snapshot: first }, symbols: "runs/rooms/inputs/names.json", steps: [steps[0], steps[1], { snapshot: first }, { snapshot: second }, { snapshot: "snapshots/shared.vsf" }, steps[5]] });
+  assert.deepEqual(copy, { name: "rooms", start: { snapshot: first }, symbols: "runs/rooms/inputs/names.json", steps: [steps[0], steps[1], { snapshot: first }, { snapshot: second }, steps[4], steps[5]] });
   for (const [path, text] of [[first, "first"], [second, "second"], ["runs/rooms/room1.png", "png"], ["runs/rooms/room2.vsf", "save"]]) assert.equal(readFileSync(join(project, path!), "utf8"), text);
   assert.ok(existsSync(join(project, "runs/rooms/results.json")));
   assert.deepEqual(kept.files.map((file) => file.out).sort(), [first, second, "runs/rooms/inputs/names.json", "runs/rooms/results.json", "runs/rooms/room1.png", "runs/rooms/room2.vsf", "runs/rooms/run.json"].sort());

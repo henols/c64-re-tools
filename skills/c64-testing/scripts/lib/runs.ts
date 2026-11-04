@@ -5,7 +5,7 @@
 // and registers against the values that the run file gives.
 
 import { existsSync } from "node:fs";
-import { isAbsolute, posix } from "node:path";
+import { posix } from "node:path";
 
 import { formatC64Address, formatC64Byte, formatSprite, formatVicii, parseC64Address } from "#src/c64.ts";
 import { screenText } from "#src/graphics.ts";
@@ -18,7 +18,7 @@ import { isInteger, isObject, MAX_MEMORY_READ, MAX_TRACE_FRAMES, MAX_TRACE_HITS,
 import { readProjectFile, readProjectJson, writeReported, type Written } from "#src/host-client/transfer.ts";
 import { readMemoryInParts, ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { checkSnapshotFile } from "#src/media.ts";
-import { checkOutputPath, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, readRelative, resolveProjectPath } from "#src/project.ts";
+import { checkOutputPath, LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, refuseAbsoluteInFile, resolveProjectPath } from "#src/project.ts";
 import { namesOf } from "./scenario.ts";
 import { namesStartScreen, passStartScreen } from "./start-screen.ts";
 
@@ -128,6 +128,9 @@ function readRun(path: string): Run {
   for (const key of Object.keys(start)) if (!(typeof start.program === "string" ? ["program", "load"] : ["snapshot"]).includes(key)) fail(`start has the key ${key}. start must be ${START_FORMS}`);
   if (start.load !== undefined && typeof start.load !== "boolean") fail("start.load must be true or false");
   if (value.symbols !== undefined && typeof value.symbols !== "string") fail('symbols must be "knowledge", "none" or a JSON file');
+  refuseAbsoluteInFile(start.program, "start.program", fail);
+  refuseAbsoluteInFile(start.snapshot, "start.snapshot", fail);
+  refuseAbsoluteInFile(value.symbols, "symbols", fail);
   if (!Array.isArray(value.steps) || value.steps.length === 0) fail("steps must be a list with at least one step");
   const labels = new Set<string>();
   (value.steps as unknown[]).forEach((step, index) => {
@@ -147,6 +150,7 @@ function readRun(path: string): Run {
     const name = step[kind];
     if (kind === "snapshot") {
       if (typeof name !== "string" || name === "") fail(`${at}: snapshot needs a project file`);
+      refuseAbsoluteInFile(name, `${at}: snapshot`, fail);
       return;
     }
     if (typeof name !== "string" || !NAME.test(name)) fail(`${at}: ${kind} needs a name of 1 to 64 letters, digits, dots, underscores or hyphens`);
@@ -446,10 +450,9 @@ export interface KeptPath {
  * run.json, results.json and each file that the run wrote into `out`, and
  * each file in .c64-re-tools/local/ that the run file starts from (the
  * program, the snapshot, the symbols and the snapshot steps) in inputs/. The
- * run file gets the new paths of those files; another absolute path becomes
- * relative to the project folder, and a relative path stays as it is. All
- * files are read before the first write, and the target must not exist, so
- * a refusal leaves nothing behind.
+ * run file gets the new paths of those files only; another path stays as it
+ * is. All files are read before the first write, and the target must not
+ * exist, so a refusal leaves nothing behind.
  */
 export function keepRun(path: string, out: string, target: string): { out: string; files: Written[]; paths: KeptPath[] } {
   const run = readRun(path);
@@ -512,10 +515,8 @@ export function keepRun(path: string, out: string, target: string): { out: strin
     return input.to;
   };
   const moved = (holder: Record<string, unknown>, key: string, field: string) => {
-    const value = holder[key];
-    const to = keep(field, value);
+    const to = keep(field, holder[key]);
     if (to !== undefined) holder[key] = to;
-    else if (typeof value === "string" && isAbsolute(value)) holder[key] = readRelative(value);
   };
   moved(raw.start, "program", "start.program");
   moved(raw.start, "snapshot", "start.snapshot");

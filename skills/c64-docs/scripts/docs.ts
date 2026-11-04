@@ -6,7 +6,7 @@
 // every link and image of the pages.
 
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
-import { basename, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, join, posix } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
 import { formatC64Address, formatC64RangeFields, inRanges } from "#src/c64.ts";
@@ -19,7 +19,7 @@ import { changedEvidence, type EvidenceChange } from "#src/knowledge/evidence.ts
 import { programImage } from "#src/knowledge/program.ts";
 import { listComments, listModules, listReferences, listRegions, listSymbols, sourceRevision } from "#src/knowledge/read.ts";
 import { compareText } from "#src/knowledge/text.ts";
-import { groupOf, isInside, KNOWLEDGE_TEXT_DIRECTORY as TEXT_DIRECTORY, namedGroup, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectFile, resolveProjectPath, type ProjectGroup } from "#src/project.ts";
+import { groupOf, KNOWLEDGE_TEXT_DIRECTORY as TEXT_DIRECTORY, namedGroup, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectFile, resolveProjectPath, type ProjectGroup } from "#src/project.ts";
 import { GENERATED_MARK, referenceStamp } from "#src/reference-pages.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type Reply } from "#src/script.ts";
 import { checkLinks, linkPage, type Files, type LinkContext, type Names, type Problem } from "./lib/links.ts";
@@ -234,8 +234,15 @@ function link(call: Call): Reply {
   /** A .md entry of a directory that is a symbolic link to no file, or to a file outside the folder of the run. */
   const unreadable = (page: string): Problem => ({ page, line: 1, kind: "missing-file", message: `${shown(page)} is a symbolic link to no file or to a file outside ${folder}.` });
 
-  // An absolute page becomes relative to the folder of the pages, so that each page has one spelling.
-  const fromBase = (path: string) => (isAbsolute(path) ? relative(join(root, scope.base), path).split(sep).join("/") || "." : path);
+  // An absolute page becomes relative to the folder of the pages, also through a symbolic link, so that each page has one spelling. A page outside it becomes "..", which the check below refuses.
+  const fromBase = (path: string) => {
+    if (!isAbsolute(path)) return path;
+    try {
+      return projectRelative(path, join(root, scope.base)) || ".";
+    } catch {
+      return "..";
+    }
+  };
   const spelled = new Map(call.subjects.map((path) => [posix.normalize(fromBase(path)), path]));
   const given = [...spelled.keys()];
   const pagesGiven = given.map(toRun);
@@ -248,9 +255,18 @@ function link(call: Call): Reply {
   });
   const directories = pagesGiven.filter((path) => !path.endsWith(".md") || isDirectory(path, root));
   // --source and --reference are relative to each project folder: the projects of a group have the same layout. An absolute path names a folder in one of them.
+  const inMember = (value: string) => {
+    for (const member of members) {
+      try {
+        return projectRelative(value, member.root) || ".";
+      } catch {
+        // In another project of the group, or in none.
+      }
+    }
+    return value;
+  };
   const inProjectFolder = (name: string, value: string) => {
-    const member = isAbsolute(value) ? members.find((each) => isInside(each.root, resolve(value))) : undefined;
-    const path = posix.normalize((member === undefined ? value : relative(member.root, resolve(value)) || ".").replaceAll("\\", "/"));
+    const path = posix.normalize((isAbsolute(value) ? inMember(value) : value).replaceAll("\\", "/"));
     if (posix.isAbsolute(path) || /^[A-Za-z]:/.test(path) || path === ".." || path.startsWith("../")) throw new UsageError(`--${name} must be a path inside the project folder, relative to it or absolute, not ${value}`);
     return path;
   };

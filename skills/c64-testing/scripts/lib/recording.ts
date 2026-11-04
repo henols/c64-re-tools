@@ -19,7 +19,7 @@ import { isInteger, isObject } from "#src/host-client/tools.ts";
 import { readProjectFile, readProjectJson, type Written } from "#src/host-client/transfer.ts";
 import { RECORDING_FILES } from "#src/knowledge/recording-files.ts";
 import { LOADER_JUMP, startScreenLabels } from "#src/knowledge/start-screen.ts";
-import { readRelative } from "#src/project.ts";
+import { refuseAbsoluteInFile } from "#src/project.ts";
 import { sha256 } from "#src/knowledge/text.ts";
 import { PAL_FRAME_CYCLES, type C64RunSession, type CoreStatus } from "#src/native/c64run.ts";
 import type { Workspace } from "#src/native/staging.ts";
@@ -198,6 +198,8 @@ export function readRecordFile(path: string): RecordFile {
   if (typeof value.name !== "string" || value.name === "") fail("name must be a short text");
   if (typeof value.program !== "string" || value.program === "") fail("program must be a PRG file in the project");
   if (value.symbols !== undefined && typeof value.symbols !== "string") fail('symbols must be "knowledge", "none" or a JSON file');
+  refuseAbsoluteInFile(value.program, "program", fail);
+  refuseAbsoluteInFile(value.symbols, "symbols", fail);
   if (value.load !== undefined && typeof value.load !== "boolean") fail("load must be true or false");
   if ((value.checkpoint === undefined) !== (value.state === undefined)) fail("give checkpoint and state together, or neither: a replay can give them");
   if (value.checkpoint !== undefined && (typeof value.checkpoint !== "string" || value.checkpoint === "")) fail("checkpoint must be the name or $ address of a routine");
@@ -264,6 +266,8 @@ export function readRecording(folder: string): Recording {
   if (!isObject(value) || value.format !== RECORDING_FORMAT) return fail(`it is not a recording of format ${RECORDING_FORMAT}`);
   for (const key of ["name", "program", "sha256", "symbols", "hash"]) if (typeof value[key] !== "string") fail(`${key} is missing`);
   for (const key of ["inputs", "events", "sites"]) if (!Array.isArray(value[key])) fail(`${key} is missing`);
+  refuseAbsoluteInFile(value.program, "program", fail);
+  refuseAbsoluteInFile(value.symbols, "symbols", fail);
   if (!isInteger(value.ticks, 1, Number.MAX_SAFE_INTEGER)) fail("ticks is missing");
   // A recording that does not check is refused, never replayed wrong.
   const remedy = "Record the session again with record";
@@ -674,10 +678,9 @@ export async function record(
   const recording: Recording = {
     format: RECORDING_FORMAT,
     name: file.name,
-    // A recording is kept with the project: its paths are relative to the project folder, also when the record file gives them absolute.
-    program: readRelative(file.program),
+    program: file.program,
     sha256: sha256(prg),
-    symbols: file.symbols === "knowledge" || file.symbols === "none" ? file.symbols : readRelative(file.symbols),
+    symbols: file.symbols,
     load: file.load,
     ...(file.compare === undefined ? {} : { compare: file.compare }),
     inputs: file.inputs,
