@@ -32,7 +32,7 @@ export interface Image {
  * when the project has no such file now, or when its bytes are not the bytes
  * that the capture ran: the citation would not be true.
  */
-export function capturedProgram(path: string, program: { file: string; sha256: string }): { file: string; sha256: string } {
+export function checkedProgramCitation(path: string, program: { file: string; sha256: string }): { file: string; sha256: string } {
   const remedy = "Capture the program again from its file in this project, then give the new image.json.";
   let file: string;
   try {

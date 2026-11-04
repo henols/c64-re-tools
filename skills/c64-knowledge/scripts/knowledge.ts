@@ -10,7 +10,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { type AddressRange, formatC64Address, formatC64Range, formatC64RangeFields, inRanges, rangesOverlap, REFERENCE_KINDS } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { IO_RAM } from "#src/host-client/coverage.ts";
-import { capturedProgram, readImage } from "#src/host-client/image.ts";
+import { checkedProgramCitation, readImage } from "#src/host-client/image.ts";
 import { readProjectFile, readProjectJson, writeReported } from "#src/host-client/transfer.ts";
 import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
 import { withRead, withTrial, withWrite } from "#src/knowledge/database.ts";
@@ -1042,7 +1042,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       const commentText = call.string("comment");
       const base = call.flag("base");
       // The image.json of a capture names the program file that the capture ran: the release cites that file, as git ignores a capture in local/.
-      const cited = image.program === undefined ? { file, sha256: sha256(readProjectFile(file).bytes) } : capturedProgram(file, image.program);
+      const cited = image.program === undefined ? { file, sha256: sha256(readProjectFile(file).bytes) } : checkedProgramCitation(file, image.program);
       // The base release has no bytes of its own: its bytes are the program.
       const request = {
         space: call.space,

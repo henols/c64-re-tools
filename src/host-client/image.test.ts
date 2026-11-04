@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 
-import { capturedProgram, readImage, readPrg } from "./image.ts";
+import { checkedProgramCitation, readImage, readPrg } from "./image.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-image-"));
 const cwd = process.cwd();
@@ -66,10 +66,10 @@ test("an image.json cites its program file only while the project has that file 
   // game.prg holds 00 c0 ea 60. A rebuild after the capture gives other bytes.
   const sha256 = "0".repeat(64);
   const real = createHash("sha256").update(Buffer.from([0x00, 0xc0, 0xea, 0x60])).digest("hex");
-  assert.deepEqual(capturedProgram("capture/image.json", { file: "./game.prg", sha256: real }), { file: "game.prg", sha256: real });
-  assert.throws(() => capturedProgram("capture/image.json", { file: "game.prg", sha256 }), { code: "conflict", message: /Capture the program again/ });
-  assert.throws(() => capturedProgram("capture/image.json", { file: "gone.prg", sha256: real }), { code: "not-found", message: /Capture the program again/ });
-  assert.throws(() => capturedProgram("capture/image.json", { file: "../v1/game.prg", sha256: real }), { code: "invalid-input", message: /Capture the program again/ });
+  assert.deepEqual(checkedProgramCitation("capture/image.json", { file: "./game.prg", sha256: real }), { file: "game.prg", sha256: real });
+  assert.throws(() => checkedProgramCitation("capture/image.json", { file: "game.prg", sha256 }), { code: "conflict", message: /Capture the program again/ });
+  assert.throws(() => checkedProgramCitation("capture/image.json", { file: "gone.prg", sha256: real }), { code: "not-found", message: /Capture the program again/ });
+  assert.throws(() => checkedProgramCitation("capture/image.json", { file: "../v1/game.prg", sha256: real }), { code: "invalid-input", message: /Capture the program again/ });
 });
 
 test("readImage reads a PRG as one segment at its load address", () => {
