@@ -144,10 +144,11 @@ export interface Recording {
   input?: TickSpan[];
 }
 
-/** The cycles from `from` up to `to`. */
+/** The cycles from `from` up to `to`. `typed`: the keys of a type step, which are input only while the KERNAL queue holds keys. */
 export interface TickSpan {
   from: number;
   to: number;
+  typed?: true;
 }
 
 /** Steps that are input or time: the replay gives the program the reads that they caused, and does not do them again. */
@@ -288,7 +289,7 @@ export function readRecording(folder: string): Recording {
     checkState(compare.state, where);
     if (compare.pin !== undefined) checkState(compare.pin, where, "pin");
   }
-  if (value.input !== undefined && (!Array.isArray(value.input) || !value.input.every((span) => isObject(span) && isInteger(span.from, 0, Number.MAX_SAFE_INTEGER) && isInteger(span.to, 0, Number.MAX_SAFE_INTEGER)))) {
+  if (value.input !== undefined && (!Array.isArray(value.input) || !value.input.every((span) => isObject(span) && isInteger(span.from, 0, Number.MAX_SAFE_INTEGER) && isInteger(span.to, 0, Number.MAX_SAFE_INTEGER) && (span.typed === undefined || span.typed === true)))) {
     fail(`input must be a list of { from, to } cycles. ${remedy}`);
   }
   (value.events as unknown[]).forEach((event, index) => {
@@ -483,9 +484,10 @@ export function entryStateDiffers(program: EntryRam, loader: LoaderEntryState): 
 /**
  * The spans of the input of a session: from the input that starts while no input is held to the end of the last one.
  * Input is a key down (a press step, the play, RESTORE) and a joystick that is not centered (a joystick step, the
- * play): the key() and joy() of the core report each one with its tick. `typed` starts the keys of a type step, and
- * `settle` ends them when the KERNAL queue is empty. `cover` makes the spans from `from` on one span up to `to`, for
- * the frames of a step. `spans` closes a span that is still open at `end`, and ends the tracking.
+ * play): the key() and joy() of the core report each one with its tick. `typed` starts a typed span for the keys of a
+ * type step, and `settle` ends it when the KERNAL queue is empty; it can end late, so the queue at the entry decides
+ * (entryStateCheck). `cover` makes the key spans from `from` on one span up to `to`, for the frames of a step. `spans`
+ * closes a span that is still open at `end`, and ends the tracking.
  */
 export function trackInput(core: Pick<C64RunSession, "onInput" | "peek" | "status">): {
   typed: (tick: number) => void;
@@ -495,10 +497,11 @@ export function trackInput(core: Pick<C64RunSession, "onInput" | "peek" | "statu
 } {
   const down = new Set<number>();
   let joystick = false;
-  let queue = false;
   const spans: TickSpan[] = [];
+  const typedSpans: TickSpan[] = [];
+  let typedFrom: number | undefined;
   let since: number | undefined;
-  const held = () => down.size > 0 || joystick || queue;
+  const held = () => down.size > 0 || joystick;
   const change = (tick: number, update: () => void) => {
     const before = held();
     update();
@@ -516,7 +519,9 @@ export function trackInput(core: Pick<C64RunSession, "onInput" | "peek" | "statu
     }),
   );
   const settle = async () => {
-    if (queue && (await core.peek(QUEUE_LENGTH, 1))[0] === 0) change((await core.status("status")).tick, () => (queue = false));
+    if (typedFrom === undefined || (await core.peek(QUEUE_LENGTH, 1))[0] !== 0) return;
+    typedSpans.push({ from: typedFrom, to: (await core.status("status")).tick, typed: true });
+    typedFrom = undefined;
   };
   const cover = (from: number, to: number) => {
     const first = spans.findIndex((span) => span.from >= from);
@@ -524,9 +529,10 @@ export function trackInput(core: Pick<C64RunSession, "onInput" | "peek" | "statu
   };
   const end = (at: number) => {
     core.onInput(undefined);
-    return since === undefined ? [...spans] : [...spans, { from: since, to: at }];
+    const open = [...(since === undefined ? [] : [{ from: since, to: at }]), ...(typedFrom === undefined ? [] : [{ from: typedFrom, to: at, typed: true as const }])];
+    return [...spans, ...typedSpans, ...open].sort((a, b) => a.from - b.from);
   };
-  return { typed: (tick) => change(tick, () => (queue = true)), settle, cover, spans: end };
+  return { typed: (tick) => (typedFrom ??= tick), settle, cover, spans: end };
 }
 
 /** The note in place of the entry state check when the program came to its entry during the input. */
@@ -536,9 +542,11 @@ export const ENTRY_DURING_INPUT = "not compared: the program came to its entry d
  * The entry state check of a program at its entry (`tick`) against the entry state that the loader writes: the
  * differing ranges, or nothing when all bytes are the same. A capture stops at the first arrival after its steps, so
  * at an entry during the input (`input`) it holds a later state, which no new capture changes: then only the note.
+ * A typed span counts only when the KERNAL queue at the entry still holds keys.
  */
 export function entryStateCheck(program: EntryRam & { tick: number }, input: readonly TickSpan[], loader: LoaderEntryState): { entryStateDiffers?: Array<{ start: string; end: string }>; entryState?: string } {
-  if (input.some((span) => program.tick >= span.from && program.tick < span.to)) return { entryState: ENTRY_DURING_INPUT };
+  const during = (span: TickSpan) => program.tick >= span.from && program.tick < span.to && (span.typed !== true || program.ram[QUEUE_LENGTH] !== 0);
+  if (input.some(during)) return { entryState: ENTRY_DURING_INPUT };
   const differs = entryStateDiffers(program, loader);
   return differs.length === 0 ? {} : { entryStateDiffers: differs.map(formatC64RangeFields) };
 }

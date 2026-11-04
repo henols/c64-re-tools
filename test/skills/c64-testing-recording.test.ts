@@ -383,6 +383,12 @@ test("the entry state is compared when the program came to its entry after a pre
   assert.deepEqual(entryStateCheck({ sp: 0xf6, ram, tick: 2000 }, presses, loader), { entryStateDiffers: [{ start: "$00f5", end: "$00f6" }] });
   assert.deepEqual(entryStateCheck({ sp: 0xf6, ram, tick: 1500 }, presses, loader), { entryState: ENTRY_DURING_INPUT });
   assert.deepEqual(entryStateCheck({ sp: 0xf6, ram: new Uint8Array(0x400), tick: 2000 }, presses, loader), {});
+  // A typed span counts only while the KERNAL queue ($c6) at the entry holds keys.
+  const typed = [{ from: 1000, to: 50_000, typed: true as const }];
+  assert.deepEqual(entryStateCheck({ sp: 0xf6, ram, tick: 1500 }, typed, loader), { entryStateDiffers: [{ start: "$00f5", end: "$00f6" }] });
+  const queued = Uint8Array.from(ram);
+  queued[0xc6] = 1;
+  assert.deepEqual(entryStateCheck({ sp: 0xf6, ram: queued, tick: 1500 }, typed, loader), { entryState: ENTRY_DURING_INPUT });
 });
 
 test("the input of a record spans from an input while none is held to the end of the last one: keys, a joystick and typed keys", async () => {
@@ -415,7 +421,7 @@ test("the input of a record spans from an input while none is held to the end of
   assert.deepEqual(tracked.spans(9000), [
     { from: 100, to: 400 },
     { from: 500, to: 600 },
-    { from: 650, to: 700 },
+    { from: 650, to: 700, typed: true },
     { from: 800, to: 9000 },
   ]);
   assert.equal(listener, undefined, "the tracking ends with spans");
