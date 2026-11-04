@@ -113,9 +113,12 @@ export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z
   /**
    * `out` is the file of the input out, checked before the tool does any
    * work; undefined without out. The tool branches on it, not on the input.
-   * defineTool checks it and gives it to the handler; a caller of run gives no out file.
+   * The server gives it from prepare; a direct call gives none, and run of
+   * defineTool checks it then.
    */
   run(input: z.output<I>, session: ViceSessionApi, out?: ToolFile): Promise<z.input<O> | ToolOutput<z.input<O>>>;
+  /** Set by defineTool: checks the input out before any work, also before a session starts, and gives its file. */
+  prepare?(input: z.output<I>): ToolFile | undefined;
 }
 
 /** A condition as a result shows it: the input form, with the memory address as "$xxxx". */
@@ -143,16 +146,18 @@ export function toCondition(input: z.output<typeof TOOL_INPUTS.condition>): Cond
 }
 
 /**
- * Keeps a tool's handler typed against its own schemas. Each call checks the
- * input out here, before the handler does any work, and gives the handler the
- * checked file: the server and another tool call run without it.
+ * Keeps a tool's handler typed against its own schemas, and owns the rule of
+ * out: prepare checks the input out and gives its file. The server calls
+ * prepare before it gets a session and gives the file to run. run checks out
+ * itself when it gets no file, for example when another tool calls it.
  */
 export function defineTool<I extends z.ZodObject, O extends z.ZodObject>(tool: ToolDefinition<I, O>): ToolDefinition {
-  const run: ToolDefinition<I, O>["run"] = async (input, session) => {
+  const prepare = (input: z.output<I>): ToolFile | undefined => {
     const given = (input as { out?: unknown }).out;
-    return tool.run(input, session, typeof given === "string" ? checkOut(given) : undefined);
+    return typeof given === "string" ? checkOut(given) : undefined;
   };
-  return { ...tool, run } as unknown as ToolDefinition;
+  const run: ToolDefinition<I, O>["run"] = async (input, session, out) => tool.run(input, session, out ?? prepare(input));
+  return { ...tool, run, prepare } as unknown as ToolDefinition;
 }
 
 function jsonSchema(schema: z.ZodObject, io: "input" | "output"): McpTool["inputSchema"] {
@@ -224,14 +229,15 @@ async function runCall(
   const parsed = tool.inputSchema.safeParse(args ?? {});
   if (!parsed.success) return { failed: { code: "invalid-input", message: describeIssues(parsed.error, tool.inputSchema) } };
   try {
-    // The tool checks its out before any work (defineTool): a refused path must not lose the work or leave its side effects.
+    // out is checked before any work and before a session starts: a refused path must not lose the work or leave its side effects.
+    const out = tool.prepare?.(parsed.data);
     let output: unknown;
     try {
-      output = await tool.run(parsed.data, await session());
+      output = await tool.run(parsed.data, await session(), out);
     } catch (error) {
       // A session that the emulator never answered had no machine state: the call goes again on a new session.
       if (!(error instanceof LostBeforeAnswer)) throw error;
-      output = await tool.run(parsed.data, await session());
+      output = await tool.run(parsed.data, await session(), out);
     }
     // The result goes out in the shape that the tool listing advertises: keys
     // that the output schema does not name are removed, and a result that does

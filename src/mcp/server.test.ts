@@ -774,6 +774,17 @@ test("a range shorter than the pattern has no match, and end must not be lower t
   await client.close();
 });
 
+test("a wrong out is refused before the server asks for a session", async () => {
+  let sessions = 0;
+  const client = await connect(async () => {
+    sessions++;
+    return new FakeSession();
+  });
+  assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "dumps/mem.bin" })).code, "invalid-input");
+  assert.equal(sessions, 0, "no session for a refused out");
+  await client.close();
+});
+
 test("a tool that another tool calls checks its out too, before any work", async () => {
   const session = new FakeSession();
   const read = memoryTools.find((tool) => tool.name === "c64_memory_read")!;
