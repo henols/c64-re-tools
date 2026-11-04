@@ -142,7 +142,7 @@ test("a bad C64RT_VIDEO is reported to the caller", async () => {
   await client.close();
 });
 
-test("a project path is read in the MCP's working directory and only its bytes reach the host", async () => {
+test("the MCP reads a file by its absolute path, and only its bytes reach the host", async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-project-"));
   try {
     mkdirSync(join(project, "build"));
@@ -152,10 +152,10 @@ test("a project path is read in the MCP's working directory and only its bytes r
     const server = await startHostServer({ port: 0, createViceSession: stub(state) });
     servers.push(server);
     const client = await mcp(server.port, {}, project);
-    const result = (await client.callTool({ name: "c64_program_load", arguments: { path: "build/game.prg" } })) as CallToolResult;
+    const result = (await client.callTool({ name: "c64_program_load", arguments: { path: join(project, "build", "game.prg") } })) as CallToolResult;
     assert.deepEqual(result.structuredContent, { state: "stopped", loadAddress: "$0801", size: 3 });
     assert.deepEqual(state.received, [prg]);
-    const missing = (await client.callTool({ name: "c64_program_load", arguments: { path: "build/none.prg" } })) as CallToolResult;
+    const missing = (await client.callTool({ name: "c64_program_load", arguments: { path: join(project, "build", "none.prg") } })) as CallToolResult;
     assert.equal(JSON.parse((missing.content[0] as { text: string }).text).error.code, "not-found");
     await client.close();
   } finally {

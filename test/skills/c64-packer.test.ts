@@ -174,7 +174,7 @@ test("wrong calls are refused before Exomizer runs: no SYS, an entry below $0400
   };
   await refused(["code.prg", "--out", "packed.prg"], /^There is no SYS address in code\.prg\. It loads at \$c000, not at \$0801 where BASIC starts\. Give --entry/);
   await refused(["code.prg", "--entry", "$0300", "--out", "packed.prg"], /below \$0400/);
-  await refused(["code.prg", "--entry", "$c000", "--out", "./code.prg"], /is the input code\.prg/);
+  await refused(["code.prg", "--entry", "$c000", "--out", join(root, "code.prg")], /is the input code\.prg/);
   await refused(["code.prg", "--entry", "$c000", "--exit-memory", "$30", "--out", "packed.prg"], /--exit-memory/);
   assert.equal(existsSync(log), false, "Exomizer did not run");
 });

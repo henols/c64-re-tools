@@ -60,7 +60,7 @@ test("assembled source loads into VICE and reaches its known end state", { skip,
   // 2. The MCP loads it from the same project and runs it to the known state.
   const { client } = await startMcp(hostAddress, { cwd: project });
   try {
-    const loaded = await tool(client, "c64_program_load", { path: "build/counter.prg" });
+    const loaded = await tool(client, "c64_program_load", { path: join(project, "build", "counter.prg") });
     assert.equal(loaded.loadAddress, "$0801");
     await tool(client, "c64_registers", { action: "write", values: { pc: symbol("start").address } });
     const reached = await tool(client, "c64_run_until", { target: { kind: "address", address: symbol("done").address }, timeoutFrames: 50 });

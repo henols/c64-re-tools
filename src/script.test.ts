@@ -155,7 +155,6 @@ test("a wrong command line is invalid-input with exit status 2", () => {
   assert.match(wrong(["need", "--out", "x", "--frames", "0"]), /^--frames must be a whole number from 1 to 1000000, not "0"/);
   assert.match(wrong(["need", "--out", "x", "--frames", "$10"]), /^--frames must be a whole number/);
   assert.match(wrong(["echo", "a", "--out", "../x.json"]), /^--out: \.\.\/x\.json leads out of the project folder/);
-  assert.match(wrong(["echo", "a", "--out", "/tmp/x.json"]), /^--out: \/tmp\/x\.json is not relative/);
 });
 
 test("an address is $ and 1 to 4 hex digits, or a name in the space of the command", () => {

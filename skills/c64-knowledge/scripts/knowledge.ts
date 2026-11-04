@@ -375,7 +375,7 @@ function knowledgePath(path: string, what: string): string {
   try {
     return projectRelative(path);
   } catch {
-    throw new UsageError(`${what} must be a path relative to the project folder that stays inside it, not ${path}.`);
+    throw new UsageError(`${what} must be a path inside the project folder, relative to it or absolute, not ${path}.`);
   }
 }
 

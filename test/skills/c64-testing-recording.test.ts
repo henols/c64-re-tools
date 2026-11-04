@@ -66,6 +66,7 @@ test("a record file needs a program and steps the replay core can do; a checkpoi
     badRange: { ...valid, inputs: ["$de00-$e000"] },
     badCoverage: { ...valid, coverage: "game_start" },
     coverageNumber: { ...valid, coverage: 0x1aed },
+    absoluteProgram: { ...valid, program: join(project, "game.prg") },
   })) {
     assert.throws(() => readRecordFile(file(`${name}.json`, bad)), Refusal, name);
   }

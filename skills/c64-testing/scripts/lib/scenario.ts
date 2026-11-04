@@ -17,6 +17,7 @@ import { openForRead } from "#src/knowledge/database.ts";
 import { nameTable } from "#src/knowledge/names.ts";
 import { DEFAULT_SPACE } from "#src/knowledge/schema.ts";
 import { programImage } from "#src/knowledge/program.ts";
+import { refuseAbsoluteInFile } from "#src/project.ts";
 import { listed } from "#src/script.ts";
 import { namesStartScreen, passStartScreen } from "./start-screen.ts";
 
@@ -139,6 +140,8 @@ export function readScenario(path: string): Scenario {
     const form = `${side} must be { "program": "<file.prg>", "symbols": "knowledge" }. symbols can also be "none" or a JSON file`;
     if (!isObject(subject) || typeof subject.program !== "string" || typeof subject.symbols !== "string") return fail(form);
     for (const key of Object.keys(subject)) if (key !== "program" && key !== "symbols") fail(`${side} has the key ${key}. ${form}`);
+    refuseAbsoluteInFile(subject.program, `${side}.program`, fail);
+    refuseAbsoluteInFile(subject.symbols, `${side}.symbols`, fail);
   }
   if (!Array.isArray(scenario.steps) || scenario.steps.length === 0) fail("steps must be a list with at least one step");
   const labels = new Set<string>();
@@ -183,6 +186,7 @@ function checkStep(kind: string, step: Record<string, unknown>, at: string, fail
       return;
     case "snapshot":
       if (typeof step.snapshot !== "string" || step.snapshot === "") fail(`${at}: snapshot needs a .vsf file in the project`);
+      refuseAbsoluteInFile(step.snapshot, `${at}: snapshot`, fail);
       return;
     case "normalize":
       if (step.normalize !== true) fail(`${at}: normalize is true: it writes the entry state of the knowledge`);

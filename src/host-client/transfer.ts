@@ -5,24 +5,34 @@ import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { checkOutputPath, isInside, projectRoot, readGroup, resolveProject, resolveProjectFile, resolveReadFile, writeProblem } from "../project.ts";
+import { checkOutputPath, fileProject, isInside, projectRoot, readGroup, realLocation, resolveProjectFile, resolveReadFile, writeProblem } from "../project.ts";
 import { isRefusal } from "../errors.ts";
 import { MAX_ATTACHMENT_BYTES } from "../protocol/framing.ts";
 import { WireFailure } from "../protocol/messages.ts";
 import { MAX_TREE_FILES, type SourceTree } from "../protocol/tools.ts";
 
-/**
- * The project folder of a call that names it with `project` (relative to the
- * working directory) or not. Throws WireFailure when the rules
- * refuse it, for example at a folder with several projects below it.
- */
-export function projectFolder(project: string | undefined): string {
-  return resolveProject(project, process.cwd(), { remedy: "Give project: <folder>" });
+/** A file that an MCP tool reads or writes: its absolute path, and its project. */
+export interface ToolFile {
+  file: string;
+  root: string;
 }
 
-/** Refuses an MCP `out` before the tool does any work, with the checks that every --out of a script gets. */
-export function checkOut(path: string, project: string | undefined): void {
-  checkOutputPath(path, "file", { root: projectFolder(project), what: "out" });
+/**
+ * The file of a path input of an MCP tool, with the project that the project
+ * rules find for it (fileProject). Refuses a relative path: the agent cannot
+ * see the working folder of the MCP server.
+ */
+export function toolFile(path: string, access: "read" | "write"): ToolFile {
+  if (!isAbsolute(path)) throw new WireFailure("invalid-input", `${path} is relative. Give the absolute path of the file.`);
+  const file = resolve(path);
+  return { file, root: fileProject(file, access) };
+}
+
+/** The file of an MCP `out`, checked before the tool does any work with the checks that every --out of a script gets. */
+export function checkOut(path: string): ToolFile {
+  const target = toolFile(path, "write");
+  checkOutputPath(target.file, "file", { root: target.root, what: "out" });
+  return target;
 }
 
 /** The project folder of this process (--project or the project lookup), or a WireFailure. */
@@ -48,11 +58,12 @@ export function readProjectFile(path: string, options: { root?: string; what?: s
     real = resolveReadFile(path, root);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new WireFailure("not-found", `${options.what === undefined ? "" : `${options.what}: `}There is no file at ${path} in the project folder.`);
+      throw new WireFailure("not-found", `${options.what === undefined ? "" : `${options.what}: `}There is no file at ${path}${isAbsolute(path) ? "" : " in the project folder"}.`);
     }
     if (isRefusal(error) && error.code === "invalid-input") {
-      const where = readGroup(root) === undefined ? "it" : "its group folder";
-      throw new WireFailure("invalid-input", `${options.what ?? path}: give a path relative to the project folder that stays inside ${where}, not ${path}.`);
+      const group = readGroup(root);
+      const where = group === undefined ? `the project folder ${root}` : `the group folder ${group.root} of the project`;
+      throw new WireFailure("invalid-input", `${options.what === undefined ? "" : `${options.what}: `}${path} leads out of ${where}. Give a path that stays inside it.`);
     }
     throw error;
   }
@@ -94,7 +105,7 @@ export function writeRefusal(error: unknown, path: string, what?: string): WireF
  */
 export function writeProjectFile(path: string, bytes: Uint8Array, options: { root?: string; what?: string } = {}): void {
   const root = options.root ?? currentProject();
-  const refuse = () => new WireFailure("invalid-input", `${options.what ?? path}: give a path relative to the project folder that stays inside it, not ${path}.`);
+  const refuse = () => new WireFailure("invalid-input", `${options.what === undefined ? "" : `${options.what}: `}${path} leads out of the project folder ${root}. Give a path that stays inside it.`);
   let file: string;
   try {
     file = checkOutputPath(path, "file", { root, ...(options.what === undefined ? {} : { what: options.what }) });
@@ -148,7 +159,7 @@ export function readProjectTree(path: string, options: { root?: string } = {}): 
     sourceRoot = resolveProjectFile(path, projectRootPath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new WireFailure("not-found", `There is no directory ${path} in the project folder.`);
-    if (isRefusal(error) && error.code === "invalid-input") throw new WireFailure("invalid-input", `${path}: give a directory relative to the project folder that stays inside it.`);
+    if (isRefusal(error) && error.code === "invalid-input") throw new WireFailure("invalid-input", `${path} leads out of the project folder ${projectRootPath}. Give a directory inside it, relative to the project folder or absolute.`);
     throw error;
   }
   if (!statSync(sourceRoot).isDirectory()) throw new WireFailure("invalid-input", `${path} is not a directory.`);
@@ -196,30 +207,41 @@ const posixRelative = (from: string, to: string) => relative(from, to).split(sep
 /**
  * Reads a source root and its include folders as one source tree for
  * staging, as readProjectTree does. An include folder is relative to the
- * source root and can be anywhere in the project folder. The tree starts at
- * the lowest folder that holds all these folders, but it holds only their
- * files. `sourceDir` is the source root in the tree, "" at its top, and
- * `includeDirs` are the include folders relative to the source root.
+ * source root, or absolute, and can be anywhere in the project folder. The
+ * tree starts at the lowest folder that holds all these folders, but it holds
+ * only their files. `sourceDir` is the source root in the tree, "" at its
+ * top, and `includeDirs` are the include folders relative to the source root.
  */
 export function readSourceTree(sourceRoot: string, includes: readonly string[], options: { root?: string } = {}): { files: SourceTree; contents: Buffer[]; sourceDir: string; includeDirs: string[] } {
   const projectRootPath = options.root ?? currentProject();
   const sourceTree = readProjectTree(sourceRoot, { root: projectRootPath });
   const project = realpathSync(projectRootPath);
   const source = resolveProjectFile(sourceRoot, projectRootPath);
-  const missing = (folder: string) => new WireFailure("not-found", `There is no include folder ${folder} with files in the project folder. Give an include folder relative to the source root, inside the project folder.`);
+  const missing = (folder: string) => new WireFailure("not-found", `There is no include folder ${folder} with files in the project folder. Give an include folder inside the project folder, relative to the source root or absolute.`);
   const folders = includes.map((folder) => {
-    const outside = new WireFailure("invalid-input", `The include folder ${folder} is outside the project folder. Give an include folder relative to the source root, inside the project folder.`);
-    if (isAbsolute(folder)) throw outside;
+    const outside = new WireFailure("invalid-input", `The include folder ${folder} is outside the project folder. Give an include folder inside the project folder, relative to the source root or absolute.`);
     const candidate = resolve(source, folder);
-    if (!isInside(project, candidate)) throw outside;
+    // A path through a file (ENOTDIR) or to nothing names no folder: it is missing. Another error of the file system is a refusal.
+    const refused = (error: unknown) => {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOTDIR" || code === "ENOENT") return missing(folder);
+      return new WireFailure("invalid-input", `The include folder ${folder} cannot be read: the file system refuses it (${code ?? "an error"}). Give an include folder inside the project folder that you can read.`);
+    };
+    // The real location decides, also of a folder that does not exist: an absolute folder can reach the project folder through a link, for example /tmp to /private/tmp.
     let real: string;
     try {
-      real = realpathSync(candidate);
-    } catch {
-      throw missing(folder);
+      real = realLocation(candidate);
+    } catch (error) {
+      throw refused(error);
     }
     if (!isInside(project, real)) throw outside;
-    if (!statSync(real).isDirectory()) throw missing(folder);
+    let isFolder: boolean;
+    try {
+      isFolder = statSync(real, { throwIfNoEntry: false })?.isDirectory() === true;
+    } catch (error) {
+      throw refused(error);
+    }
+    if (!isFolder) throw missing(folder);
     return { folder, real };
   });
   let top = source;

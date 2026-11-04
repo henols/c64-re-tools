@@ -1,6 +1,6 @@
 // Media tools: c64_autostart, c64_program_load, c64_disk_attach and
-// c64_snapshot. Paths are relative to the project folder; the host-client
-// reads the file and the Host Runtime receives only its bytes.
+// c64_snapshot. Paths are absolute; the host-client reads the file and the
+// Host Runtime receives only its bytes.
 
 import { extname } from "node:path";
 
@@ -8,14 +8,14 @@ import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
 import { refuseNotPrg } from "../../host-client/image.ts";
-import { projectFolder, readProjectFile } from "../../host-client/transfer.ts";
+import { readProjectFile, toolFile } from "../../host-client/transfer.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { AUTOSTART_TYPES, DISK_TYPES, MAX_SNAPSHOTS, RUN_STATES } from "../../protocol/vice.ts";
-import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
+import { OutInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput } from "../inputs.ts";
-import { AddressOutput, defineTool, requireFields, requireOut, TransientName } from "../server.ts";
+import { AddressOutput, defineTool, requireFields, TransientName } from "../server.ts";
 
-const ProjectPath = z.string().min(1).describe("path relative to the project folder, for example build/game.prg");
+const FilePath = z.string().min(1).describe("the absolute path of a file in a project folder, for example /home/me/game/build/game.prg");
 
 const list = (types: readonly string[]) => types.map((type) => `.${type}`).join(", ");
 
@@ -34,8 +34,7 @@ const c64Autostart = defineTool({
     "The c64_timing stopwatch starts again from zero.",
   inputSchema: z
     .object({
-      path: ProjectPath,
-      project: ProjectInput.optional(),
+      path: FilePath,
       index: z.number().int().min(0).max(0xfffe).optional().describe("directory entry of a disk image, 0 is the first entry. Without it, the first file loads as with LOAD\"*\""),
       run: z.boolean().default(true).describe("true runs the program after it loads"),
     })
@@ -51,7 +50,8 @@ const c64Autostart = defineTool({
       throw new WireFailure("invalid-input", `index selects an entry of a disk image (${list(DISK_TYPES)}). A .${type} file has no directory: leave out index.`);
     }
     // VICE numbers the directory entries from 1, and its 0 loads "*".
-    return session.autostart({ path: input.path, index: input.index === undefined ? 0 : input.index + 1, run: input.run, root: projectFolder(input.project) });
+    const { file, root } = toolFile(input.path, "read");
+    return session.autostart({ path: file, index: input.index === undefined ? 0 : input.index + 1, run: input.run, root });
   },
 });
 
@@ -64,8 +64,7 @@ const c64ProgramLoad = defineTool({
     "With address, it goes there instead.",
   inputSchema: z
     .object({
-      path: ProjectPath,
-      project: ProjectInput.optional(),
+      path: FilePath,
       address: AddressInput.optional().describe("load here instead of at the file's own load address"),
     })
     .strict(),
@@ -74,8 +73,8 @@ const c64ProgramLoad = defineTool({
   async run(input, session) {
     // The same rule as every PRG reader of the scripts: .prg or no extension.
     refuseNotPrg(input.path, extname(input.path).slice(1).toLowerCase(), "Use c64_autostart, or c64_disk_attach for a disk image");
-    const root = projectFolder(input.project);
-    const result = await session.programLoad(input.address === undefined ? { path: input.path, root } : { path: input.path, address: input.address, root });
+    const { file, root } = toolFile(input.path, "read");
+    const result = await session.programLoad(input.address === undefined ? { path: file, root } : { path: file, address: input.address, root });
     return { state: result.state, loadAddress: formatC64Address(result.loadAddress), size: result.size };
   },
 });
@@ -87,30 +86,31 @@ const c64DiskAttach = defineTool({
     `Put a disk image from the project into drive 8 (${list(DISK_TYPES)}). ` +
     "Nothing loads or runs. To load from the disk, type LOAD on the C64 or use c64_autostart. " +
     "This does not change the run state of the machine.",
-  inputSchema: z.object({ path: ProjectPath, project: ProjectInput.optional() }).strict(),
+  inputSchema: z.object({ path: FilePath }).strict(),
   outputSchema: z.object({ attached: z.boolean() }),
   readOnly: false,
   async run(input, session) {
-    return session.diskAttach({ path: input.path, root: projectFolder(input.project) });
+    const { file, root } = toolFile(input.path, "read");
+    return session.diskAttach({ path: file, root });
   },
 });
 
 const c64Snapshot = defineTool({
+  outActions: ["save"],
   name: "c64_snapshot",
   title: "Machine snapshots",
   description:
     "Save and restore the whole machine state, attached disks included. Action save keeps a snapshot under a name you choose. " +
-    "With out, save also writes it to that project file as a snapshot file (.vsf), so a later session can use it. " +
-    "Action restore puts the machine back in that state and stops the CPU. Give name for a snapshot of this session, or file for a .vsf in the project. " +
+    "With out, save also writes it to that file as a snapshot file (.vsf), so a later session can use it. " +
+    "Action restore puts the machine back in that state and stops the CPU. Give name for a snapshot of this session, or file for a .vsf file. " +
     "A file restores only in the emulator version and with the machine settings that saved it. The c64_timing stopwatch keeps its reading. " +
     `Action list gives the names, and action remove removes one. A session keeps at most ${MAX_SNAPSHOTS} snapshots until it ends.`,
   inputSchema: z
     .object({
       action: z.enum(["save", "restore", "list", "remove"]),
       name: TransientName.optional().describe("save and remove, and restore without file: 1 to 64 letters, digits, dots, underscores or hyphens"),
-      out: OutInput.optional().describe("save only: also write the snapshot to this project file, for example snapshots/room0.vsf. An existing file is overwritten. The result then also gives the file, the number of bytes and a SHA-256"),
-      file: ProjectPath.optional().describe("restore only: a .vsf file in the project, in place of name"),
-      project: ProjectInput.optional().describe("save with out, and restore with file: the project folder, relative to the folder where the agent started. Give it when that folder is not in a project and has projects below it"),
+      out: OutInput.optional().describe("save only: also write the snapshot to this file, the absolute path of a file in a project folder, for example /home/me/game/snapshots/room0.vsf. An existing file is overwritten. The result then also gives the absolute path of the file, the number of bytes and a SHA-256"),
+      file: FilePath.optional().describe("restore only: the absolute path of a .vsf file in a project folder, in place of name"),
     })
     .strict(),
   outputSchema: z.object({
@@ -123,7 +123,7 @@ const c64Snapshot = defineTool({
     ...WrittenOutput,
   }),
   readOnly: false,
-  async run(input, session) {
+  async run(input, session, out) {
     const { action, ...fields } = input;
     if (action === "list") {
       requireFields(action, fields, []);
@@ -131,17 +131,17 @@ const c64Snapshot = defineTool({
     }
     if (action === "restore") {
       if (fields.name !== undefined && fields.file !== undefined) throw new WireFailure("invalid-input", "Action restore takes name or file, not both.");
-      if (fields.name === undefined && fields.file === undefined) throw new WireFailure("invalid-input", "Action restore needs name (a snapshot of this session) or file (a .vsf in the project).");
+      if (fields.name === undefined && fields.file === undefined) throw new WireFailure("invalid-input", "Action restore needs name (a snapshot of this session) or file (the absolute path of a .vsf file).");
     }
     if (action === "restore" && fields.file !== undefined) {
-      requireFields(action, fields, ["file", "project"], ["file"]);
-      return session.snapshotRestore(readProjectFile(fields.file, { root: projectFolder(fields.project), what: "file" }).bytes);
+      requireFields(action, fields, ["file"], ["file"]);
+      const { file, root } = toolFile(fields.file, "read");
+      return session.snapshotRestore(readProjectFile(file, { root, what: "file" }).bytes);
     }
     if (action === "save") {
-      requireOut(fields);
-      requireFields(action, fields, ["name", "out", "project"], ["name"]);
+      requireFields(action, fields, ["name", "out"], ["name"]);
       const saved = await session.snapshot({ action, name: fields.name! });
-      return fields.out === undefined ? saved : { ...saved, ...writeOut(fields.out, await session.snapshotExport(fields.name!), fields.project) };
+      return out === undefined ? saved : { ...saved, ...writeOut(out, await session.snapshotExport(fields.name!)) };
     }
     requireFields(action, fields, ["name"], ["name"]);
     return session.snapshot({ action, name: fields.name! });

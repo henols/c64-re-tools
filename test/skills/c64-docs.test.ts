@@ -321,6 +321,21 @@ test("docs.ts link takes the entry page in the project folder beside the docs di
   assert.deepEqual(linked.json.linked, { links: 2, pages: ["README.md", "docs/notes.md"] });
   assert.equal(readFileSync(join(root, "README.md"), "utf8"), "[`main` `$1000`](src/main_code.asm#L5), see [notes](docs/notes.md).\n");
   assert.equal(link(root, "README.md", "docs", "README.md", "--source", "src", "--check").json.result, "PASS");
+  // Absolute paths in the project give the same reference and the same links.
+  assert.equal(generate(root, join(root, "src"), "--out", join(root, "docs", "reference")).json.out, "docs/reference");
+  assert.equal(link(root, join(root, "README.md"), join(root, "docs"), "--source", join(root, "src"), "--check").json.result, "PASS");
+  // Of two pages outside the project, the refusal names the first as given.
+  const outside = link(root, join(tmpdir(), "c64-re-tools-a", "x.md"), join(tmpdir(), "c64-re-tools-b", "y.md"), "--source", "src");
+  assert.equal(outside.status, 2);
+  assert.match((outside.json.error as { message: string }).message, /not \S*c64-re-tools-a.x\.md /);
+  // Also through a symbolic link to the project folder, for example /var to /private/var on macOS.
+  if (process.platform !== "win32") {
+    const outer = mkdtempSync(join(tmpdir(), "c64-re-tools-docs-link-"));
+    projects.push(outer);
+    const linked = join(outer, "game");
+    symlinkSync(root, linked);
+    assert.equal(link(root, join(linked, "README.md"), join(linked, "docs"), "--source", join(linked, "src"), "--check").json.result, "PASS");
+  }
   // A page given as a file finds the reference folder beside it.
   const page = link(root, "docs/notes.md", "--source", "src", "--check");
   assert.equal(page.json.result, "PASS");

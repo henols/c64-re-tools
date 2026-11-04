@@ -6,10 +6,10 @@ import { z } from "zod";
 import { formatC64Address, hexByte } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { MAX_COMPARE_DIFFERENCES, MAX_COMPARE_SIZE, MAX_DISASSEMBLE, MAX_MEMORY_READ, MAX_MEMORY_WRITE, MAX_SEARCH_PATTERN, MAX_SEARCH_RESULTS, type RegisterValues } from "../../protocol/vice.ts";
-import { linesText, OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
+import { linesText, OutInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, Byte, MemoryViewInput, SpaceInput, TOOL_INPUTS } from "../inputs.ts";
 import { readMemoryInParts } from "../../host-client/vice-session.ts";
-import { AddressOutput, defineTool, HexData, requireFields, requireOut } from "../server.ts";
+import { AddressOutput, defineTool, HexData, requireFields } from "../server.ts";
 
 /** With out, a read or a disassembly can be larger than one answer of the session: it is read in parts. */
 const MAX_MEMORY_READ_OUT = 0x10000;
@@ -23,7 +23,7 @@ const c64MemoryRead = defineTool({
   description:
     `Read 1 to ${MAX_MEMORY_READ} bytes of memory, starting at an address. ` +
     "The range must not go past $ffff. Use space drive8 to read the memory of the 1541 disk drive. " +
-    `With out, it reads up to ${MAX_MEMORY_READ_OUT} bytes and writes them as raw bytes to that project file. The result then gives the file, the number of bytes and a SHA-256 in place of data. ` +
+    `With out, it reads up to ${MAX_MEMORY_READ_OUT} bytes and writes them as raw bytes to that file. The result then gives the file, the number of bytes and a SHA-256 in place of data. ` +
     "This does not change the run state of the machine.",
   inputSchema: z
     .object({
@@ -32,22 +32,20 @@ const c64MemoryRead = defineTool({
       space: SpaceInput,
       view: MemoryViewInput,
       out: OutInput.optional(),
-      project: ProjectInput.optional(),
     })
     .strict(),
   outputSchema: z.object({ address: AddressOutput, size: z.number().int().min(1).max(MAX_MEMORY_READ_OUT), data: HexData.optional(), ...WrittenOutput }),
   readOnly: false,
-  async run(input, session) {
-    const { out, project, ...read } = input;
-    requireOut(input);
-    if (out === undefined) {
+  async run(input, session, file) {
+    const { out: _given, ...read } = input;
+    if (file === undefined) {
       if (read.size > MAX_MEMORY_READ) throw new WireFailure("invalid-input", `size can be at most ${MAX_MEMORY_READ} without out.`);
       const result = await session.memoryRead(read);
       return { address: formatC64Address(result.address), size: result.data.length / 2, data: result.data };
     }
     if (read.address + read.size > 0x10000) throw new WireFailure("invalid-input", "The range must not go past $ffff.");
     const bytes = await readMemoryInParts(session, read.address, read.size, read.view, read.space);
-    return { address: formatC64Address(read.address), size: read.size, ...writeOut(out, bytes, project) };
+    return { address: formatC64Address(read.address), size: read.size, ...writeOut(file, bytes) };
   },
 });
 
@@ -182,7 +180,7 @@ const c64Disassemble = defineTool({
   description:
     `Disassemble count instructions (1 to ${MAX_DISASSEMBLE}) from an address, as the bytes are in the live machine now. ` +
     "Use it to read code that a program changed or unpacked at run time. It includes the undocumented opcodes. " +
-    `With out, it disassembles up to ${MAX_DISASSEMBLE_OUT} instructions, or to $ffff, and writes them as a listing to that project file. The result then gives the file in place of the instructions. A file name that ends in .json gets a JSON list of the instructions, as the result without out gives them. ` +
+    `With out, it disassembles up to ${MAX_DISASSEMBLE_OUT} instructions, or to $ffff, and writes them as a listing to that file. The result then gives the file in place of the instructions. A file name that ends in .json gets a JSON list of the instructions, as the result without out gives them. ` +
     "This does not change the run state of the machine.",
   inputSchema: z
     .object({
@@ -191,15 +189,13 @@ const c64Disassemble = defineTool({
       space: SpaceInput,
       view: MemoryViewInput,
       out: OutInput.optional(),
-      project: ProjectInput.optional(),
     })
     .strict(),
   outputSchema: z.object({ instructions: z.array(z.object({ address: AddressOutput, bytes: HexData, text: z.string() })).optional(), count: z.number().int().min(0).optional(), ...WrittenOutput }),
   readOnly: false,
-  async run(input, session) {
-    const { out, project, ...request } = input;
-    requireOut(input);
-    if (out === undefined) {
+  async run(input, session, file) {
+    const { out: _given, ...request } = input;
+    if (file === undefined) {
       if (request.count > MAX_DISASSEMBLE) throw new WireFailure("invalid-input", `count can be at most ${MAX_DISASSEMBLE} without out.`);
       const result = await session.disassemble(request);
       return { instructions: result.instructions.map((instruction) => ({ ...instruction, address: formatC64Address(instruction.address) })) };
@@ -221,10 +217,10 @@ const c64Disassemble = defineTool({
         address = instruction.address + instruction.bytes.length / 2;
       }
     }
-    const text = out.toLowerCase().endsWith(".json")
+    const text = file.file.toLowerCase().endsWith(".json")
       ? `${JSON.stringify(instructions, null, 1)}\n`
       : linesText(instructions.map((instruction) => `${instruction.address}  ${spaced(instruction.bytes).padEnd(9)} ${instruction.text}`));
-    return { count: instructions.length, ...writeOut(out, text, project) };
+    return { count: instructions.length, ...writeOut(file, text) };
   },
 });
 
