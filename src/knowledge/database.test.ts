@@ -225,6 +225,15 @@ test("a trial runs every check of a write and changes neither the text nor the i
   const twice = (db: DatabaseSync) => [0x2200, 0x2300].map((address) => renameSymbol(db, context, { address, name: "other" }));
   assert.throws(() => withTrial(twice, root), failsWith("conflict"));
   assert.deepEqual(files(), before);
+  // The trial holds no lock on the index: another write goes through while it runs.
+  const outside = withTrial((db) => {
+    renameSymbol(db, context, { address: 0x2200, name: "inside" });
+    return withWrite((other) => renameSymbol(other, context, { address: 0x2400, name: "outside" }), root);
+  }, root);
+  assert.notEqual(outside.revision, null);
+  const db = openForRead(root)!;
+  assert.deepEqual([symbolAt(db, 0x2200)?.name, symbolAt(db, 0x2400)?.name], [undefined, "outside"]);
+  db.close();
 });
 
 test("a read opens the index read-only and never changes the text", () => {

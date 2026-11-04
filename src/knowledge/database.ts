@@ -113,11 +113,18 @@ function freshen(db: DatabaseSync, root: string): void {
   storeHashes(db, textHashes(files));
 }
 
-/** The project of each index opened for a write or a trial: its writes go to the text too, except in a trial. */
+/** The project of each index opened for a write: its writes go to the text too. */
 const projects = new WeakMap<DatabaseSync, string>();
 
-/** The databases of a trial: each transaction on them is a savepoint in the one transaction of the trial. */
-const trials = new WeakSet<DatabaseSync>();
+/** Makes the index fresh from the text. The write lock is taken only when the text changed: a read does not wait for a long write that keeps the index fresh. */
+function refreshIndex(root: string): void {
+  const index = openIndex(root);
+  try {
+    if (!sameHashes(currentHashes(root), storedHashes(index))) transaction(index, () => freshen(index, root));
+  } finally {
+    index.close();
+  }
+}
 
 /**
  * Opens the project's knowledge read-only, made fresh from the text first. A
@@ -126,13 +133,7 @@ const trials = new WeakSet<DatabaseSync>();
  */
 export function openForRead(root: string = projectRoot()): DatabaseSync | undefined {
   if (!existsSync(textPath(root))) return undefined;
-  const index = openIndex(root);
-  try {
-    // The lock is taken only when the text changed: a read does not wait for a long write that keeps the index fresh.
-    if (!sameHashes(currentHashes(root), storedHashes(index))) transaction(index, () => freshen(index, root));
-  } finally {
-    index.close();
-  }
+  refreshIndex(root);
   return open(indexPath(root), true);
 }
 
@@ -167,38 +168,59 @@ export function openForWrite(root: string = projectRoot()): DatabaseSync {
   return db;
 }
 
+/** An empty database in memory with the schema of this build. */
+function memoryDatabase(): DatabaseSync {
+  const db = new DatabaseSync(":memory:");
+  try {
+    configure(db);
+    ensureSchema(db);
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+  return db;
+}
+
 /**
- * Runs `work` on the project's knowledge as a trial, and closes it: every
- * check of a write runs, and a write sees the writes before it, but all of
- * them roll back at the end, so neither the knowledge text nor the index
- * changes. Without knowledge text, `work` runs on an empty database in
- * memory, and the trial creates nothing. `work` must change nothing outside
- * the database it gets.
+ * A copy in memory of the index of the project, made fresh from the text
+ * first. The copy reads the index in one read transaction: it takes no write
+ * lock, so a write of another process does not wait for the work on the copy.
  */
-export function withTrial<T>(work: (db: DatabaseSync) => T, root: string = projectRoot()): T {
-  let db: DatabaseSync;
-  if (existsSync(textPath(root))) {
-    db = openIndex(root);
-    // A transaction makes the index fresh from the text first: that rolls back too.
-    projects.set(db, root);
-  } else {
-    db = new DatabaseSync(":memory:");
+function memoryCopy(root: string): DatabaseSync {
+  refreshIndex(root);
+  const db = memoryDatabase();
+  try {
+    db.prepare("ATTACH DATABASE ? AS project").run(indexPath(root));
+    // The tables come in the order of the index: the foreign keys are checked by the index, not again here.
+    db.exec("PRAGMA foreign_keys = OFF; BEGIN");
     try {
-      configure(db);
-      ensureSchema(db);
+      const tables = db.prepare("SELECT name FROM project.sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as Array<{ name: string }>;
+      for (const { name } of tables) db.exec(`DELETE FROM main."${name}"; INSERT INTO main."${name}" SELECT * FROM project."${name}"`);
+      db.exec("COMMIT");
     } catch (error) {
-      db.close();
+      db.exec("ROLLBACK");
       throw error;
     }
+    db.exec("DETACH DATABASE project; PRAGMA foreign_keys = ON");
+  } catch (error) {
+    db.close();
+    throw error;
   }
-  trials.add(db);
+  return db;
+}
+
+/**
+ * Runs `work` on a copy in memory of the project's knowledge, and closes it:
+ * every check of a write runs, and a write sees the writes before it, but
+ * neither the knowledge text nor the index changes, and the index is not
+ * locked while `work` runs. Without knowledge text, `work` runs on an empty
+ * database in memory, and the trial creates nothing. `work` must change
+ * nothing outside the database it gets.
+ */
+export function withTrial<T>(work: (db: DatabaseSync) => T, root: string = projectRoot()): T {
+  const db = existsSync(textPath(root)) ? memoryCopy(root) : memoryDatabase();
   try {
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      return work(db);
-    } finally {
-      db.exec("ROLLBACK");
-    }
+    return work(db);
   } finally {
     db.close();
   }
@@ -249,24 +271,19 @@ function writeText(db: DatabaseSync, root: string, before: string): void {
  * Runs `work` in one immediate transaction: all of it commits, or none of it
  * does. On the knowledge of a project, the index is made fresh from the text
  * first, and a work that adds a revision writes the changed knowledge files.
- * In a trial (withTrial), it is a savepoint that writes no text: the trial rolls all of it back at its end.
  */
 export function transaction<T>(db: DatabaseSync, work: () => T): T {
   const root = projects.get(db);
-  const trial = trials.has(db);
-  db.exec(trial ? "SAVEPOINT work" : "BEGIN IMMEDIATE");
+  db.exec("BEGIN IMMEDIATE");
   try {
     if (root !== undefined) freshen(db, root);
     const before = root === undefined ? "0" : newest(db);
     const result = work();
-    if (trial) db.exec("RELEASE work");
-    else {
-      if (root !== undefined && newest(db) !== before) writeText(db, root, before);
-      db.exec("COMMIT");
-    }
+    if (root !== undefined && newest(db) !== before) writeText(db, root, before);
+    db.exec("COMMIT");
     return result;
   } catch (error) {
-    db.exec(trial ? "ROLLBACK TO work; RELEASE work" : "ROLLBACK");
+    db.exec("ROLLBACK");
     throw error;
   }
 }
