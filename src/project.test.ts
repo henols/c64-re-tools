@@ -267,13 +267,31 @@ test("the project of a file of an MCP tool is the project at or above it by the 
     const disk2 = join(bruce, "disk2");
     mkdirSync(join(disk2, ".c64-re-tools"), { recursive: true });
     assert.equal(fileProject(join(disk2, "game.d64"), "read"), disk2);
-    // A plain folder without projects below it is a project by the rules.
-    const plain = join(home, "plain");
-    mkdirSync(join(plain, "build"), { recursive: true });
-    assert.equal(fileProject(join(plain, "build", "game.prg"), "read"), join(plain, "build"));
 
     assert.throws(() => fileProject(join(games, "notes.bin"), "write"), refusal("invalid-input", /games, and it is not a project folder\. These folders below it are projects: bruce, fist\. Give a file in one of them\.$/));
     assert.throws(() => fileProject(join(home, "x.bin"), "write"), refusal("invalid-input", /the home folder is not a project folder\. Give a file in a project folder\.$/));
+  });
+});
+
+test("for an MCP tool, a folder without .c64-re-tools/ is a project only in the folder where the server started", () => {
+  withHome((home) => {
+    const start = join(home, "start");
+    mkdirSync(join(start, "dev", "build"), { recursive: true });
+    const elsewhere = join(home, "elsewhere");
+    mkdirSync(elsewhere);
+    const marked = join(home, "marked");
+    mkdirSync(join(marked, ".c64-re-tools"), { recursive: true });
+    const saved = process.cwd();
+    try {
+      process.chdir(start);
+      assert.equal(fileProject(join(start, "dev", "build", "game.prg"), "read"), join(start, "dev", "build"));
+      for (const access of ["read", "write"] as const) {
+        assert.throws(() => fileProject(join(elsewhere, "x.bin"), access), refusal("invalid-input", /x\.bin is not in a project folder\. A project folder has \.c64-re-tools\//), access);
+      }
+      assert.equal(fileProject(join(marked, "x.bin"), "write"), marked);
+    } finally {
+      process.chdir(saved);
+    }
   });
 });
 

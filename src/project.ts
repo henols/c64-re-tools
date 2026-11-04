@@ -104,9 +104,10 @@ function listed(projects: readonly string[]): string {
  * or above it with .c64-re-tools/, below the home folder. Without one, `start`
  * itself, unless it is the home folder, has projects below it, or is a folder
  * of a group that is no project: then why it is in no project, so no write
- * lands outside a project.
+ * lands outside a project. `plain` marks `start` as a project without
+ * .c64-re-tools/.
  */
-type Lookup = { root: string } | { home: true } | { below: string[] } | { group: ProjectGroup };
+type Lookup = { root: string; plain?: true } | { home: true } | { below: string[] } | { group: ProjectGroup };
 
 function lookUp(start: string): Lookup {
   for (const folder of foldersUpFrom(start)) {
@@ -117,7 +118,7 @@ function lookUp(start: string): Lookup {
   if (below.length > 0) return { below };
   // A folder of a group that is no project, for example its docs/: a write there would make it a project of the group.
   const group = foldersUpFrom(start).slice(1).map(groupAt).find((each) => each !== undefined);
-  return group === undefined ? { root: start } : { group };
+  return group === undefined ? { root: start, plain: true } : { group };
 }
 
 /** The projects of a group, relative to `start` and with /. */
@@ -142,16 +143,21 @@ export function findProject(cwd: string = process.cwd()): string {
  * The project of the absolute path `file` that an MCP tool reads or writes:
  * the project rules (lookUp) from the folder of the file, or from the first
  * folder above it that exists, because a new file can be in a new folder. A
- * file that a tool only reads can also be in a group folder outside its
- * projects: then the project is the first project of the group, whose reads
- * reach the group folder. Any other file in no project is a Refusal with the
- * remedy.
+ * folder without .c64-re-tools/ is a project only in the folder where the MCP
+ * server started, where the agent started: a file in another plain folder is
+ * refused. A file that a tool only reads can also be in a group folder outside
+ * its projects: then the project is the first project of the group, whose
+ * reads reach the group folder. Any other file in no project is a Refusal with
+ * the remedy.
  */
 export function fileProject(file: string, access: "read" | "write"): string {
   let start = dirname(resolve(file));
   while (statSync(start, { throwIfNoEntry: false })?.isDirectory() !== true && dirname(start) !== start) start = dirname(start);
   const found = lookUp(start);
   if ("root" in found) {
+    if (found.plain === true && !isInside(resolve(process.cwd()), found.root)) {
+      throw new Refusal("invalid-input", `${file} is not in a project folder. A project folder has .c64-re-tools/, or is the folder where the agent started or a folder in it.`);
+    }
     ensureLocal(found.root);
     return found.root;
   }
