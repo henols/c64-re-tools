@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
-import { ENTRY_DURING_INPUT, entryStateCheck, entryStateDiffers, firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, loaderEntryState, siteMap, trackInput } from "../../skills/c64-testing/scripts/lib/recording.ts";
+import { ENTRY_DURING_INPUT, entryStateCheck, entryStateDiffers, firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, loaderEntryState, record, siteMap, trackInput } from "../../skills/c64-testing/scripts/lib/recording.ts";
 import { rebuildNames, replay, replayAll } from "../../skills/c64-testing/scripts/lib/replay.ts";
 import { Refusal } from "../../src/errors.ts";
 import { C64RUN_PROTOCOL, type C64RunSession } from "../../src/native/c64run.ts";
@@ -450,4 +450,12 @@ test("the entry state check compares only what the loader writes: the segments i
   assert.deepEqual(written({ $0200: "00".repeat(0x100) }), [{ start: 0x0200, end: 0x02ff }]);
   // A segment in pages 0-3 too, and the program bytes at the entry that are outside them are left out.
   assert.deepEqual(written({ $0200: "00".repeat(0x100) }, [{ start: 0x0300, end: 0x030f }, { start: 0x0400, end: 0x04ff }]), [{ start: 0x0200, end: 0x030f }]);
+});
+
+test("a record that fails ends the input listener of the session", async () => {
+  let listener: unknown = "none yet";
+  const core = { onInput: (given: unknown) => (listener = given) } as unknown as C64RunSession;
+  const recordFile = readRecordFile(file("missing-program.json", { ...valid, program: "missing.prg" }));
+  await assert.rejects(record(core, recordFile, {} as Parameters<typeof record>[2]), /missing\.prg/);
+  assert.equal(listener, undefined);
 });

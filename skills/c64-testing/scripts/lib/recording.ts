@@ -719,6 +719,21 @@ export async function record(
   input?: (core: C64RunSession, restore: () => Promise<string | undefined>) => Promise<string | undefined>,
   entry?: number,
 ): Promise<RecordOutcome> {
+  try {
+    return await recordSession(core, file, workspace, input, entry);
+  } finally {
+    // The input listener of the session ends with the record, also when the record fails.
+    core.onInput(undefined);
+  }
+}
+
+async function recordSession(
+  core: C64RunSession,
+  file: RecordFile,
+  workspace: Workspace,
+  input: Parameters<typeof record>[3],
+  entry: number | undefined,
+): Promise<RecordOutcome> {
   // Every key and joystick goes through key() and joy() of the core: the steps, the play and a RESTORE.
   const tracked = trackInput(core);
   const prg = readProjectFile(file.program).bytes;
