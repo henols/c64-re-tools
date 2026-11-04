@@ -46,7 +46,7 @@ const INCONCLUSIVE_HINT = "reason tells why the script could not compare. This i
 
 /** What to do when the reference at its entry is not in the entry state that the loader of a rebuild writes. */
 const ENTRY_STATE_REMEDY = "The loader of a rebuild writes the entry state of the project knowledge, so the rebuild starts from another state than the reference. Capture the program again with the input of the record file before the entry. Then put the capture into the project knowledge, and generate the loader again.";
-const ENTRY_STATE_HINT = `At its entry, the reference has other bytes than the entry state of the project knowledge in entryStateDiffers. ${ENTRY_STATE_REMEDY}`;
+const ENTRY_STATE_HINT = "At their entries, the reference and the rebuild have other bytes in entryStateDiffers: the loader of the rebuild wrote another entry state. Capture the program again with the input of the record file before the entry. Then put the capture into the project knowledge, and generate the loader again.";
 
 async function test(call: Call): Promise<ScenarioResult | Reply> {
   const scenario = readScenario(call.subject(0));
@@ -246,7 +246,7 @@ const COMMANDS: CommandSpec[] = [
         if (screen !== undefined) throw new UsageError("--screen needs one recording. Give one recording, or leave out --screen.");
         const all = await replayAll(folders, values);
         const first = all.recordings.find((item) => item.result !== "PASS");
-        const entryState = all.recordings.some((item) => item.entryStateDiffers !== undefined) ? ` At its entry, the reference of each recording with entryStateDiffers has other bytes than the entry state of the project knowledge. ${ENTRY_STATE_REMEDY}` : "";
+        const entryState = all.recordings.some((item) => item.entryStateDiffers !== undefined) ? ` For each recording with entryStateDiffers: ${ENTRY_STATE_HINT}` : "";
         if (first === undefined) return entryState === "" ? all : reply(all, { hint: entryState.trimStart() });
         // The same comparison, alone: its own result gives the hint and the nextAction of that recording.
         const flags = [
