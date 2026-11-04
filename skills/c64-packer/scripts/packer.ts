@@ -3,7 +3,6 @@
 // unpacks the result again in the emulator of Exomizer and checks the bytes
 // and the entry before it writes the program.
 
-import { posix } from "node:path";
 
 import { findHandoffs, formatC64Address, formatC64Byte, formatC64RangeFields, parseTokenized, prgRange } from "#src/c64.ts";
 import { compareBuild, mergedPrograms } from "#src/compare.ts";
@@ -11,6 +10,7 @@ import { isRefusal, Refusal } from "#src/errors.ts";
 import { readProjectFile, writeReported } from "#src/host-client/transfer.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { pack } from "#src/native/exomizer.ts";
+import { resolveReadPath } from "#src/project.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { OPTIONS, reply, runScript, UsageError } from "#src/script.ts";
 
@@ -29,7 +29,14 @@ function sysEntry(program: Uint8Array): number | string {
   return sys.address;
 }
 
-const samePath = (a: string, b: string) => posix.normalize(a.replaceAll("\\", "/")) === posix.normalize(b.replaceAll("\\", "/"));
+/** True when two project paths name one file, also when one is relative and the other absolute. A path that the project rules refuse names no file here: its read refuses it. */
+const samePath = (a: string, b: string) => {
+  try {
+    return resolveReadPath(a) === resolveReadPath(b);
+  } catch {
+    return false;
+  }
+};
 
 await runScript({
   name: "packer",

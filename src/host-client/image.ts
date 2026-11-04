@@ -1,12 +1,14 @@
 // An image.json of the c64-unpacker skill (a 64 KiB memory and its segments)
 // or a PRG, read from the project to put it into the knowledge.
 
-import { posix } from "node:path";
+import { createHash } from "node:crypto";
+import { dirname, join } from "node:path";
 
 import { isRefusal, Refusal } from "../errors.ts";
 import { formatC64Address, prgRange } from "../c64.ts";
 import { readEntryState, type EntryState } from "./entry-state.ts";
 import { isObject } from "../protocol/messages.ts";
+import { projectRelative } from "../project.ts";
 import { readProjectFile, readProjectJson } from "./transfer.ts";
 
 export interface Image {
@@ -22,6 +24,33 @@ export interface Image {
   stages?: Array<Record<string, unknown>>;
   /** The PRG that the capture in image.json ran, as the project path that the capture got, and the SHA-256 of that file. */
   program?: { file: string; sha256: string };
+}
+
+/**
+ * The program file that the capture of the image.json at `path` ran, as a
+ * citation of the project: its path in one spelling and its SHA-256. Refused
+ * when the project has no such file now, or when its bytes are not the bytes
+ * that the capture ran: the citation would not be true.
+ */
+export function checkedProgramCitation(path: string, program: { file: string; sha256: string }): { file: string; sha256: string } {
+  const remedy = "Capture the program again from its file in this project, then give the new image.json.";
+  let file: string;
+  try {
+    file = projectRelative(program.file);
+  } catch {
+    throw new Refusal("invalid-input", `${path} names the program file ${program.file}, which is not a path in this project. ${remedy}`);
+  }
+  let bytes: Uint8Array;
+  try {
+    bytes = readProjectFile(file).bytes;
+  } catch (error) {
+    if (isRefusal(error) && error.code === "not-found") throw new Refusal("not-found", `${path} names the program file ${file}, and the project has no file there. ${remedy}`);
+    throw error;
+  }
+  if (createHash("sha256").update(bytes).digest("hex") !== program.sha256) {
+    throw new Refusal("conflict", `The program file ${file} changed after the capture in ${path}: its bytes are not the bytes that the capture ran. ${remedy}`);
+  }
+  return { file, sha256: program.sha256 };
 }
 
 /** The kinds of media files that are no PRG, by extension. */
@@ -98,11 +127,11 @@ export function readImage(path: string): Image {
     if (segment.end < segment.start) fail(`the segment at ${formatC64Address(segment.start)} ends before it starts`);
     if (index > 0 && segment.start <= segments[index - 1]!.end) fail(`the segments at ${formatC64Address(segments[index - 1]!.start)} and ${formatC64Address(segment.start)} overlap`);
   });
-  const directory = posix.dirname(path);
-  const memory = readProjectFile(posix.join(directory, manifest.image as string)).bytes;
+  const directory = dirname(path);
+  const memory = readProjectFile(join(directory, manifest.image as string)).bytes;
   if (memory.length !== 0x10000) fail(`its image has ${memory.length} bytes, not 65536`);
   const image: Image = { segments, byteAt: (at) => memory[at]!, memory };
-  const state = entryStateNextTo(posix.join(directory, "entry_state.json"));
+  const state = entryStateNextTo(join(directory, "entry_state.json"));
   if (state !== undefined) image.state = state;
   if (manifest.entry !== undefined) image.entry = address(manifest.entry, "entry");
   if (Array.isArray(manifest.stages)) image.stages = manifest.stages.map((stage, index) => (isObject(stage) ? stage : fail(`stage ${index + 1} is not an object`)));

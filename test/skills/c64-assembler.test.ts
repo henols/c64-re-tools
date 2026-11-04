@@ -11,12 +11,17 @@ import { after, test } from "node:test";
 
 import { COPIER_LINE } from "../../src/build-name.ts";
 import { COVERAGE } from "../../src/c64.ts";
-import { withWrite } from "../../src/knowledge/database.ts";
-import { setImage } from "../../src/knowledge/program.ts";
+import { withRead, withWrite } from "../../src/knowledge/database.ts";
+import { setImage, startScreenKey } from "../../src/knowledge/program.ts";
+import { currentStartScreen, type StartScreenRow } from "../../src/knowledge/read.ts";
+import { START_SCREEN_FILE, startScreenPlan } from "../../src/knowledge/start-screen.ts";
 import { setStartScreen } from "../../src/knowledge/write.ts";
-import { packLoader } from "../../src/loader.ts";
+import { packLoader, settingsLines } from "../../src/loader.ts";
+import { assemble } from "../../src/native/acme.ts";
 import { ACME, EXOMIZER, findTool } from "../../src/native/discover.ts";
 import { localToolContext } from "../../src/native/local.ts";
+import { packStage, planStage, STAGE_FILE } from "../../src/stage.ts";
+import { START_SCREEN_CODE } from "../../skills/c64-source/scripts/lib/loader.ts";
 import { readEnvelope, seededBytes, type ScriptEnvelope } from "../kit.ts";
 import { importPrg } from "../fixtures/program.ts";
 
@@ -225,7 +230,7 @@ function buildIn(folder: string, args: string[], env: NodeJS.ProcessEnv = {}): {
   return { status: run.status, ...readEnvelope(run.stdout, run.status) };
 }
 
-test("--switch builds other switch values and leaves config.asm as it is; with the packed form it also packs the loader program of these values, as generate packs it", { skip: exomizerSkip, timeout: 600_000 }, async () => {
+test("--switch builds other switch values and leaves config.asm as it is; with the packed form it also packs the loader program of these values, and wraps it in the show stage of a start screen of a captured stage, as generate does", { skip: exomizerSkip, timeout: 600_000 }, async () => {
   const { project: folder, segments, leftovers } = packedProject();
   const config = readFileSync(join(folder, "src", "config.asm"), "utf8");
   // The pack of generate at the defaults: the loaded ranges are the segments without the leftover, and loader.asm names the copier.
@@ -262,16 +267,48 @@ test("--switch builds other switch values and leaves config.asm as it is; with t
   }
   assert.equal(existsSync(join(folder, "build", "custom_leftovers.prg")), false);
 
-  // A start screen of a captured stage: only generate makes that loader program, so the build writes main.asm and tells why it wrote no loader.
+  // A start screen of a captured stage: the show stage wraps the packed loader, with the bytes of the stage from start_screen_stage.asm.
+  const row: StartScreenRow = { space: "c64", mode: "text", screen: 0x0400, charset: 0x1000, colour: 1, border: 0, background: 0, stage: "loading", origin: "llm", revision: "r" };
+  const screen = [{ start: 0x0400, body: new Uint8Array(1000).fill(0x20) }];
   withWrite((db) => {
     setImage(db, { origin: "llm" }, { space: "loading", segments: [{ start: 0x0400, end: 0x07e7 }], byteAt: () => 0x20 });
-    setStartScreen(db, { origin: "llm" }, { mode: "text", screen: 0x0400, charset: 0x1000, colour: 1, border: 0, background: 0, stage: "loading" });
+    setStartScreen(db, { origin: "llm" }, { mode: row.mode, screen: row.screen, charset: row.charset!, colour: row.colour!, border: row.border, background: row.background, stage: "loading" });
   }, folder);
   rmSync(join(folder, "build", "custom_trainer.prg"));
-  const staged = buildIn(folder, ["src", "main.asm", "--switch", "TRAINER=1"]);
+  const unstaged = buildIn(folder, ["src", "main.asm", "--switch", "TRAINER=1"]);
+  assert.equal(unstaged.status, 0, JSON.stringify(unstaged.json));
+  assert.ok(existsSync(join(folder, "build", "custom_trainer.prg")), "without start_screen_stage.asm, the build writes main.asm and tells why it wrote no loader");
+  assert.deepEqual(Object.keys(unstaged.json.loader), ["written", "reason"]);
+  assert.match(unstaged.json.loader.reason, /^The start screen is of the captured stage loading, and src has no start_screen_stage\.asm with its bytes\./);
+
+  // generate writes the files of the show stage only with a checked loader: here they come from a plan of the stage.
+  const sourceFiles = () => ["config.asm", "switches.asm", "loader.asm", START_SCREEN_FILE, STAGE_FILE].filter((name) => existsSync(join(folder, "src", name))).map((name) => ({ name, text: readFileSync(join(folder, "src", name), "utf8") }));
+  const settings = settingsLines({ switches: existsSync(join(folder, "src", "switches.asm")), config: true });
+  const key = withRead((db) => startScreenKey(db, currentStartScreen(db)!), folder);
+  const stageFile = (fileKey: string) => writeFileSync(join(folder, "src", STAGE_FILE), planStage({ inner: [], innerStart: 0x080d, innerPort: 0x37, stage: screen, row, plan: startScreenPlan(row), settings, header: [], key: fileKey, codeSize: 300 }).text);
+  writeFileSync(join(folder, "src", START_SCREEN_FILE), START_SCREEN_CODE);
+  // A file of another start screen, or of an earlier state of the stage, has another key: its bytes are not of this start screen.
+  stageFile("0123456789abcdef");
+  const old = buildIn(folder, ["src", "main.asm", "--switch", "TRAINER=1"]);
+  assert.deepEqual(Object.keys(old.json.loader), ["written", "reason"]);
+  assert.match(old.json.loader.reason, /^start_screen_stage\.asm of src is not of the start screen of the knowledge now: .* Generate the source with the loader again\.$/);
+  stageFile(key);
+  const before = sourceFiles();
+  const staged = buildIn(folder, ["src", "main.asm", "--switch", "TRAINER=0"]);
   assert.equal(staged.status, 0, JSON.stringify(staged.json));
-  assert.ok(existsSync(join(folder, "build", "custom_trainer.prg")));
-  assert.deepEqual(Object.keys(staged.json.loader), ["written", "reason"]);
-  assert.equal(staged.json.loader.written, false);
-  assert.match(staged.json.loader.reason, /captured stage loading/);
+  assert.deepEqual([staged.json.loader.out, staged.json.loader.stage?.space, staged.json.loader.verified], ["build/clean_loader.prg", "loading", false]);
+  assert.deepEqual(staged.json.loader.packed, { packedBytes: reference.packedBytes, unpackedBytes: reference.unpackedBytes }, "the packed loader of these switch values is in the show stage");
+  // The show stage of generate around the same packed loader: planned again, and packed with the bytes of the stage.
+  const assembleStage = async (text: string) => {
+    const files = [...before.filter((file) => file.name !== STAGE_FILE && file.name !== "loader.asm"), { name: STAGE_FILE, text }];
+    const contents = files.map((file) => Buffer.from(file.text));
+    const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: STAGE_FILE, includeDirs: [], defines: {} }, contents, localToolContext());
+    assert.equal(result.assembled, true, result.diagnostics.map((diagnostic) => diagnostic.message).join("; "));
+    return { program: attachments![0]!, symbols: result.symbols ?? [] };
+  };
+  const shown = await packStage(reference.program, { parts: screen }, row, { settings, header: [], key }, assembleStage, localToolContext());
+  assert.deepEqual(readFileSync(join(folder, "build", "clean_loader.prg")), shown.packed.program);
+  const names = (JSON.parse(readFileSync(join(folder, "build", "symbols", "clean_loader.json"), "utf8")) as { symbols: Array<{ name: string }> }).symbols.map((symbol) => symbol.name);
+  for (const name of ["c64_source_stage", "loader_start_screen_wait", "loader_start_screen_continue", "loader_copier_src"]) assert.ok(names.includes(name), name);
+  assert.deepEqual(sourceFiles(), before, "the source stays as it is");
 });

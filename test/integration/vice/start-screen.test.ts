@@ -9,6 +9,7 @@ import { after, before, test } from "node:test";
 
 import { START_SCREEN_CODE } from "../../../skills/c64-source/scripts/lib/loader.ts";
 import { assemble } from "../../../src/native/acme.ts";
+import { symbolValue } from "../../../src/native/types.ts";
 import { ACME, findTool } from "../../../src/native/discover.ts";
 import { localToolContext } from "../../../src/native/local.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
@@ -44,10 +45,7 @@ async function build(): Promise<{ program: Buffer; wait: number; done: number }>
   const contents = files.map((file) => Buffer.from(file.text));
   const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.path, size: contents[index]!.length })), entrySource: "test.asm", includeDirs: [], defines: {} }, contents, localToolContext());
   assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
-  const value = (name: string) => {
-    const symbol = result.symbols!.find((item) => item.name === name)!;
-    return symbol.kind === "address" ? symbol.address : symbol.value;
-  };
+  const value = (name: string) => symbolValue(result.symbols!.find((item) => item.name === name)!);
   return { program: attachments![0]!, wait: value("loader_start_screen_wait"), done: value("done") };
 }
 

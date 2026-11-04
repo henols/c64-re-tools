@@ -64,6 +64,7 @@ test("a scenario needs a name, both subjects, known steps and at least one check
     noObserve: { ...valid, steps: [{ reset: "hard" }] },
     sameCheckpoint: { ...valid, steps: [valid.steps[2], valid.steps[2]] },
     noTimeout: { ...valid, steps: [{ runUntil: { address: "done" } }, valid.steps[2]] },
+    absoluteProgram: { ...valid, reference: { ...valid.reference, program: join(project, "reference.prg") } },
   })) {
     assert.throws(() => readScenario(scenarioFile(`${name}.json`, bad)), Refusal, name);
   }
@@ -424,6 +425,10 @@ test("test and run check every file before the emulator: a missing file is not-f
   assert.equal((await runRefusal("run-missing.json", { name: "r", start: { program: "nope.prg" }, steps: [{ frames: 1 }] })).code, "not-found");
   assert.match((await runRefusal("run-disk.json", { name: "r", start: { program: "game.d64" }, steps: [{ frames: 1 }] })).message, /^run run-disk\.json: start\.program: game\.d64 is a disk image \(\.d64\), not a PRG\. A run starts a PRG/);
   assert.deepEqual(await runRefusal("run-snapshot.json", { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }, { snapshot: "nope.vsf" }] }), { code: "not-found", message: "run run-snapshot.json: step 2: snapshot: There is no file at nope.vsf in the project folder." });
+  // A run file keeps relative paths: it works in each copy of the project.
+  const absolute = await runRefusal("run-absolute.json", { name: "r", start: { program: join(project, "game.prg") }, steps: [{ frames: 1 }] });
+  assert.equal(absolute.code, "invalid-input");
+  assert.match(absolute.message, /start\.program: give the path relative to the project folder/);
   // A run observes all registers or none: a list of names is the form of a scenario.
   assert.match(
     (await runRefusal("run-registers.json", { name: "r", start: { program: "game.prg" }, steps: [{ frames: 1 }, { observe: "x", registers: ["a"] }] })).message,

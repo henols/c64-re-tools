@@ -8,7 +8,7 @@ import { z } from "zod";
 import { formatC64Address } from "../c64.ts";
 import { Byte, TOOL_INPUTS } from "./inputs.ts";
 import { LostBeforeAnswer, type ViceSessionClient } from "../host-client/vice-session.ts";
-import { checkOut } from "../host-client/transfer.ts";
+import { checkOut, type ToolFile } from "../host-client/transfer.ts";
 import { describeErrorStack, isRefusal } from "../errors.ts";
 import { PACKAGE } from "../package.ts";
 import { shownMessage, WireFailure, type WireError } from "../protocol/messages.ts";
@@ -91,17 +91,6 @@ export function requireFields(action: string, given: Record<string, unknown>, al
   }
 }
 
-/**
- * Checks the fields that go with out: project only with out, and the
- * fields of `notWithOut` only without it.
- */
-export function requireOut(given: { out?: unknown; project?: unknown } & Record<string, unknown>, notWithOut: readonly string[] = []): void {
-  if (given.out === undefined && given.project !== undefined) throw new WireFailure("invalid-input", "project is used only with out.");
-  for (const field of notWithOut) {
-    if (given.out !== undefined && given[field] !== undefined) throw new WireFailure("invalid-input", `${field} is not used with out.`);
-  }
-}
-
 /** A tool result that carries content blocks (for example an image) beside its structured result. */
 export class ToolOutput<T> {
   readonly structured: T;
@@ -121,7 +110,17 @@ export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z
   outputSchema: O;
   /** True for operations that only observe the machine. */
   readOnly: boolean;
-  run(input: z.output<I>, session: ViceSessionApi): Promise<z.input<O> | ToolOutput<z.input<O>>>;
+  /**
+   * `out` is the file of the input out, checked before the tool does any
+   * work; undefined without out. The tool branches on it, not on the input.
+   * The server gives it from prepare; a direct call gives none, and run of
+   * defineTool checks it then.
+   */
+  run(input: z.output<I>, session: ViceSessionApi, out?: ToolFile): Promise<z.input<O> | ToolOutput<z.input<O>>>;
+  /** The actions that take out, for a tool with actions where only some take it. */
+  outActions?: readonly string[];
+  /** Set by defineTool: checks the input out before any work, also before a session starts, and gives its file. */
+  prepare?(input: z.output<I>): ToolFile | undefined;
 }
 
 /** A condition as a result shows it: the input form, with the memory address as "$xxxx". */
@@ -148,9 +147,22 @@ export function toCondition(input: z.output<typeof TOOL_INPUTS.condition>): Cond
   return defined(input) as Condition;
 }
 
-/** Keeps a tool's handler typed against its own schemas. */
+/**
+ * Keeps a tool's handler typed against its own schemas, and owns the rule of
+ * out: prepare checks the input out and gives its file. The server calls
+ * prepare before it gets a session and gives the file to run. run checks out
+ * itself when it gets no file, for example when another tool calls it.
+ */
 export function defineTool<I extends z.ZodObject, O extends z.ZodObject>(tool: ToolDefinition<I, O>): ToolDefinition {
-  return tool as unknown as ToolDefinition;
+  const prepare = (input: z.output<I>): ToolFile | undefined => {
+    const { out: given, action } = input as { out?: unknown; action?: unknown };
+    if (given === undefined) return undefined;
+    // An action that takes no out is the error to show, not the path.
+    if (tool.outActions !== undefined && typeof action === "string" && !tool.outActions.includes(action)) throw new WireFailure("invalid-input", `out is not used with action ${action}.`);
+    return typeof given === "string" ? checkOut(given) : undefined;
+  };
+  const run: ToolDefinition<I, O>["run"] = async (input, session, out) => tool.run(input, session, out ?? prepare(input));
+  return { ...tool, run, prepare } as unknown as ToolDefinition;
 }
 
 function jsonSchema(schema: z.ZodObject, io: "input" | "output"): McpTool["inputSchema"] {
@@ -222,16 +234,15 @@ async function runCall(
   const parsed = tool.inputSchema.safeParse(args ?? {});
   if (!parsed.success) return { failed: { code: "invalid-input", message: describeIssues(parsed.error, tool.inputSchema) } };
   try {
-    // An out path is checked before the tool runs: a refused path must not lose the work or leave its side effects.
-    const fields = parsed.data as { out?: unknown; project?: unknown };
-    if (typeof fields.out === "string") checkOut(fields.out, typeof fields.project === "string" ? fields.project : undefined);
+    // out is checked before any work and before a session starts: a refused path must not lose the work or leave its side effects.
+    const out = tool.prepare?.(parsed.data);
     let output: unknown;
     try {
-      output = await tool.run(parsed.data, await session());
+      output = await tool.run(parsed.data, await session(), out);
     } catch (error) {
       // A session that the emulator never answered had no machine state: the call goes again on a new session.
       if (!(error instanceof LostBeforeAnswer)) throw error;
-      output = await tool.run(parsed.data, await session());
+      output = await tool.run(parsed.data, await session(), out);
     }
     // The result goes out in the shape that the tool listing advertises: keys
     // that the output schema does not name are removed, and a result that does
@@ -261,8 +272,8 @@ const INSTRUCTIONS =
   "Space c64 is the computer. Space drive8 is the CPU of the 1541 disk drive. " +
   "Memory view cpu gives what the CPU sees now, with ROM and I/O where the memory configuration puts them. Memory view ram gives the RAM under them. " +
   "A write to memory or registers needs a stopped CPU: stop it with c64_execution action pause. " +
-  "Paths are relative to the project folder, the folder that holds .c64-re-tools/. " +
-  "With out, a tool writes a large result to a project file in place of the result.";
+  "Give each path as an absolute path, for example /home/me/game/build/game.prg. A tool reads and writes only the files of a project folder. " +
+  "With out, a tool writes a large result to a file in place of the result. The result then gives the absolute path of the file.";
 
 export function createMcpServer(options: { tools: readonly ToolDefinition[]; session: SessionSource; log?: (line: string) => void }): Server {
   const tools = new Map(options.tools.map((tool) => [tool.name, tool]));

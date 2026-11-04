@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -21,6 +21,13 @@ import { machineTools } from "./tools/machine.ts";
 import { mediaTools } from "./tools/media.ts";
 import { memoryTools } from "./tools/memory.ts";
 import { videoTools } from "./tools/video.ts";
+
+/** A project folder for the tools that take a path: the tests give its files by their absolute paths. */
+const project = realpathSync(mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-")));
+mkdirSync(join(project, ".c64-re-tools"));
+after(() => rmSync(project, { recursive: true, force: true }));
+/** The absolute path of a file of the project. */
+const at = (...parts: string[]) => join(project, ...parts);
 
 /** The public tool list, in its order. */
 const PUBLIC_TOOLS = [
@@ -544,24 +551,23 @@ test("c64_registers write writes only the named registers; read refuses values",
   await client.close();
 });
 
-test("media tools pass the project path and fill defaults", async () => {
+test("media tools pass the absolute file and its project, and fill defaults", async () => {
   const session = new FakeSession();
   const client = await connect(async () => session);
-  assert.deepEqual((await call(client, "c64_autostart", { path: "releases/game.d64" })).structuredContent, { state: "running" });
-  assert.deepEqual((await call(client, "c64_program_load", { path: "build/game.prg", address: "$C000" })).structuredContent, {
+  assert.deepEqual((await call(client, "c64_autostart", { path: at("releases", "game.d64") })).structuredContent, { state: "running" });
+  assert.deepEqual((await call(client, "c64_program_load", { path: at("build", "game.prg"), address: "$C000" })).structuredContent, {
     state: "stopped",
     loadAddress: "$c000",
     size: 100,
   });
-  assert.deepEqual((await call(client, "c64_disk_attach", { path: "releases/game.d64" })).structuredContent, { attached: true });
-  await call(client, "c64_autostart", { path: "releases/game.d64", index: 1 });
-  // The project folder of a call without project: the project lookup from the working directory.
-  const root = process.cwd();
+  assert.deepEqual((await call(client, "c64_disk_attach", { path: at("releases", "game.d64") })).structuredContent, { attached: true });
+  await call(client, "c64_autostart", { path: at("releases", "game.d64"), index: 1 });
+  const root = project;
   assert.deepEqual(session.media, [
-    ["autostart", { path: "releases/game.d64", index: 0, run: true, root }],
-    ["programLoad", { path: "build/game.prg", address: 0xc000, root }],
-    ["diskAttach", { path: "releases/game.d64", root }],
-    ["autostart", { path: "releases/game.d64", index: 2, run: true, root }],
+    ["autostart", { path: at("releases", "game.d64"), index: 0, run: true, root }],
+    ["programLoad", { path: at("build", "game.prg"), address: 0xc000, root }],
+    ["diskAttach", { path: at("releases", "game.d64"), root }],
+    ["autostart", { path: at("releases", "game.d64"), index: 2, run: true, root }],
   ]);
   assert.equal(errorOf(await call(client, "c64_disk_attach", { path: "" })).code, "invalid-input");
   await client.close();
@@ -768,22 +774,43 @@ test("a range shorter than the pattern has no match, and end must not be lower t
   await client.close();
 });
 
+test("a wrong out is refused before the server asks for a session", async () => {
+  let sessions = 0;
+  const client = await connect(async () => {
+    sessions++;
+    return new FakeSession();
+  });
+  assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "dumps/mem.bin" })).code, "invalid-input");
+  assert.equal(sessions, 0, "no session for a refused out");
+  // An action that takes no out names that, not the path.
+  assert.equal(errorOf(await call(client, "c64_snapshot", { action: "restore", name: "a", out: "relative.vsf" })).message, "out is not used with action restore.");
+  assert.equal(errorOf(await call(client, "c64_memmap", { action: "clear", out: "x.bin" })).message, "out is not used with action clear.");
+  assert.equal(sessions, 0, "no session for these refusals");
+  await client.close();
+});
+
+test("a tool that another tool calls checks its out too, before any work", async () => {
+  const session = new FakeSession();
+  const read = memoryTools.find((tool) => tool.name === "c64_memory_read")!;
+  await assert.rejects(read.run({ address: 0x1000, size: 4, space: "c64", view: "cpu", out: "dumps/mem.bin" }, session), (error: unknown) => error instanceof WireFailure && error.code === "invalid-input");
+  assert.deepEqual(session.reads, [], "no memory was read");
+  const written = (await read.run({ address: 0x1000, size: 4, space: "c64", view: "cpu", out: at("direct", "mem.bin") }, session)) as Record<string, unknown>;
+  assert.equal(written.out, at("direct", "mem.bin"));
+});
+
 test("refusals name the rule that the call broke", async () => {
   const client = await connect(async () => new FakeSession());
   const message = async (name: string, args: Record<string, unknown>) => errorOf(await call(client, name, args)).message;
   assert.match(await message("c64_watchpoint", { action: "add", address: "$d016", access: "write" }), /Unrecognized key.*The fields are action, .*start, end/);
-  assert.equal(await message("c64_memmap", { action: "read", out: "x.bin", maxRanges: 3 }), "maxRanges is not used with out.");
-  assert.equal(await message("c64_screen", { action: "capture", project: "." }), "project is used only with out.");
-  assert.equal(await message("c64_snapshot", { action: "save", name: "a", project: "." }), "project is used only with out.");
-  assert.equal(await message("c64_snapshot", { action: "restore", name: "a", file: "a.vsf" }), "Action restore takes name or file, not both.");
+  assert.equal(await message("c64_memmap", { action: "read", out: at("x.bin"), maxRanges: 3 }), "maxRanges is not used with out.");
+  assert.equal(await message("c64_snapshot", { action: "restore", name: "a", file: at("a.vsf") }), "Action restore takes name or file, not both.");
   assert.match(await message("c64_snapshot", { action: "restore" }), /needs name .* or file/);
-  assert.match(await message("c64_program_load", { path: "releases/game.d64" }), /is a disk image \(\.d64\), not a PRG\. Use c64_autostart/);
-  assert.match(await message("c64_program_load", { path: "README.md" }), /a PRG has the extension \.prg or no extension, not \.md/);
+  assert.match(await message("c64_program_load", { path: at("releases", "game.d64") }), /is a disk image \(\.d64\), not a PRG\. Use c64_autostart/);
+  assert.match(await message("c64_program_load", { path: at("README.md") }), /a PRG has the extension \.prg or no extension, not \.md/);
   assert.match(await message("c64_sid", { voice: 1 }), /Unrecognized key.*The tool takes no fields$/);
   assert.match(await message("c64_joystick", { port: 3, direction: "up" }), /port must be the number 1 or 2/);
-  assert.match(await message("c64_autostart", { path: "releases/game.prg", index: 0 }), /A \.prg file has no directory: leave out index/);
+  assert.match(await message("c64_autostart", { path: at("releases", "game.prg"), index: 0 }), /A \.prg file has no directory: leave out index/);
   assert.equal(await message("c64_registers", { action: "write", values: { flags: { q: true } } }), 'values.flags: Unrecognized key: "q"');
-  assert.match(await message("c64_snapshot", { action: "restore", file: "/etc/passwd" }), /^file: give a path relative to the project folder/);
   await client.close();
 });
 
@@ -950,49 +977,41 @@ test("with C64RT_TRACE every tool call leaves one trace line with its name, argu
   }
 });
 
-test("out writes memory, a listing, the history and a screen to project files", async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-out-"));
-  const home = process.cwd();
-  process.chdir(project);
-  try {
-    const session = new FakeSession();
-    const client = await connect(async () => session);
+test("out writes memory, a listing, the history and a screen to project files, and gives their absolute paths", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
 
-    const dump = (await call(client, "c64_memory_read", { address: "$1000", size: 5000, out: "dumps/mem.bin" })).structuredContent as Record<string, unknown>;
-    assert.deepEqual({ ...dump, sha256: undefined }, { address: "$1000", size: 5000, out: "dumps/mem.bin", bytes: 5000, sha256: undefined });
-    assert.deepEqual(session.reads.map((read) => [read.address, read.size]), [[0x1000, 4096], [0x2000, 904]]);
-    assert.deepEqual(readFileSync(join(project, "dumps", "mem.bin")), Buffer.alloc(5000, 0xa9));
-    assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 5000 })).code, "invalid-input");
-    assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$f000", size: 8192, out: "x.bin" })).code, "invalid-input");
+  const dump = (await call(client, "c64_memory_read", { address: "$1000", size: 5000, out: at("dumps", "mem.bin") })).structuredContent as Record<string, unknown>;
+  assert.deepEqual({ ...dump, sha256: undefined }, { address: "$1000", size: 5000, out: at("dumps", "mem.bin"), bytes: 5000, sha256: undefined });
+  assert.deepEqual(session.reads.map((read) => [read.address, read.size]), [[0x1000, 4096], [0x2000, 904]]);
+  assert.deepEqual(readFileSync(join(project, "dumps", "mem.bin")), Buffer.alloc(5000, 0xa9));
+  assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 5000 })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$f000", size: 8192, out: at("x.bin") })).code, "invalid-input");
 
-    const listing = (await call(client, "c64_disassemble", { address: "$1000", count: 3, out: "listing.txt" })).structuredContent as Record<string, unknown>;
-    assert.equal(listing.count, 3);
-    assert.equal(readFileSync(join(project, "listing.txt"), "utf8"), "$1000  a9 00     LDA #$00\n$1002  a9 00     LDA #$00\n$1004  a9 00     LDA #$00\n");
-    assert.equal(errorOf(await call(client, "c64_disassemble", { address: "$1000", count: 300 })).code, "invalid-input");
-    await call(client, "c64_disassemble", { address: "$1000", count: 2, out: "listing.json" });
-    assert.deepEqual(JSON.parse(readFileSync(join(project, "listing.json"), "utf8")), [
-      { address: "$1000", bytes: "a900", text: "LDA #$00" },
-      { address: "$1002", bytes: "a900", text: "LDA #$00" },
-    ]);
+  const listing = (await call(client, "c64_disassemble", { address: "$1000", count: 3, out: at("listing.txt") })).structuredContent as Record<string, unknown>;
+  assert.equal(listing.count, 3);
+  assert.equal(readFileSync(join(project, "listing.txt"), "utf8"), "$1000  a9 00     LDA #$00\n$1002  a9 00     LDA #$00\n$1004  a9 00     LDA #$00\n");
+  assert.equal(errorOf(await call(client, "c64_disassemble", { address: "$1000", count: 300 })).code, "invalid-input");
+  await call(client, "c64_disassemble", { address: "$1000", count: 2, out: at("listing.json") });
+  assert.deepEqual(JSON.parse(readFileSync(join(project, "listing.json"), "utf8")), [
+    { address: "$1000", bytes: "a900", text: "LDA #$00" },
+    { address: "$1002", bytes: "a900", text: "LDA #$00" },
+  ]);
 
-    const history = (await call(client, "c64_cpu_history", { out: "history.txt" })).structuredContent as Record<string, unknown>;
-    assert.equal(history.count, 1);
-    assert.equal(readFileSync(join(project, "history.txt"), "utf8"), "$2100  a9 00     LDA #$00         a=00 x=03 y=00 sp=f9  line 100 cycle 20\n");
+  const history = (await call(client, "c64_cpu_history", { out: at("history.txt") })).structuredContent as Record<string, unknown>;
+  assert.equal(history.count, 1);
+  assert.equal(readFileSync(join(project, "history.txt"), "utf8"), "$2100  a9 00     LDA #$00         a=00 x=03 y=00 sp=f9  line 100 cycle 20\n");
 
-    const shot = await call(client, "c64_screen", { action: "capture", out: "screens/title.png" });
-    assert.equal((shot.structuredContent as Record<string, unknown>).out, "screens/title.png");
-    assert.ok(!(shot.content as Array<{ type: string }>).some((part) => part.type === "image"), "no image in the context");
-    assert.equal(readFileSync(join(project, "screens", "title.png"), "utf8"), "png-bytes");
-    await call(client, "c64_screen", { action: "compare", baseline: "b", out: "screens/diff.png" });
-    assert.equal(readFileSync(join(project, "screens", "diff.png"), "utf8"), "diff");
-    await client.close();
-  } finally {
-    process.chdir(home);
-    rmSync(project, { recursive: true, force: true });
-  }
+  const shot = await call(client, "c64_screen", { action: "capture", out: at("screens", "title.png") });
+  assert.equal((shot.structuredContent as Record<string, unknown>).out, at("screens", "title.png"));
+  assert.ok(!(shot.content as Array<{ type: string }>).some((part) => part.type === "image"), "no image in the context");
+  assert.equal(readFileSync(join(project, "screens", "title.png"), "utf8"), "png-bytes");
+  await call(client, "c64_screen", { action: "compare", baseline: "b", out: at("screens", "diff.png") });
+  assert.equal(readFileSync(join(project, "screens", "diff.png"), "utf8"), "diff");
+  await client.close();
 });
 
-test("in a folder with projects below it, a tool with a path takes project and refuses without it", async () => {
+test("in a working folder with projects below it, a tool takes the absolute path of a file in one of them", async () => {
   const workspace = realpathSync(mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-workspace-")));
   for (const name of ["a", "b"]) mkdirSync(join(workspace, name, ".c64-re-tools"), { recursive: true });
   const home = process.cwd();
@@ -1000,23 +1019,19 @@ test("in a folder with projects below it, a tool with a path takes project and r
   try {
     const session = new FakeSession();
     const client = await connect(async () => session);
-    const refused = errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "dumps/mem.bin" }));
-    assert.equal(refused.code, "invalid-input");
-    assert.match(refused.message, /These folders below it are projects: a, b\. Give project: <folder> with one of them\./);
-    assert.equal(errorOf(await call(client, "c64_autostart", { path: "releases/game.prg" })).code, "invalid-input");
-    assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, project: "a" })).code, "invalid-input", "project without out");
-    assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "x.bin", project: "missing" })).code, "not-found");
-
-    await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "dumps/mem.bin", project: "a" });
+    await call(client, "c64_memory_read", { address: "$1000", size: 4, out: join(workspace, "a", "dumps", "mem.bin") });
     assert.deepEqual(readFileSync(join(workspace, "a", "dumps", "mem.bin")), Buffer.alloc(4, 0xa9));
-    assert.ok(!existsSync(join(workspace, "dumps")), "nothing is written at the workspace root");
-    await call(client, "c64_snapshot", { action: "save", name: "room0", out: "snapshots/room0.vsf", project: "b" });
-    await call(client, "c64_snapshot", { action: "restore", file: "snapshots/room0.vsf", project: "b" });
+    await call(client, "c64_snapshot", { action: "save", name: "room0", out: join(workspace, "b", "snapshots", "room0.vsf") });
+    await call(client, "c64_snapshot", { action: "restore", file: join(workspace, "b", "snapshots", "room0.vsf") });
     assert.deepEqual(session.restoredFiles, ["VSF of room0"]);
-    await call(client, "c64_autostart", { path: "releases/game.prg", project: "b" });
-    assert.deepEqual(session.media.at(-1), ["autostart", { path: "releases/game.prg", index: 0, run: true, root: join(workspace, "b") }]);
-    assert.equal(errorOf(await call(client, "c64_snapshot", { action: "save", name: "room1", project: "b" })).code, "invalid-input", "project without out");
-    assert.equal((await call(client, "c64_warp", { enabled: false })).isError, undefined, "a tool without a path needs no project");
+    await call(client, "c64_autostart", { path: join(workspace, "b", "releases", "game.prg") });
+    assert.deepEqual(session.media.at(-1), ["autostart", { path: join(workspace, "b", "releases", "game.prg"), index: 0, run: true, root: join(workspace, "b") }]);
+    // A file of no project: the workspace root holds the projects.
+    const refused = errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, out: join(workspace, "dumps", "mem.bin") }));
+    assert.equal(refused.code, "invalid-input");
+    assert.match(refused.message, /Give a file in one of them\.$/);
+    assert.ok(!existsSync(join(workspace, "dumps")), "nothing is written at the workspace root");
+    assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, out: join(workspace, "a", "x.bin"), project: "a" })).code, "invalid-input", "no tool takes project");
     await client.close();
   } finally {
     process.chdir(home);
@@ -1025,58 +1040,42 @@ test("in a folder with projects below it, a tool with a path takes project and r
 });
 
 test("c64_memmap writes a coverage map with out and gives a summary", async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-coverage-"));
-  const home = process.cwd();
-  process.chdir(project);
-  try {
-    const session = new FakeSession();
-    const client = await connect(async () => session);
-    const written = (await call(client, "c64_memmap", { action: "read", start: "$2000", end: "$21ff", out: "coverage/run.bin" })).structuredContent as Record<string, unknown>;
-    assert.equal(written.bytes, 0x200);
-    const map = readFileSync(join(project, "coverage", "run.bin"));
-    assert.equal(map[0x100], 5, "$2100 is RAM read and execute");
-    assert.equal(map[0x0ff], 0);
-    // The fake memory is all $a9 (LDA #imm, two bytes): 64 instruction starts at $2100-$213f.
-    assert.deepEqual((await call(client, "c64_memmap", { action: "summary" })).structuredContent, {
-      ram: { executed: 64, read: 64, written: 0 },
-      rom: { executed: 0, read: 0 },
-      io: { executed: 0, read: 0, written: 0 },
-      code: [{ start: "$2100", end: "$2140" }],
-      writtenAndExecuted: [],
-    });
-    assert.equal(errorOf(await call(client, "c64_memmap", { action: "summary", out: "x.bin" })).code, "invalid-input");
-    await client.close();
-  } finally {
-    process.chdir(home);
-    rmSync(project, { recursive: true, force: true });
-  }
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  const written = (await call(client, "c64_memmap", { action: "read", start: "$2000", end: "$21ff", out: at("coverage", "run.bin") })).structuredContent as Record<string, unknown>;
+  assert.equal(written.bytes, 0x200);
+  const map = readFileSync(join(project, "coverage", "run.bin"));
+  assert.equal(map[0x100], 5, "$2100 is RAM read and execute");
+  assert.equal(map[0x0ff], 0);
+  // The fake memory is all $a9 (LDA #imm, two bytes): 64 instruction starts at $2100-$213f.
+  assert.deepEqual((await call(client, "c64_memmap", { action: "summary" })).structuredContent, {
+    ram: { executed: 64, read: 64, written: 0 },
+    rom: { executed: 0, read: 0 },
+    io: { executed: 0, read: 0, written: 0 },
+    code: [{ start: "$2100", end: "$2140" }],
+    writtenAndExecuted: [],
+  });
+  assert.equal(errorOf(await call(client, "c64_memmap", { action: "summary", out: at("x.bin") })).code, "invalid-input");
+  await client.close();
 });
 
 test("c64_snapshot writes a snapshot file with out and restores one with file", async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-snapshot-"));
-  const home = process.cwd();
-  process.chdir(project);
-  try {
-    const session = new FakeSession();
-    const client = await connect(async () => session);
-    const saved = (await call(client, "c64_snapshot", { action: "save", name: "room0", out: "snapshots/room0.vsf" })).structuredContent as Record<string, unknown>;
-    assert.deepEqual([saved.saved, saved.name, saved.out], [true, "room0", "snapshots/room0.vsf"]);
-    assert.equal(readFileSync(join(project, "snapshots", "room0.vsf"), "utf8"), "VSF of room0");
-    assert.deepEqual((await call(client, "c64_snapshot", { action: "restore", file: "snapshots/room0.vsf" })).structuredContent, { restored: true, state: "stopped" });
-    assert.deepEqual(session.restoredFiles, ["VSF of room0"]);
-    for (const args of [
-      { action: "restore", file: "snapshots/room0.vsf", name: "room0" },
-      { action: "restore", out: "x.vsf", name: "room0" },
-      { action: "remove", name: "room0", file: "x.vsf" },
-    ]) {
-      assert.equal(errorOf(await call(client, "c64_snapshot", args)).code, "invalid-input", JSON.stringify(args));
-    }
-    assert.equal(errorOf(await call(client, "c64_snapshot", { action: "restore", file: "missing.vsf" })).code, "not-found");
-    await client.close();
-  } finally {
-    process.chdir(home);
-    rmSync(project, { recursive: true, force: true });
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  const saved = (await call(client, "c64_snapshot", { action: "save", name: "room0", out: at("snapshots", "room0.vsf") })).structuredContent as Record<string, unknown>;
+  assert.deepEqual([saved.saved, saved.name, saved.out], [true, "room0", at("snapshots", "room0.vsf")]);
+  assert.equal(readFileSync(join(project, "snapshots", "room0.vsf"), "utf8"), "VSF of room0");
+  assert.deepEqual((await call(client, "c64_snapshot", { action: "restore", file: at("snapshots", "room0.vsf") })).structuredContent, { restored: true, state: "stopped" });
+  assert.deepEqual(session.restoredFiles, ["VSF of room0"]);
+  for (const args of [
+    { action: "restore", file: at("snapshots", "room0.vsf"), name: "room0" },
+    { action: "restore", out: at("x.vsf"), name: "room0" },
+    { action: "remove", name: "room0", file: at("x.vsf") },
+  ]) {
+    assert.equal(errorOf(await call(client, "c64_snapshot", args)).code, "invalid-input", JSON.stringify(args));
   }
+  assert.equal(errorOf(await call(client, "c64_snapshot", { action: "restore", file: at("missing.vsf") })).code, "not-found");
+  await client.close();
 });
 
 test("c64_trace takes points with an optional end and gives the hits with $ addresses", async () => {
@@ -1101,18 +1100,13 @@ test("c64_trace takes points with an optional end and gives the hits with $ addr
 });
 
 test("c64_trace with out writes all hits to the file and gives none in the result, but the summary of all hits", async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-trace-"));
-  const home = process.cwd();
-  process.chdir(project);
   const client = await connect(async () => new FakeSession());
   try {
-    const traced = (await call(client, "c64_trace", { points: [{ kind: "write", start: "$d011" }], frames: 100, out: "trace.jsonl" })).structuredContent as Record<string, unknown>;
-    assert.deepEqual([traced.count, traced.out, "hits" in traced, (traced.summary as { pcs: number }).pcs], [1, "trace.jsonl", false, 1]);
+    const traced = (await call(client, "c64_trace", { points: [{ kind: "write", start: "$d011" }], frames: 100, out: at("trace.jsonl") })).structuredContent as Record<string, unknown>;
+    assert.deepEqual([traced.count, traced.out, "hits" in traced, (traced.summary as { pcs: number }).pcs], [1, at("trace.jsonl"), false, 1]);
     assert.equal(JSON.parse(readFileSync(join(project, "trace.jsonl"), "utf8")).pc, "$09c1");
   } finally {
     await client.close();
-    process.chdir(home);
-    rmSync(project, { recursive: true, force: true });
   }
 });
 

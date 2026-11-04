@@ -6,7 +6,7 @@
 // every link and image of the pages.
 
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
-import { basename, join, posix } from "node:path";
+import { basename, isAbsolute, join, posix } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
 import { formatC64Address, formatC64RangeFields, inRanges } from "#src/c64.ts";
@@ -19,7 +19,7 @@ import { changedEvidence, type EvidenceChange } from "#src/knowledge/evidence.ts
 import { programImage } from "#src/knowledge/program.ts";
 import { listComments, listModules, listReferences, listRegions, listSymbols, sourceRevision } from "#src/knowledge/read.ts";
 import { compareText } from "#src/knowledge/text.ts";
-import { groupOf, KNOWLEDGE_TEXT_DIRECTORY as TEXT_DIRECTORY, namedGroup, PROJECT_DIRECTORY, projectRoot, resolveProjectFile, resolveProjectPath, type ProjectGroup } from "#src/project.ts";
+import { groupOf, KNOWLEDGE_TEXT_DIRECTORY as TEXT_DIRECTORY, namedGroup, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectFile, resolveProjectPath, type ProjectGroup } from "#src/project.ts";
 import { GENERATED_MARK, referenceStamp } from "#src/reference-pages.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type Reply } from "#src/script.ts";
 import { checkLinks, linkPage, type Files, type LinkContext, type Names, type Problem } from "./lib/links.ts";
@@ -50,15 +50,16 @@ function oldFiles(out: string, directory: string): string[] {
 }
 
 function generate(call: Call): Reply {
-  const source = call.subject(0);
-  const out = call.string("out")!;
+  // One spelling for each folder, relative to the project folder: the pages link by these paths, also when the paths are given absolute.
+  const source = projectRelative(call.subject(0)) || ".";
+  const out = projectRelative(call.string("out")!) || ".";
   // The files of an earlier run are deleted: only in a folder that is inside the project, also after its symbolic links.
   let directory = resolveProjectPath(out);
   if (existsSync(directory)) {
     try {
       directory = resolveProjectFile(out);
     } catch {
-      throw new UsageError(`--out must be a path relative to the project folder that stays inside it, also through symbolic links, not ${out}`);
+      throw new UsageError(`--out must be a path inside the project folder, also through symbolic links, not ${out}`);
     }
   }
   const map = readSourceMap(source);
@@ -233,20 +234,40 @@ function link(call: Call): Reply {
   /** A .md entry of a directory that is a symbolic link to no file, or to a file outside the folder of the run. */
   const unreadable = (page: string): Problem => ({ page, line: 1, kind: "missing-file", message: `${shown(page)} is a symbolic link to no file or to a file outside ${folder}.` });
 
-  const given = [...new Set(call.subjects.map((path) => posix.normalize(path)))];
+  // An absolute page becomes relative to the folder of the pages, also through a symbolic link, so that each page has one spelling.
+  const fromBase = (path: string) => {
+    if (!isAbsolute(path)) return path;
+    try {
+      return projectRelative(path, join(root, scope.base)) || ".";
+    } catch {
+      throw new UsageError(`<page> must be a path inside ${folder}, relative to it or absolute, not ${path}`);
+    }
+  };
+  const spelled = new Map(call.subjects.map((path) => [posix.normalize(fromBase(path)), path]));
+  const given = [...spelled.keys()];
   const pagesGiven = given.map(toRun);
   given.forEach((path, index) => {
-    if (!within(pagesGiven[index]!, scope.base) || !files.inside(pagesGiven[index]!)) throw new UsageError(`<page> must be a path relative to ${folder} that stays inside it, not ${path}`);
+    if (!within(pagesGiven[index]!, scope.base) || !files.inside(pagesGiven[index]!)) throw new UsageError(`<page> must be a path inside ${folder}, relative to it or absolute, not ${spelled.get(path)}`);
   });
   given.forEach((path, index) => {
     const page = pagesGiven[index]!;
     if (!page.endsWith(".md") && files.exists(page) && !isDirectory(page, root)) throw new UsageError(`<pages> takes .md files and directories, not ${path}`);
   });
   const directories = pagesGiven.filter((path) => !path.endsWith(".md") || isDirectory(path, root));
-  // --source and --reference are relative to each project folder: the projects of a group have the same layout.
+  // --source and --reference are relative to each project folder: the projects of a group have the same layout. An absolute path names a folder in one of them.
+  const inMember = (value: string) => {
+    for (const member of members) {
+      try {
+        return projectRelative(value, member.root) || ".";
+      } catch {
+        // In another project of the group, or in none.
+      }
+    }
+    return value;
+  };
   const inProjectFolder = (name: string, value: string) => {
-    const path = posix.normalize(value.replaceAll("\\", "/"));
-    if (posix.isAbsolute(path) || /^[A-Za-z]:/.test(path) || path === ".." || path.startsWith("../")) throw new UsageError(`--${name} must be a path relative to the project folder that stays inside it, not ${value}`);
+    const path = posix.normalize((isAbsolute(value) ? inMember(value) : value).replaceAll("\\", "/"));
+    if (posix.isAbsolute(path) || /^[A-Za-z]:/.test(path) || path === ".." || path.startsWith("../")) throw new UsageError(`--${name} must be a path inside the project folder, relative to it or absolute, not ${value}`);
     return path;
   };
   const source = inProjectFolder("source", call.string("source")!);

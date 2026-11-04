@@ -10,10 +10,10 @@ import type { DatabaseSync } from "node:sqlite";
 import { type AddressRange, formatC64Address, formatC64Range, formatC64RangeFields, inRanges, rangesOverlap, REFERENCE_KINDS } from "#src/c64.ts";
 import { Refusal } from "#src/errors.ts";
 import { IO_RAM } from "#src/host-client/coverage.ts";
-import { readImage } from "#src/host-client/image.ts";
+import { checkedProgramCitation, readImage } from "#src/host-client/image.ts";
 import { readProjectFile, readProjectJson, writeReported } from "#src/host-client/transfer.ts";
 import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
-import { withRead, withWrite } from "#src/knowledge/database.ts";
+import { withRead, withTrial, withWrite } from "#src/knowledge/database.ts";
 import { OPERAND_SELECTS, operandText, type OperandSelect } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, historyOfMacro, historyOfSwitch, revision, revisionCounts, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import { joinBatches, type Batch, type JoinChoice, type JoinClash } from "#src/knowledge/join.ts";
@@ -62,7 +62,7 @@ import {
   type SwitchRow,
   type SymbolRow,
 } from "#src/knowledge/read.ts";
-import { ANALYZERS, COMMENT_PLACEMENTS, DEFAULT_SPACE, EVIDENCE_KINDS, isSemantic, ORIGINS, REGION_TYPES, RELEASE_DEFINE, SEMANTIC_ORIGINS, START_SCREEN_MODES, SWITCH_KINDS, SYMBOL_KINDS, type Origin, type StartScreenMode, type SwitchKind } from "#src/knowledge/schema.ts";
+import { ANALYZERS, COMMENT_PLACEMENTS, DEFAULT_SPACE, EVIDENCE_KINDS, inSpace, isSemantic, ORIGINS, REGION_TYPES, RELEASE_DEFINE, SEMANTIC_ORIGINS, spaceOption, START_SCREEN_MODES, SWITCH_KINDS, SYMBOL_KINDS, type Origin, type StartScreenMode, type SwitchKind } from "#src/knowledge/schema.ts";
 import {
   addReference,
   applyBatch,
@@ -375,7 +375,7 @@ function knowledgePath(path: string, what: string): string {
   try {
     return projectRelative(path);
   } catch {
-    throw new UsageError(`${what} must be a path relative to the project folder that stays inside it, not ${path}.`);
+    throw new UsageError(`${what} must be a path inside the project folder, relative to it or absolute, not ${path}.`);
   }
 }
 
@@ -393,8 +393,7 @@ function evidenceOf(value: string, space: string): Evidence {
   // A coverage map is evidence by the name that coverage imported it with: the latest import into the space of the write.
   if (kind === "coverage") {
     const run = withRead((db) => coverageRuns(db).filter((item) => item.name === ref && item.space === space).at(-1));
-    const where = space === DEFAULT_SPACE ? "" : ` in ${space}`;
-    if (run === undefined) throw new UsageError(`--evidence coverage:${given} names no coverage map of the knowledge${where}. Import the map with coverage${space === DEFAULT_SPACE ? "" : ` --space ${space}`} first.`);
+    if (run === undefined) throw new UsageError(`--evidence coverage:${given} names no coverage map of the knowledge${inSpace(space)}. Import the map with coverage${spaceOption(space)} first.`);
     return { kind, ref, sha256: run.sha256, ...(run.space === DEFAULT_SPACE ? {} : { space: run.space }) };
   }
   const bytes = readProjectFile(ref).bytes;
@@ -1043,7 +1042,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       const commentText = call.string("comment");
       const base = call.flag("base");
       // The image.json of a capture names the program file that the capture ran: the release cites that file, as git ignores a capture in local/.
-      const cited = image.program === undefined ? { file, sha256: sha256(readProjectFile(file).bytes) } : { file: knowledgePath(image.program.file, `The program of ${file}`), sha256: image.program.sha256 };
+      const cited = image.program === undefined ? { file, sha256: sha256(readProjectFile(file).bytes) } : checkedProgramCitation(file, image.program);
       // The base release has no bytes of its own: its bytes are the program.
       const request = {
         space: call.space,
@@ -1054,7 +1053,7 @@ const WRITE_COMMANDS: CommandSpec[] = [
       };
       return (db) => {
         if (base) {
-          if (!isProgram(requireProgram(db, call.space), image)) throw new Refusal("invalid-input", `The bytes of ${file} are not the program of the knowledge. Give --base only to the release whose file image put into the knowledge.`);
+          if (!isProgram(requireProgram(db, call.space), image)) throw new Refusal("invalid-input", `The bytes of ${file} are not the program of the knowledge${inSpace(call.space)}. Give --base only to the release whose file image put into the knowledge.`);
         }
         const bytes = image.segments.reduce((sum, segment) => sum + segment.end - segment.start + 1, 0);
         return { ...shown(setRelease(db, context, request), "release", release), bytes };
@@ -1198,6 +1197,8 @@ const WRITE_COMMANDS: CommandSpec[] = [
       name: "coverage",
       summary: "Puts coverage maps of the emulator, of a run or of a recording folder into the coverage of the knowledge. Each map is named by its path: a new map of a path replaces the earlier map of that path, and --evidence coverage:<path> cites it.",
       subjects: [{ name: "<map>", help: "a 64 KiB coverage map, or a recording folder: then its coverage map", list: true }],
+      options: LIST,
+      notes: "commentsToCheck lists the comments at the addresses that the runs now execute or no longer execute. executed is true when the runs now execute the address.",
     },
     (call, context) => {
       const maps = call.subjects.map((given) => {
@@ -1207,14 +1208,30 @@ const WRITE_COMMANDS: CommandSpec[] = [
       });
       return (db) => {
         const { revision, current } = addCoverage(db, context, { space: call.space, maps });
-        const body = { revision, ...spaceOf(current), imported: current.imported, replaced: current.replaced, known: current.known, added: current.added, removed: current.removed };
+        // A comment can tell what the runs execute: where that changed, its claim can be false now. The script does not read the text.
+        const toCheck = current.added === 0 && current.removed === 0 ? [] : listComments(db, undefined, undefined, call.space).filter((row) => current.executeChange(row.address) !== undefined);
+        const checked = (row: CommentRow) => ({ ...comment(row), executed: current.executeChange(row.address) === "gained" });
+        const body = {
+          revision,
+          ...spaceOf(current),
+          imported: current.imported,
+          replaced: current.replaced,
+          known: current.known,
+          added: current.added,
+          removed: current.removed,
+          ...(toCheck.length === 0 ? {} : { commentsToCheck: list(call, toCheck, checked, MORE) }),
+        };
+        const next =
+          toCheck.length === 0
+            ? "Generate the source again, then the reference."
+            : `${toCheck.length} comment${toCheck.length === 1 ? " is" : "s are"} at addresses that the runs now execute or no longer execute: see commentsToCheck. Read what each one tells about the runs, and correct each comment that is no longer true. Then generate the source again, then the reference.`;
         // Only a range that the coverage gained or lost changes the source and the reference.
         const hint =
           revision === null
             ? "The knowledge has each map already. Nothing changed."
             : current.added === 0 && current.removed === 0
               ? "The coverage did not change. The knowledge keeps the maps as evidence. The source and the reference do not change."
-              : `The coverage gained ${current.added} and lost ${current.removed} ranges of accesses. They can change the leftovers and the code that no run executed. Generate the source again, then the reference.`;
+              : `The coverage gained ${current.added} and lost ${current.removed} ranges of accesses. They can change the leftovers and the code that no run executed. ${next}`;
         return reply(body, { hint });
       };
     },
@@ -1334,7 +1351,7 @@ const JOIN: CommandSpec = {
   name: "join",
   summary: "Joins the batches of agents that worked in parallel into one list of writes, and shows it. One batch shows its own writes. With --apply, it writes the list as one revision, or nothing when one write is refused.",
   subjects: [{ name: "<batch>", help: 'a batch: a list of writes, or {"owner": {"start": "$1000", "end": "$1fff"}, "ops": [...]}', list: true }],
-  options: { ...WRITE, apply: { kind: "flag", help: "write the joined writes to the project knowledge as one revision. Without it, the result only shows them" }, ...LIST },
+  options: { ...WRITE, apply: { kind: "flag", help: "write the joined writes to the project knowledge as one revision. Without it, the script does every check of --apply, writes nothing and shows the writes" }, ...LIST },
   notes: "At an address in the owner range of a batch, its name, comment, operand and module win, and its regions come last. One name or one module file at two addresses writes nothing.",
   run: (call) => {
     const batches: Batch[] = call.subjects.map((file) => {
@@ -1361,11 +1378,13 @@ const JOIN: CommandSpec = {
     const joined = joinBatches(batches);
     const choice = (item: JoinChoice) => ({ ...item, at: typeof item.at === "number" ? formatC64Address(item.at) : item.at, ...(item.space === DEFAULT_SPACE ? { space: undefined } : {}) });
     if (joined.clashes.length > 0) {
-      const clash = (item: JoinClash) => `${item.what} ${item.value} at ${item.places.map((place) => `${formatC64Address(place.address)} (${place.file})`).join(" and ")}${item.space === DEFAULT_SPACE ? "" : ` in ${item.space}`}`;
+      const clash = (item: JoinClash) => `${item.what} ${item.value} at ${item.places.map((place) => `${formatC64Address(place.address)} (${place.file})`).join(" and ")}${inSpace(item.space)}`;
       throw new Refusal("conflict", `The batches give one ${joined.clashes.map(clash).join(", one ")}. Nothing was written. Give each name and each module file one address in the batches, then join again.`);
     }
     const shown = { repeated: joined.repeated, choices: joined.choices.map(choice) };
     if (call.flag("apply")) return { ...withWrite((db) => applied(db, contextOf(call), joined.ops)), ...shown };
+    // The writes run as a trial: every check of --apply runs, and nothing is written.
+    withTrial((db) => applied(db, contextOf(call), joined.ops));
     const body = { writes: listed(joined.ops.map(batchJson), call.count("max-listed")!, (write) => write, MORE), ...shown };
     return reply(body, { hint: "Examine each item of choices and writes. Then nextAction writes them to the project knowledge as one revision.", nextAction: call.next("join", ...call.subjects, "--apply") });
   },

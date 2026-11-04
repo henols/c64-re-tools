@@ -52,7 +52,7 @@ import {
   type SwitchRow,
   type SymbolRow,
 } from "./read.ts";
-import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MEMORY_ROW, MODULE_FILE, DEFAULT_SPACE, spaceOf, GENERATED_FILES, GENERATED_FOLDERS, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, LEFTOVERS_SWITCH, START_SCREEN_MODES, START_SCREEN_SWITCH, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, POINTER_KIND, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type Origin, type RegionType, type Space, type StartScreenMode, type SwitchKind, type SymbolKind } from "./schema.ts";
+import { CODE_REGION_TYPES, COMMENT_PLACEMENTS, EVIDENCE_KINDS, MAX_ELEMENT, MEMORY_ROW, MODULE_FILE, DEFAULT_SPACE, spaceOf, inSpace, spaceOption, GENERATED_FILES, GENERATED_FOLDERS, isGeneratedFile, isSemantic, MACRO_NAME, MACRO_PARAM, OFF_KINDS, RELEASE_DEFINE, RELEASE_LABEL, LEFTOVERS_SWITCH, START_SCREEN_MODES, START_SCREEN_SWITCH, SWITCH_KINDS, SWITCH_NAME, NO_ELEMENT_TYPES, POINTER_KIND, REGION_TYPES, SYMBOL_KINDS, type CommentPlacement, type EvidenceKind, type Origin, type RegionType, type Space, type StartScreenMode, type SwitchKind, type SymbolKind } from "./schema.ts";
 import { newRevisionId, rowId, sqlName, TABLES, tableSpec } from "./text.ts";
 
 type Raw = Record<string, unknown>;
@@ -94,8 +94,10 @@ export interface WriteResult<T, P = never> {
 }
 
 const MAX_COMMENT = 4000;
-/** The most characters of patch code and of a macro body. */
+/** The most characters of a macro body, and of the code of a patch of a small range. */
 const MAX_CODE = 8000;
+/** The most characters of patch code for each byte of its range, when that is more than MAX_CODE: the bytes of a release as !byte lines (releaseCode) need less than 5. */
+const CODE_PER_BYTE = 8;
 /** The most parameters of a macro. */
 const MAX_PARAMS = 16;
 const MAX_EVIDENCE_REF = 1000;
@@ -813,7 +815,11 @@ function checkSwitchName(name: unknown, what = "A switch name"): void {
 function checkPatch(request: PatchRequest): void {
   checkRange(request);
   checkSwitchName(request.switch, "The switch of a patch");
-  if (typeof request.code !== "string" || request.code.length > MAX_CODE) throw new Refusal("invalid-input", `Patch code has at most ${MAX_CODE} characters; empty code fills the range with NOP.`);
+  // The limit grows with the range: the bytes of a release fit a patch of any range.
+  const limit = Math.max(MAX_CODE, CODE_PER_BYTE * (request.end - request.start + 1));
+  if (typeof request.code !== "string" || request.code.length > limit) {
+    throw new Refusal("invalid-input", `The patch code of ${formatC64Range(request)} has at most ${limit} characters: ${MAX_CODE}, or ${CODE_PER_BYTE} for each byte of the range when that is more. Make the code shorter. Empty code fills the range with NOP.`);
+  }
   checkBraces(request.code, "The patch code");
   checkCommentText(request.comment, "A patch comment");
 }
@@ -870,7 +876,7 @@ function patchStep(db: DatabaseSync, change: Change, request: PatchRequest, cont
     throw new Refusal("invalid-input", `The patch code is at least ${least} bytes, and the range ${range} has ${length}. Make the code shorter, or make the range larger.`);
   }
   const owner = switchNamed(db, request.switch, space);
-  if (owner === undefined) throw new Refusal("not-found", `There is no switch ${request.switch}. Write it first (switch ${request.switch} --kind <kind> --releases <labels>).`);
+  if (owner === undefined) throw new Refusal("not-found", `There is no switch ${request.switch}${inSpace(space)}. Write it first (switch ${request.switch} --kind <kind> --releases <labels>${spaceOption(space)}).`);
   // A write at the start of a patch of the same switch changes that patch. Another switch can have the same range: an alternative.
   const mine = (row: PatchRow) => row.start === request.start && row.switch === request.switch;
   const other = patchesOverlapping(db, request.start, request.end, space).find((row) => !mine(row) && (row.start !== request.start || row.end !== request.end || row.switch === request.switch));
@@ -962,10 +968,10 @@ function defaultOf(request: SwitchRequest, existing: SwitchRow | undefined): 0 |
 function switchStep(db: DatabaseSync, change: Change, request: SwitchRequest, context: StepContext): Step<SwitchRow, SwitchRow> {
   const space = spaceOf(request);
   const base = baseLabel(db, space);
-  if (base === undefined) throw new Refusal("not-found", "The knowledge has no base release. Record the release whose bytes are the program first (release <label> --file <file> --base).");
+  if (base === undefined) throw new Refusal("not-found", `The knowledge has no base release${inSpace(space)}. Record the release whose bytes are the program${inSpace(space)} first (release <label> --file <file> --base${spaceOption(space)}).`);
   const existing = switchNamed(db, request.name, space);
   const releases = [...new Set(request.releases ?? existing?.releases ?? [])].sort();
-  for (const label of releases) if (releaseLabeled(db, label, space) === undefined) throw new Refusal("not-found", `There is no release ${label}. Record it first (release ${label} --file <file>).`);
+  for (const label of releases) if (releaseLabeled(db, label, space) === undefined) throw new Refusal("not-found", `There is no release ${label}${inSpace(space)}. Record it first (release ${label} --file <file>${spaceOption(space)}).`);
   const value = defaultOf(request, existing);
   const comment = request.comment === undefined ? existing?.comment : request.comment.trim();
   const origin = context.origin as SwitchRow["origin"];
@@ -1039,11 +1045,11 @@ function releaseStep(db: DatabaseSync, change: Change, request: ReleaseRequest, 
   const sameBytes = held.length === wanted.size && held.every((row) => wanted.get(row.address) === row.bytes);
   if (existing !== undefined && existing.base === base && existing.comment === comment && sameFile && sameBytes && !confirms(existing.origin, origin)) return { current: existing };
   const other = baseLabel(db, space);
-  if (base && other !== undefined && other !== request.label) throw new Refusal("conflict", `The release ${other} is the base release. A space has one base release.`);
+  if (base && other !== undefined && other !== request.label) throw new Refusal("conflict", `The release ${other} is the base release${inSpace(space)}. A space has one base release.`);
   // Every switch takes its base value from the base release: it cannot change under them.
   if ((existing?.base ?? false) !== base) {
     const switches = listSwitches(db, undefined, space);
-    if (switches.length > 0) throw new Refusal("conflict", `The base release decides the state of the program for the switches ${switches.map((row) => row.name).join(", ")}. Remove them first (unswitch) to change the base release.`);
+    if (switches.length > 0) throw new Refusal("conflict", `The base release decides the state of the program for the switches ${switches.map((row) => row.name).join(", ")}. Remove them first (unswitch${spaceOption(space)}) to change the base release${inSpace(space)}.`);
   }
   const symbol = symbolNamed(db, `${RELEASE_DEFINE}${request.label}`, space);
   if (symbol !== undefined) throw new Refusal("conflict", `The build of the release defines ${RELEASE_DEFINE}${request.label}, and that is the name of the symbol at ${formatC64Address(symbol.address)}. Give the release another label.`);
@@ -1065,7 +1071,7 @@ function releaseStep(db: DatabaseSync, change: Change, request: ReleaseRequest, 
 function unreleaseStep(db: DatabaseSync, change: Change, request: InSpace & { label: string }): Step<null> {
   const space = spaceOf(request);
   const existing = releaseLabeled(db, request.label, space);
-  if (existing === undefined) throw new Refusal("not-found", `There is no release ${request.label}.`);
+  if (existing === undefined) throw new Refusal("not-found", `There is no release ${request.label}${inSpace(space)}.`);
   const switches = listSwitches(db, undefined, space).filter((row) => existing.base || row.releases.includes(request.label));
   if (switches.length > 0) {
     const why = existing.base ? "decides the state of the program for" : "is named by";
@@ -1523,10 +1529,10 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
     // The coverage maps that the knowledge has follow the revert, also when no coverage range changes.
     const maps = (runs: CoverageRun[]) => JSON.stringify(runs.filter((run) => only === undefined || run.space === only).map((run) => [run.name, run.sha256, run.space, run.revision]));
     if (maps(coverageRuns(db, restored)) !== maps(coverageRuns(db))) change.id();
-    const inSpace = only === undefined ? "" : " AND space = ?";
+    const spaceWhere = only === undefined ? "" : " AND space = ?";
     const spaceArgs = only === undefined ? [] : [only];
-    const at = `valid_from_revision <= ? AND (valid_to_revision IS NULL OR valid_to_revision > ?)${inSpace}`;
-    const current = `valid_to_revision IS NULL${inSpace}`;
+    const at = `valid_from_revision <= ? AND (valid_to_revision IS NULL OR valid_to_revision > ?)${spaceWhere}`;
+    const current = `valid_to_revision IS NULL${spaceWhere}`;
     // A row is the same when all its values are the same.
     for (const spec of TABLES) {
       const columns = spec.fields.map((field) => field.column);

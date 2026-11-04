@@ -5,12 +5,12 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { Refusal } from "../errors.ts";
-import { COVERAGE } from "../c64.ts";
+import { COVERAGE, rangesWhere } from "../c64.ts";
 import { indexPath, openForRead, textPath, withWrite } from "./database.ts";
-import { coverageRuns, listSpaces } from "./read.ts";
-import { addCoverage, analyzedBytes, coverageAccess, entryMemory, isProgram, memoryRows, programCoverage, programImage, releaseCode, setImage, type ImageRequest } from "./program.ts";
+import { coverageRuns, listSpaces, type StartScreenRow } from "./read.ts";
+import { addCoverage, analyzedBytes, coverageAccess, entryMemory, isProgram, memoryRows, operandImages, programCoverage, programImage, releaseCode, setImage, startScreenKey, type CoverageImport, type ImageRequest } from "./program.ts";
 import { revision as revisionChanges } from "./history.ts";
-import { revert, setRelease } from "./write.ts";
+import { renameSymbol, revert, setComment, setModule, setPatch, setRelease, setSwitch } from "./write.ts";
 
 const projects: string[] = [];
 after(() => {
@@ -143,6 +143,11 @@ function map(...ranges: Array<[number, number, number]>): Uint8Array {
   return bytes;
 }
 
+/** The ranges where an import changed what the runs execute. */
+function changedRanges(imported: CoverageImport) {
+  return { gained: rangesWhere((address) => imported.executeChange(address) === "gained"), lost: rangesWhere((address) => imported.executeChange(address) === "lost") };
+}
+
 test("the coverage is the union of the maps by kind, and one run's write and execute is wx", () => {
   const root = project();
   const { ramExecute: x, ramWrite: w, ramRead: r, romRead } = COVERAGE;
@@ -151,6 +156,8 @@ test("the coverage is the union of the maps by kind, and one run's write and exe
   const second = map([0x1000, 0x1000, x], [0x1006, 0x1006, x], [0x3000, 0x3000, x], [0x3001, 0x3001, w | x]);
   const written = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "local/a.bin", bytes: first }, { name: "local/b.bin", bytes: second }] }), root);
   assert.deepEqual(written.current.imported, ["local/a.bin", "local/b.bin"]);
+  // Only an execute in RAM, a ROM or the I/O area changes what the runs execute: a read or a write does not.
+  assert.deepEqual(changedRanges(written.current), { gained: [{ start: 0x1000, end: 0x1000 }, { start: 0x1003, end: 0x1003 }, { start: 0x1006, end: 0x1006 }, { start: 0x3000, end: 0x3001 }], lost: [] });
   const coverage = fromText(root).coverage!;
   for (const address of [0x1000, 0x1003, 0x1006, 0x3000, 0x3001]) assert.ok(coverage.map[address]! & x, `x at ${address}`);
   assert.equal(coverage.map[0x1001]! & x, 0);
@@ -192,6 +199,7 @@ test("a new map of a path replaces the earlier map of that path, and closes only
   // The session of a is recorded again: it no longer executes $1001-$1002.
   const again = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "tests/a/coverage.bin", bytes: map([0x1000, 0x1000, x], [0x3000, 0x3000, r]) }] }), root);
   assert.deepEqual([again.current.imported, again.current.replaced, again.current.added, again.current.removed], [["tests/a/coverage.bin"], ["tests/a/coverage.bin"], 0, 1]);
+  assert.deepEqual(changedRanges(again.current), { gained: [], lost: [{ start: 0x1001, end: 0x1002 }] });
   const coverage = fromText(root).coverage!;
   assert.deepEqual([0x1000, 0x1001, 0x2000].map((address) => coverage.map[address]! & x), [x, 0, x], "the map of b stays");
   assert.equal(coverage.map[0x3000], r);
@@ -205,6 +213,7 @@ test("a new map of a path replaces the earlier map of that path, and closes only
   // The earlier map of the path is no longer the latest: it is imported again and replaces the new one.
   const back = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "tests/a/coverage.bin", bytes: first }] }), root);
   assert.deepEqual([back.current.imported, back.current.added, back.current.removed], [["tests/a/coverage.bin"], 1, 0]);
+  assert.deepEqual(changedRanges(back.current), { gained: [{ start: 0x1001, end: 0x1002 }], lost: [] });
   assert.equal(fromText(root).coverage!.map[0x1002]! & x, x);
 });
 
@@ -385,6 +394,19 @@ test("the bytes of a release in a range are patch code as !byte lines; the base 
   }
 });
 
+test("the bytes of a release fit a patch of any range inside the release", () => {
+  const root = project();
+  const range = { start: 0x0800, end: 0xffff };
+  withWrite((db) => setImage(db, llm, image([range])), root);
+  withWrite((db) => setRelease(db, llm, { label: "BASE", base: true }), root);
+  withWrite((db) => setRelease(db, llm, { label: "V2", rows: memoryRows([range], (address) => (address * 7) & 0xff) }), root);
+  const context = (db: Parameters<typeof operandImages>[0]) => ({ ...llm, image: operandImages(db, new Map()) });
+  withWrite((db) => setSwitch(db, context(db), { name: "V2_BYTES", kind: "change", default: 0, releases: ["V2"] }), root);
+  const patched = withWrite((db) => setPatch(db, context(db), { ...range, switch: "V2_BYTES", code: releaseCode(db, "V2", range.start, range.end) }), root);
+  assert.notEqual(patched.revision, null);
+  assert.equal(patched.current.code.split("\n").length, (range.end - range.start + 1) / 8);
+});
+
 test("an image with segments that touch is the program that the knowledge keeps as one range; another byte or another range is not", () => {
   const root = project();
   // A capture that joins no segment over a bound of the I/O area.
@@ -396,4 +418,33 @@ test("an image with segments that touch is the program that the knowledge keeps 
   assert.equal(isProgram(program, image(captured.segments, 1)), false, "another byte");
   assert.equal(isProgram(program, image([{ start: 0x0800, end: 0xcfff }, { start: 0xe000, end: 0xffff }])), false, "a gap");
   assert.equal(isProgram(program, image([{ start: 0x0801, end: 0xffff }])), false, "another start");
+});
+
+test("the key of a start screen of a stage changes with the screen, the bytes of the stage and a patch in, and not with a name, a comment or a module", () => {
+  const root = project();
+  const row: StartScreenRow = { space: "c64", mode: "text", screen: 0x0400, charset: 0x1000, colour: 1, border: 0, background: 0, stage: "loading", origin: "llm", revision: "r" };
+  const key = () => withWrite((db) => startScreenKey(db, row), root);
+  withWrite((db) => setImage(db, llm, image([{ start: 0x0400, end: 0x07e7 }], 0, { space: "loading" })), root);
+  const captured = key();
+  assert.match(captured, /^[0-9a-f]{16}$/);
+  withWrite((db) => {
+    renameSymbol(db, llm, { address: 0x0400, name: "picture", kind: "data", space: "loading" });
+    setComment(db, llm, { address: 0x0400, placement: "line", text: "The loading picture.", space: "loading" });
+    setModule(db, llm, { start: 0x0400, file: "picture.asm", space: "loading" });
+  }, root);
+  assert.equal(key(), captured, "a name, a comment and a module of the stage keep the key");
+  assert.equal(withWrite((db) => startScreenKey(db, { ...row, comment: "The loading picture.", origin: "user" }), root), captured);
+  assert.notEqual(withWrite((db) => startScreenKey(db, { ...row, screen: 0x4400 }), root), captured, "the screen moved");
+  // A patch of a crack switch, on in the base release: the default build takes it out, so the stage holds the patch.
+  const operandImage = () => ({ byteAt: (address: number) => (address >= 0x0400 && address <= 0x07e7 ? address & 0xff : undefined), platform: new Map() });
+  withWrite((db) => {
+    setRelease(db, llm, { label: "CRACK", base: true, space: "loading" });
+    setSwitch(db, { ...llm, image: operandImage }, { name: "CRACK_TEXT", kind: "crack", releases: ["CRACK"], space: "loading" });
+  }, root);
+  assert.equal(key(), captured, "a switch without a patch does not change the bytes");
+  withWrite((db) => setPatch(db, { ...llm, image: operandImage }, { start: 0x0400, end: 0x0403, switch: "CRACK_TEXT", code: "!byte 1,2,3,4", space: "loading" }), root);
+  const patched = key();
+  assert.notEqual(patched, captured, "the patch is in the bytes of the stage");
+  withWrite((db) => setImage(db, llm, image([{ start: 0x0400, end: 0x07e7 }], 1, { space: "loading" })), root);
+  assert.notEqual(key(), patched, "a new capture of the stage");
 });

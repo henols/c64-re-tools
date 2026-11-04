@@ -47,13 +47,13 @@ Read the description of a tool before you use it for the first time. It gives th
 
 A result field `emulatorFlaw` names a known flaw of the emulator. Tell the user about the flaw. Do not use a result that the flaw can make wrong as a fact.
 
-For a large result, give `out`. Write a file that is only for your work in `.c64-re-tools/local/` of the project. Git ignores that folder. When a tool needs `project`, give the same folder as the `--project` of the skill scripts.
+Give each path to a tool as an absolute path, for example `/home/me/game/build/game.prg`. A tool refuses a relative path. For a large result, give `out`. The result then gives the absolute path of the file. Write a file that is only for your work in `.c64-re-tools/local/` of the project. Git ignores that folder.
 
 To keep a coverage run:
 
 1. Clear the memory map with `c64_memmap` action `clear`.
 2. Run the part of the program that you want to keep.
-3. Read the map with `c64_memmap` action `read` and `out`, for example to `.c64-re-tools/local/attract.bin`.
+3. Read the map with `c64_memmap` action `read` and `out`. Give the absolute path of a file in `.c64-re-tools/local/` of the project, for example `/home/me/game/.c64-re-tools/local/attract.bin`.
 4. Add the file to the coverage of the project knowledge.
 
 ## Workflow

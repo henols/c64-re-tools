@@ -101,7 +101,7 @@ test("two versions in a group folder: each script runs on its version, v2 reads 
   assert.equal(versions.releases[0].name, "../v1/game.prg");
   assert.ok(versions.differingBytes > 1);
   // A release stays in its project: the knowledge does not name a file of another version.
-  refused("c64-knowledge", "knowledge.ts", ["release", "V1", "--file", "../v1/game.prg", "--project", "v2"], /--file must be a path relative to the project folder that stays inside it/);
+  refused("c64-knowledge", "knowledge.ts", ["release", "V1", "--file", "../v1/game.prg", "--project", "v2"], /--file must be a path inside the project folder/);
 
   // The names of v1 go to v2 through the library, at the moved addresses.
   const matched = ok("c64-provenance", "provenance.ts", ["match", "--library", "../library", "--apply", "--project", "v2"]);
