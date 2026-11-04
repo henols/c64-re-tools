@@ -28,7 +28,7 @@ import { assemble, showSymbol, symbolsFileText } from "#src/native/acme.ts";
 import { EXOMIZER, findTool } from "#src/native/discover.ts";
 import { localToolContext } from "#src/native/local.ts";
 import type { AcmeParams, AssembledSymbol } from "#src/native/types.ts";
-import { type PackedStage, packStage, STAGE_FILE, stageKey, stageOfBuild } from "#src/stage.ts";
+import { type PackedStage, packStage, STAGE_FILE, stageFileMismatch, stageOfBuild } from "#src/stage.ts";
 import { listed as listedItems, OPTIONS, reply, runScript, UsageError } from "#src/script.ts";
 import { compareBuild, type LeftOutLeftover, type Reference } from "#src/compare.ts";
 
@@ -220,8 +220,8 @@ await runScript({
           const { row, key } = stageKnown;
           const stageIndex = inSource(STAGE_FILE);
           if (stageIndex < 0) noLoader = `The start screen is of the captured stage ${row.stage}, and ${sourceRoot} has no ${STAGE_FILE} with its bytes. Generate the source with the loader.`;
-          // A file of another start screen, or of an earlier capture, patch or coverage of the stage, has other bytes.
-          else if (stageKey(textOf(stageIndex)) !== key) noLoader = `${STAGE_FILE} of ${sourceRoot} is not of the start screen of the knowledge now: the start screen or the stage ${row.stage} changed after the generation of the source with the loader. Generate the source with the loader again.`;
+          // A file of another start screen, or of an earlier capture or patch of the stage, has other bytes.
+          else noLoader = stageFileMismatch(textOf(stageIndex), key, sourceRoot, row.stage!);
         }
         // The toolkit never installs a tool: without Exomizer the build refuses by name before ACME runs.
         if (packedForm && noLoader === undefined) findTool(EXOMIZER);

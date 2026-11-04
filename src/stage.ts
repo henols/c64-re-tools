@@ -77,6 +77,19 @@ export function stageKey(text: string): string | undefined {
   return STAGE_KEY_LINE.exec(text)?.[1];
 }
 
+/**
+ * Why the bytes of the stage in a text of start_screen_stage.asm (in the
+ * folder `where`) are not for the start screen with `key`, or undefined when
+ * they are: the text has no key, as a source of an earlier version has none,
+ * or another key.
+ */
+export function stageFileMismatch(text: string, key: string, where: string, stage: string): string | undefined {
+  const found = stageKey(text);
+  if (found === undefined) return `${STAGE_FILE} of ${where} has no start screen key, so its bytes of the stage ${stage} are not known to be of the start screen of the knowledge. Generate the source with the loader again.`;
+  if (found !== key) return `${STAGE_FILE} of ${where} is not of the start screen of the knowledge now: the start screen or the stage ${stage} changed after the generation of the source with the loader. Generate the source with the loader again.`;
+  return undefined;
+}
+
 /** The first label of a part, with the address of the part. */
 const STAGE_PART_LABEL = /^stage_from_([0-9a-f]{4})$/;
 

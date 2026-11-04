@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { Refusal } from "./errors.ts";
 import type { StartScreenRow } from "./knowledge/read.ts";
 import { startScreenPlan } from "./knowledge/start-screen.ts";
-import { planStage, stageKey, stageOfBuild, type StageInput } from "./stage.ts";
+import { planStage, stageFileMismatch, stageKey, stageOfBuild, type StageInput } from "./stage.ts";
 
 test("the show stage runs where the KERNAL can be in, and puts the loader bytes under the stage in a stash; without room it refuses with the free ranges", () => {
   const row: StartScreenRow = { space: "c64", mode: "multicolour", screen: 0xcc00, bitmap: 0xe000, colours: 0x8328, border: 0, background: 6, stage: "bank1", call: 0x0a00, origin: "llm", revision: "r" };
@@ -23,7 +23,12 @@ test("the show stage runs where the KERNAL can be in, and puts the loader bytes 
   assert.match(plan.text, /jmp \$080d\n/);
   // The key of the start screen is in the text, and only there.
   assert.equal(stageKey(plan.text), "0123456789abcdef");
-  assert.equal(stageKey(plan.text.replace(/^; The start screen key .*\n/m, "")), undefined);
+  const unkeyed = plan.text.replace(/^; The start screen key .*\n/m, "");
+  assert.equal(stageKey(unkeyed), undefined);
+  // A build with other switch values takes the bytes of the stage only from a file with the key of the knowledge.
+  assert.equal(stageFileMismatch(plan.text, "0123456789abcdef", "src", "bank1"), undefined);
+  assert.match(stageFileMismatch(unkeyed, "0123456789abcdef", "src", "bank1")!, /^start_screen_stage\.asm of src has no start screen key, .* Generate the source with the loader again\.$/);
+  assert.match(stageFileMismatch(plan.text, "fedcba9876543210", "src", "bank1")!, /^start_screen_stage\.asm of src is not of the start screen of the knowledge now: the start screen or the stage bank1 changed /);
   // The colour RAM of the capture is in the show code: the start screen copies it from there.
   const { colours: _colours, ...picture } = row;
   const fromCapture: StartScreenRow = { ...picture, colourRam: true };
