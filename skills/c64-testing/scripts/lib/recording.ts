@@ -470,7 +470,7 @@ export function entryStateDiffers(program: EntryRam, loader: LoaderEntryState): 
 
 /**
  * The core with the spans of the key input: from a key down while no key is down to the key up that leaves no key
- * down. `spans` closes a span that is still open at `end`.
+ * down, at the tick that the key command answers. `spans` closes a span that is still open at `end`.
  */
 export function trackKeys(core: C64RunSession): { core: C64RunSession; spans: (end: number) => TickSpan[] } {
   const down = new Set<string>();
@@ -480,7 +480,8 @@ export function trackKeys(core: C64RunSession): { core: C64RunSession; spans: (e
     const answer = await core.command(text, limitMs);
     const key = /^key ([0-9a-f]+) (down|up)$/.exec(text);
     if (key !== null) {
-      const tick = (await core.status("status")).tick;
+      const tick = Number(/tick=(\d+)/.exec(answer)?.[1] ?? Number.NaN);
+      if (Number.isNaN(tick)) throw new Refusal("operation-failed", `c64run key gave no tick: ${answer}`);
       if (key[2] === "down") {
         if (down.size === 0) since = tick;
         down.add(key[1]!);

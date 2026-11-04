@@ -693,7 +693,7 @@ int main(int argc, char** argv) {
             printf("ok\n");
         } else if (!strcmp(cmd, "key")) {
             // key <code hex> down|up: 80 + place is the key at matrix place row * 8 + column
-            // (80-bf), ff is RESTORE (NMI). chips holds at most 4 keys at once.
+            // (80-bf), ff is RESTORE (NMI). chips holds at most 4 keys at once. Answers the tick.
             unsigned code;
             if (sscanf(a1, "%x", &code) != 1 || (strcmp(a2, "down") && strcmp(a2, "up"))) { printf("err key: give a code and down or up\n"); continue; }
             if ((code < C64RUN_KEY_PLACE || code >= C64RUN_KEY_PLACE + 64) && code != C64_KEY_RESTORE) { printf("err key: give 80-bf (a matrix place) or ff (RESTORE)\n"); continue; }
@@ -705,7 +705,7 @@ int main(int argc, char** argv) {
                 kbd_update(&sys.kbd, 20000);
                 kbd_update(&sys.kbd, 0);
             }
-            printf("ok\n");
+            printf("ok tick=%llu\n", (unsigned long long)ticks);
         } else if (!strcmp(cmd, "inputs")) {
             // inputs <addr|from-to,...>: the I/O addresses that record and replay handle
             memset(input_addr, 0, sizeof input_addr);

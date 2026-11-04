@@ -99,7 +99,8 @@ function recordingCore(name: string, from: string, marks = true, pages = new Uin
       `  echo "$cmd $rest" >> ${log}`,
       '  case "$cmd" in',
       `    version) echo "ok c64run protocol=${C64RUN_PROTOCOL} chips=test" ;;`,
-      '    inputs|joy|key|write) echo "ok" ;;',
+      '    inputs|joy|write) echo "ok" ;;',
+      '    key) echo "ok tick=982800" ;;',
       '    record) [ "$rest" = off ] || : > "$rest"; echo "ok" ;;',
       '    sites) echo "ok unknown=0" ;;',
       `    marked) if [ ${marks} = true ] && [ -e ${log}.marked ]; then echo "ok tick=990000 phase=00"; else : > ${log}.marked; echo "ok none"; fi ;;`,
@@ -385,14 +386,14 @@ test("the entry state is compared when the program came to its entry after a pre
 });
 
 test("the key input of a record spans from a key down while no key is down to the key up that leaves none, from any source", async () => {
-  // A stand-in core: each status is 100 cycles later.
+  // A stand-in core: each command answers a tick 100 cycles later.
   let tick = 0;
-  const core = { command: async () => "ok", status: async () => ({ tick: (tick += 100) }) } as unknown as Parameters<typeof trackKeys>[0];
+  const core = { command: async () => `ok tick=${(tick += 100)}` } as unknown as Parameters<typeof trackKeys>[0];
   const tracked = trackKeys(core);
   // A key of the play, RESTORE (ff) while it is down, then a joystick and a frame that are no key, then a key held at the end.
   for (const text of ["key 81 down", "key ff down", "key 81 up", "joy 0 10", "frame", "key ff up", "key 82 down"]) await tracked.core.command(text);
-  assert.deepEqual(tracked.spans(5000), [
-    { from: 100, to: 400 },
-    { from: 500, to: 5000 },
+  assert.deepEqual(tracked.spans(9000), [
+    { from: 100, to: 600 },
+    { from: 700, to: 9000 },
   ]);
 });
