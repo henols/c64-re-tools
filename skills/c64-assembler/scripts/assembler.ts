@@ -20,9 +20,8 @@ import { isRefusal, Refusal } from "#src/errors.ts";
 import { readSourceTree, writeReported } from "#src/host-client/transfer.ts";
 import { withRead } from "#src/knowledge/database.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { releaseImage, requireProgram } from "#src/knowledge/program.ts";
-import { currentStartScreen, listSwitches, releaseLabeled, spaceRevision, type StartScreenRow } from "#src/knowledge/read.ts";
-import { startScreenKey } from "#src/knowledge/start-screen.ts";
+import { releaseImage, requireProgram, startScreenKey } from "#src/knowledge/program.ts";
+import { currentStartScreen, listSwitches, releaseLabeled, type StartScreenRow } from "#src/knowledge/read.ts";
 import { LEFTOVER_FOLDER, LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
 import { checkPackedBuilds, COPIER_SOURCE, leftoverRange, loaderSymbols, packedRanges, packLoader, type PackedLoader, settingsLines } from "#src/loader.ts";
 import { assemble, showSymbol, symbolsFileText } from "#src/native/acme.ts";
@@ -124,7 +123,7 @@ function generatedKnowledge(space: Space, leftovers: readonly AddressRange[] | u
             loaded = packedRanges(requireProgram(db, space).segments, leftovers);
           });
     const startScreen = leftovers === undefined ? undefined : currentStartScreen(db, space);
-    const stageScreen = startScreen?.stage === undefined ? undefined : { row: startScreen, key: startScreenKey(startScreen, spaceRevision(db, startScreen.stage)) };
+    const stageScreen = startScreen?.stage === undefined ? undefined : { row: startScreen, key: startScreenKey(db, startScreen) };
     return { defaults, loaded, noLoader, stageScreen };
   });
 }

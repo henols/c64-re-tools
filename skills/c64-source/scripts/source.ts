@@ -27,15 +27,15 @@ import { conflicts } from "#src/knowledge/conflicts.ts";
 import { withRead, withWrite } from "#src/knowledge/database.ts";
 import { identifiers } from "#src/knowledge/expression.ts";
 import { clipped, codeKnowledge, effectiveRegions } from "#src/knowledge/code-reach.ts";
-import { memoryRows, releaseImage, type ProgramImage } from "#src/knowledge/program.ts";
-import { ANALYZER_NAME_ORDER, baseValue, currentRevision, sourceRevision, spaceRevision, startScreenRanges, type StartScreenRow, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listReleases, listSpaces, listSwitches, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
+import { memoryRows, releaseImage, type ProgramImage, startScreenKey } from "#src/knowledge/program.ts";
+import { ANALYZER_NAME_ORDER, baseValue, currentRevision, sourceRevision, startScreenRanges, type StartScreenRow, listAnalyzerNames, listComments, listMacros, listMacroUses, listModules, listReleases, listSpaces, listSwitches, type ReleaseRow, type SymbolRow } from "#src/knowledge/read.ts";
 import { DEFAULT_SPACE, LEFTOVER_FOLDER, LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
 import { write } from "#src/knowledge/write.ts";
 import { assemble, symbolsFileText } from "#src/native/acme.ts";
 import { PAL_FRAME_CYCLES } from "#src/native/c64run.ts";
 import { decodeProgram, leftoverInput, reachInput } from "#src/program-code.ts";
 import { localToolContext } from "#src/native/local.ts";
-import { type AssembledSymbol, type Diagnostic, symbolValue, symbolValues } from "#src/native/types.ts";
+import { type AssembledSymbol, type Diagnostic, symbolValues } from "#src/native/types.ts";
 import { decode as decodeRegister, describeAddress, platformNames, platformNamesFor, romUseOfProgram } from "#src/platform.ts";
 import { ensureLocal, generatedDirectory, LOCAL_DIRECTORY, newProjectFolder, PROJECT_DIRECTORY, projectRelative, projectRoot, resolveProjectPath } from "#src/project.ts";
 import { generatedReferences } from "#src/reference-pages.ts";
@@ -57,7 +57,7 @@ import {
   type LoaderPlan,
 } from "./lib/loader.ts";
 import { instructionWith, OPCODES } from "#src/opcodes.ts";
-import { capturedColourRam, LOADER_JUMP, START_SCREEN_CONTINUE, START_SCREEN_FILE, START_SCREEN_WAIT, startScreenKey, startScreenLabels, type StartScreenPlan } from "#src/knowledge/start-screen.ts";
+import { capturedColourRam, LOADER_JUMP, START_SCREEN_CONTINUE, START_SCREEN_FILE, START_SCREEN_WAIT, startScreenLabels, type StartScreenPlan } from "#src/knowledge/start-screen.ts";
 import { packStage, type PackedStage, STAGE_FILE, type StageBytes, type StagePart } from "#src/stage.ts";
 import { freeName, planDrops, readmeText, rewriteTest } from "./lib/export.ts";
 import type { UnresolvedFlow } from "#src/knowledge/separate.ts";
@@ -901,10 +901,11 @@ async function buildLoader(
   if (loaderBuilt.start !== (loader.packed?.start ?? 0x0801) || loaderBuilt.start + program.length - 3 !== loader.end || wrongPacking !== undefined) {
     throw new WireFailure("operation-failed", `The assembled loader does not have the planned layout${wrongPacking === undefined ? "" : ` (${wrongPacking.what})`}. This is a defect of the script.`);
   }
+  const labels = symbolValues(loaderBuilt.symbols ?? []);
   const labelValue = (name: string) => {
-    const symbol = loaderBuilt.symbols?.find((item) => item.name === name);
-    if (symbol === undefined) throw new WireFailure("operation-failed", `The assembled loader has no ${name} label. This is a defect of the script.`);
-    return symbolValue(symbol);
+    const value = labels.get(name);
+    if (value === undefined) throw new WireFailure("operation-failed", `The assembled loader has no ${name} label. This is a defect of the script.`);
+    return value;
   };
   const jump = labelValue(LOADER_JUMP);
   const wrong = simulate(memory, loader.copies, expected);
@@ -979,7 +980,7 @@ async function buildStage(files: Array<{ name: string; text: string }>, laid: La
   };
   const settings = settingsLines({ switches: hasSwitchFile(laid), config: hasConfigFile(laid) });
   // The key of the start screen goes into the file: a build with other switch values uses its bytes only for that start screen.
-  const key = withRead((db) => startScreenKey(row, spaceRevision(db, row.stage!)));
+  const key = withRead((db) => startScreenKey(db, row));
   const built = await packStage(program.program, stage, row, { settings, header, key }, assembleStage, localToolContext());
   return { ...built, text: `${mark}\n${built.text}`, ...stage };
 }

@@ -12,9 +12,9 @@ import { after, test } from "node:test";
 import { COPIER_LINE } from "../../src/build-name.ts";
 import { COVERAGE } from "../../src/c64.ts";
 import { withRead, withWrite } from "../../src/knowledge/database.ts";
-import { setImage } from "../../src/knowledge/program.ts";
-import { currentStartScreen, spaceRevision, type StartScreenRow } from "../../src/knowledge/read.ts";
-import { START_SCREEN_FILE, startScreenKey, startScreenPlan } from "../../src/knowledge/start-screen.ts";
+import { setImage, startScreenKey } from "../../src/knowledge/program.ts";
+import { currentStartScreen, type StartScreenRow } from "../../src/knowledge/read.ts";
+import { START_SCREEN_FILE, startScreenPlan } from "../../src/knowledge/start-screen.ts";
 import { setStartScreen } from "../../src/knowledge/write.ts";
 import { packLoader, settingsLines } from "../../src/loader.ts";
 import { assemble } from "../../src/native/acme.ts";
@@ -284,7 +284,7 @@ test("--switch builds other switch values and leaves config.asm as it is; with t
   // generate writes the files of the show stage only with a checked loader: here they come from a plan of the stage.
   const sourceFiles = () => ["config.asm", "switches.asm", "loader.asm", START_SCREEN_FILE, STAGE_FILE].filter((name) => existsSync(join(folder, "src", name))).map((name) => ({ name, text: readFileSync(join(folder, "src", name), "utf8") }));
   const settings = settingsLines({ switches: existsSync(join(folder, "src", "switches.asm")), config: true });
-  const key = withRead((db) => startScreenKey(currentStartScreen(db)!, spaceRevision(db, "loading")), folder);
+  const key = withRead((db) => startScreenKey(db, currentStartScreen(db)!), folder);
   const stageFile = (fileKey: string) => writeFileSync(join(folder, "src", STAGE_FILE), planStage({ inner: [], innerStart: 0x080d, innerPort: 0x37, stage: screen, row, plan: startScreenPlan(row), settings, header: [], key: fileKey, codeSize: 300 }).text);
   writeFileSync(join(folder, "src", START_SCREEN_FILE), START_SCREEN_CODE);
   // A file of another start screen, or of an earlier state of the stage, has another key: its bytes are not of this start screen.
