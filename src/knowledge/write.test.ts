@@ -593,6 +593,7 @@ test("a patch puts code in a range of the image under a switch", () => {
     (error: unknown) => error instanceof Refusal && error.code === "invalid-input" && error.message === "The patch code is at least 8 bytes, and the range $8a85-$8a87 has 3. Make the code shorter, or make the range larger.",
   );
   assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code: "!byte $ea, $ea\n!word $1234" }), /at least 4 bytes/);
+  assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code: ";".repeat(8001) }), (error: unknown) => failsWith("invalid-input")(error) && /at most 8000 characters/.test((error as Error).message));
   for (const code of ["!fill 3, $ea", "nop\nasl a\nrts ; done", "jsr $1234", "+inc16 ptr\nlda #1\nlda #2", "loop lda #1\nlda #2"]) setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code });
   assert.deepEqual(["lda+2 $12", "!fill $10", "bne .skip\n.skip", "!text \"ab\""].map(leastPatchBytes), [3, 16, undefined, undefined]);
 

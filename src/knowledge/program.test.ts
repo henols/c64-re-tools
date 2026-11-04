@@ -8,9 +8,9 @@ import { Refusal } from "../errors.ts";
 import { COVERAGE } from "../c64.ts";
 import { indexPath, openForRead, textPath, withWrite } from "./database.ts";
 import { coverageRuns, listSpaces } from "./read.ts";
-import { addCoverage, analyzedBytes, coverageAccess, entryMemory, isProgram, memoryRows, programCoverage, programImage, releaseCode, setImage, type ImageRequest } from "./program.ts";
+import { addCoverage, analyzedBytes, coverageAccess, entryMemory, isProgram, memoryRows, operandImages, programCoverage, programImage, releaseCode, setImage, type ImageRequest } from "./program.ts";
 import { revision as revisionChanges } from "./history.ts";
-import { revert, setRelease } from "./write.ts";
+import { revert, setPatch, setRelease, setSwitch } from "./write.ts";
 
 const projects: string[] = [];
 after(() => {
@@ -383,6 +383,19 @@ test("the bytes of a release in a range are patch code as !byte lines; the base 
   } finally {
     db.close();
   }
+});
+
+test("the bytes of a release fit a patch of any range inside the release", () => {
+  const root = project();
+  const range = { start: 0x0800, end: 0xffff };
+  withWrite((db) => setImage(db, llm, image([range])), root);
+  withWrite((db) => setRelease(db, llm, { label: "BASE", base: true }), root);
+  withWrite((db) => setRelease(db, llm, { label: "V2", rows: memoryRows([range], (address) => (address * 7) & 0xff) }), root);
+  const context = (db: Parameters<typeof operandImages>[0]) => ({ ...llm, image: operandImages(db, new Map()) });
+  withWrite((db) => setSwitch(db, context(db), { name: "V2_BYTES", kind: "change", default: 0, releases: ["V2"] }), root);
+  const patched = withWrite((db) => setPatch(db, context(db), { ...range, switch: "V2_BYTES", code: releaseCode(db, "V2", range.start, range.end) }), root);
+  assert.notEqual(patched.revision, null);
+  assert.equal(patched.current.code.split("\n").length, (range.end - range.start + 1) / 8);
 });
 
 test("an image with segments that touch is the program that the knowledge keeps as one range; another byte or another range is not", () => {

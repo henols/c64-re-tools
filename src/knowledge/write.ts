@@ -94,8 +94,10 @@ export interface WriteResult<T, P = never> {
 }
 
 const MAX_COMMENT = 4000;
-/** The most characters of patch code and of a macro body. */
+/** The most characters of a macro body, and of the code of a patch of a small range. */
 const MAX_CODE = 8000;
+/** The most characters of patch code for each byte of its range, when that is more than MAX_CODE: the bytes of a release as !byte lines (releaseCode) need less than 5. */
+const CODE_PER_BYTE = 8;
 /** The most parameters of a macro. */
 const MAX_PARAMS = 16;
 const MAX_EVIDENCE_REF = 1000;
@@ -813,7 +815,11 @@ function checkSwitchName(name: unknown, what = "A switch name"): void {
 function checkPatch(request: PatchRequest): void {
   checkRange(request);
   checkSwitchName(request.switch, "The switch of a patch");
-  if (typeof request.code !== "string" || request.code.length > MAX_CODE) throw new Refusal("invalid-input", `Patch code has at most ${MAX_CODE} characters; empty code fills the range with NOP.`);
+  // The limit grows with the range: the bytes of a release fit a patch of any range.
+  const limit = Math.max(MAX_CODE, CODE_PER_BYTE * (request.end - request.start + 1));
+  if (typeof request.code !== "string" || request.code.length > limit) {
+    throw new Refusal("invalid-input", `The patch code of ${formatC64Range(request)} has at most ${limit} characters: ${MAX_CODE}, or ${CODE_PER_BYTE} for each byte of the range when that is more. Make the code shorter. Empty code fills the range with NOP.`);
+  }
   checkBraces(request.code, "The patch code");
   checkCommentText(request.comment, "A patch comment");
 }
