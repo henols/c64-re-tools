@@ -1,13 +1,13 @@
 // Runtime evidence for static analysis: the coverage as entry points,
-// user/LLM code regions and JMP tables as entry points, and the check that
-// shows analyzer data over executed code.
+// user/LLM code regions, JMP tables and jump and call targets as entry
+// points, and the check that shows analyzer data over executed code.
 
 import type { DatabaseSync } from "node:sqlite";
 
-import { COVERAGE } from "#src/c64.ts";
+import { type AddressRange, COVERAGE, inRanges } from "#src/c64.ts";
 import type { RefusedSeed, RefusedSeedReason } from "#src/native/types.ts";
 import { listReferences, listRegions, type RegionRow } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, isAnalyzer, isSemantic, type Analyzer, type Space } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, INSTRUCTION_REGION_TYPES, isAnalyzer, isSemantic, type Analyzer, type Space } from "#src/knowledge/schema.ts";
 
 /** The byte at an address of the analyzed image, or undefined outside it. */
 export type ImageByte = (address: number) => number | undefined;
@@ -32,6 +32,43 @@ export function codeEntries(db: DatabaseSync | undefined, image: ImageByte, spac
     }
   }
   return entries;
+}
+
+/** The classes of an address for referenceTargets, as bits of a 64 KiB map. */
+const CODE = 1;
+const SEMANTIC_DATA = 2;
+const NO_TARGET = 4;
+
+/**
+ * The targets of the jump and call references from code in the knowledge,
+ * inside the image: entry points for DXA. DXA drops code that it
+ * reaches on one route only when another route runs into an instruction, for
+ * example into the operand of a BIT skip; which code it drops changes with
+ * the seeds. A target in a data range would make that range code, and DXA
+ * cannot decode both instructions of a dual-use region: such targets are left out.
+ * `dualUse` adds the dual-use regions that this run found and that the knowledge
+ * does not have yet. The references of the analyzer that runs are left out: fed back, a wrong
+ * decode would seed itself, and a re-analysis could not retire it. A
+ * reference from a data region of the user or the LLM is left out too: their
+ * regions win over the code region of an analyzer.
+ */
+export function referenceTargets(db: DatabaseSync | undefined, analyzer: Analyzer, image: ImageByte, ranges: { data: readonly AddressRange[]; dualUse: readonly AddressRange[] }, space: Space = DEFAULT_SPACE): number[] {
+  const map = new Uint8Array(0x10000);
+  const mark = (range: AddressRange, bit: number) => {
+    for (let address = range.start; address <= range.end; address++) map[address]! |= bit;
+  };
+  for (const region of listRegions(db, undefined, undefined, undefined, space)) {
+    if (INSTRUCTION_REGION_TYPES.includes(region.type)) mark(region, CODE);
+    else if (isSemantic(region.origin)) mark(region, SEMANTIC_DATA);
+    if (region.type === "dual-use") mark(region, NO_TARGET);
+  }
+  for (const range of [...ranges.data, ...ranges.dualUse]) mark(range, NO_TARGET);
+  const targets = new Set<number>();
+  for (const reference of listReferences(db, undefined, undefined, undefined, space)) {
+    if (reference.kind !== "jump" && reference.kind !== "call") continue;
+    if (reference.origin !== analyzer && (map[reference.from]! & (CODE | SEMANTIC_DATA)) === CODE) targets.add(reference.to);
+  }
+  return [...targets].filter((address) => image(address) !== undefined && (map[address]! & NO_TARGET) === 0).sort((a, b) => a - b);
 }
 
 /** Analyzer data regions that hold executed instruction starts: the coverage shows code there. */
@@ -66,6 +103,21 @@ export function writtenNotExecuted(db: DatabaseSync | undefined, analyzer: Analy
     found.push({ start: region.start, end: region.end, from: [...new Set(from.map((reference) => reference.from))].sort((a, b) => a - b) });
   }
   return found;
+}
+
+/**
+ * The refused seeds without the known overlaps. An instruction that starts
+ * inside another instruction, in a dual-use region, is a known overlap, for
+ * example the second instruction of a BIT skip: one list of instructions cannot
+ * hold both, so the analysis refuses the seed of one of them. That seed is not
+ * a fault of the knowledge.
+ */
+export function withoutOverlaps(refused: readonly RefusedSeed[], dualUse: readonly AddressRange[]): RefusedSeed[] {
+  const inner = (seed: RefusedSeed) => (seed.reason === "inside-instruction" ? seed.address : seed.reason === "into-instruction" ? seed.at : undefined);
+  return refused.filter((seed) => {
+    const start = inner(seed);
+    return start === undefined || !inRanges(dualUse, start);
+  });
 }
 
 /** Why an executed instruction start has no decoded instruction. */

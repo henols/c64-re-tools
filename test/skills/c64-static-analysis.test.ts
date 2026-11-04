@@ -46,7 +46,7 @@ test("an analysis imports the decompiler's structure into knowledge and reports 
   assert.equal(status, 0, JSON.stringify(json));
   assert.deepEqual(json.coverage, [{ start: "$0801", end: "$0827" }]);
   assert.equal(json.revision, nthIn(project, 2));
-  assert.deepEqual((json.changes as { names: unknown }).names, { added: 2, changed: 0, retired: 0, unchanged: 0, suppressed: 0 });
+  assert.deepEqual((json.changes as { names: unknown }).names, { added: 2, changed: 0, retired: 0, unchanged: 0, suppressed: 0, onExecutedCode: 0 });
   assert.deepEqual(json.conflicts, []);
   // The rest of the list is in the knowledge as the analyzer names of the decompiler.
   assert.deepEqual(json.functions, { count: 2, listed: [{ entry: "$080d", name: "FUN_080d" }], rest: "a larger --max-listed. The project knowledge has all of them as analyzer names" });

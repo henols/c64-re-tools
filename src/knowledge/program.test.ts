@@ -5,10 +5,10 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { Refusal } from "../errors.ts";
-import { COVERAGE } from "../c64.ts";
+import { COVERAGE, rangesWhere } from "../c64.ts";
 import { indexPath, openForRead, textPath, withWrite } from "./database.ts";
 import { coverageRuns, listSpaces, type StartScreenRow } from "./read.ts";
-import { addCoverage, analyzedBytes, coverageAccess, entryMemory, isProgram, memoryRows, programCoverage, programImage, releaseCode, setImage, startScreenKey, type ImageRequest } from "./program.ts";
+import { addCoverage, analyzedBytes, coverageAccess, entryMemory, isProgram, memoryRows, operandImages, programCoverage, programImage, releaseCode, setImage, startScreenKey, type CoverageImport, type ImageRequest } from "./program.ts";
 import { revision as revisionChanges } from "./history.ts";
 import { renameSymbol, revert, setComment, setModule, setPatch, setRelease, setSwitch } from "./write.ts";
 
@@ -143,6 +143,11 @@ function map(...ranges: Array<[number, number, number]>): Uint8Array {
   return bytes;
 }
 
+/** The ranges where an import changed what the runs execute. */
+function changedRanges(imported: CoverageImport) {
+  return { gained: rangesWhere((address) => imported.executeChange(address) === "gained"), lost: rangesWhere((address) => imported.executeChange(address) === "lost") };
+}
+
 test("the coverage is the union of the maps by kind, and one run's write and execute is wx", () => {
   const root = project();
   const { ramExecute: x, ramWrite: w, ramRead: r, romRead } = COVERAGE;
@@ -151,6 +156,8 @@ test("the coverage is the union of the maps by kind, and one run's write and exe
   const second = map([0x1000, 0x1000, x], [0x1006, 0x1006, x], [0x3000, 0x3000, x], [0x3001, 0x3001, w | x]);
   const written = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "local/a.bin", bytes: first }, { name: "local/b.bin", bytes: second }] }), root);
   assert.deepEqual(written.current.imported, ["local/a.bin", "local/b.bin"]);
+  // Only an execute in RAM, a ROM or the I/O area changes what the runs execute: a read or a write does not.
+  assert.deepEqual(changedRanges(written.current), { gained: [{ start: 0x1000, end: 0x1000 }, { start: 0x1003, end: 0x1003 }, { start: 0x1006, end: 0x1006 }, { start: 0x3000, end: 0x3001 }], lost: [] });
   const coverage = fromText(root).coverage!;
   for (const address of [0x1000, 0x1003, 0x1006, 0x3000, 0x3001]) assert.ok(coverage.map[address]! & x, `x at ${address}`);
   assert.equal(coverage.map[0x1001]! & x, 0);
@@ -192,6 +199,7 @@ test("a new map of a path replaces the earlier map of that path, and closes only
   // The session of a is recorded again: it no longer executes $1001-$1002.
   const again = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "tests/a/coverage.bin", bytes: map([0x1000, 0x1000, x], [0x3000, 0x3000, r]) }] }), root);
   assert.deepEqual([again.current.imported, again.current.replaced, again.current.added, again.current.removed], [["tests/a/coverage.bin"], ["tests/a/coverage.bin"], 0, 1]);
+  assert.deepEqual(changedRanges(again.current), { gained: [], lost: [{ start: 0x1001, end: 0x1002 }] });
   const coverage = fromText(root).coverage!;
   assert.deepEqual([0x1000, 0x1001, 0x2000].map((address) => coverage.map[address]! & x), [x, 0, x], "the map of b stays");
   assert.equal(coverage.map[0x3000], r);
@@ -205,6 +213,7 @@ test("a new map of a path replaces the earlier map of that path, and closes only
   // The earlier map of the path is no longer the latest: it is imported again and replaces the new one.
   const back = withWrite((db) => addCoverage(db, llm, { maps: [{ name: "tests/a/coverage.bin", bytes: first }] }), root);
   assert.deepEqual([back.current.imported, back.current.added, back.current.removed], [["tests/a/coverage.bin"], 1, 0]);
+  assert.deepEqual(changedRanges(back.current), { gained: [{ start: 0x1001, end: 0x1002 }], lost: [] });
   assert.equal(fromText(root).coverage!.map[0x1002]! & x, x);
 });
 
@@ -383,6 +392,19 @@ test("the bytes of a release in a range are patch code as !byte lines; the base 
   } finally {
     db.close();
   }
+});
+
+test("the bytes of a release fit a patch of any range inside the release", () => {
+  const root = project();
+  const range = { start: 0x0800, end: 0xffff };
+  withWrite((db) => setImage(db, llm, image([range])), root);
+  withWrite((db) => setRelease(db, llm, { label: "BASE", base: true }), root);
+  withWrite((db) => setRelease(db, llm, { label: "V2", rows: memoryRows([range], (address) => (address * 7) & 0xff) }), root);
+  const context = (db: Parameters<typeof operandImages>[0]) => ({ ...llm, image: operandImages(db, new Map()) });
+  withWrite((db) => setSwitch(db, context(db), { name: "V2_BYTES", kind: "change", default: 0, releases: ["V2"] }), root);
+  const patched = withWrite((db) => setPatch(db, context(db), { ...range, switch: "V2_BYTES", code: releaseCode(db, "V2", range.start, range.end) }), root);
+  assert.notEqual(patched.revision, null);
+  assert.equal(patched.current.code.split("\n").length, (range.end - range.start + 1) / 8);
 });
 
 test("an image with segments that touch is the program that the knowledge keeps as one range; another byte or another range is not", () => {

@@ -57,6 +57,12 @@ const IMAGE_KINDS = ["prg", "flat64k"] as const;
 export type ImageKind = (typeof IMAGE_KINDS)[number];
 
 export const DECOMPILER_LIMITS = { entryPoints: 1024, codeStarts: 8192, dataRanges: 1024, labels: 4096, decompile: 32, decompiledChars: 16_000, decompiledTotalChars: 128_000 } as const;
+/**
+ * DXA also gets the jump and call targets of the knowledge as entry points, so
+ * it takes more of them than the decompiler. dxa itself has no limit: it took a
+ * routine at each of the 65536 addresses in 2.2 s.
+ */
+export const DXA_LIMITS = { ...DECOMPILER_LIMITS, entryPoints: 8192 } as const;
 
 /** The analysis. Its image is given next to these fields: a PRG, or 64 KiB from $0000. */
 export interface DecompilerParams {
@@ -98,14 +104,14 @@ export interface DecompilerResult {
   toolVersion?: string;
 }
 
-/** Refuses a DXA or decompiler request with more seeds or decompilations than the request bounds allow, by name. */
-export function checkRequestBounds(params: DxaParams & { decompile?: number[]; codeStarts?: number[] }): void {
+/** Refuses a DXA or decompiler request with more seeds or decompilations than the request bounds of the analyzer allow, by name. */
+export function checkRequestBounds(params: DxaParams & { decompile?: number[]; codeStarts?: number[] }, limits: typeof DECOMPILER_LIMITS | typeof DXA_LIMITS): void {
   const bounds = [
-    ["entry points", params.entryPoints.length, DECOMPILER_LIMITS.entryPoints],
-    ["code starts", params.codeStarts?.length ?? 0, DECOMPILER_LIMITS.codeStarts],
-    ["data ranges", params.dataRanges.length, DECOMPILER_LIMITS.dataRanges],
-    ["labels", params.labels.length, DECOMPILER_LIMITS.labels],
-    ["routines to decompile", params.decompile?.length ?? 0, DECOMPILER_LIMITS.decompile],
+    ["entry points", params.entryPoints.length, limits.entryPoints],
+    ["code starts", params.codeStarts?.length ?? 0, limits.codeStarts],
+    ["data ranges", params.dataRanges.length, limits.dataRanges],
+    ["labels", params.labels.length, limits.labels],
+    ["routines to decompile", params.decompile?.length ?? 0, limits.decompile],
   ] as const;
   for (const [name, count, limit] of bounds) {
     if (count > limit) throw new WireFailure("invalid-input", `The request has ${count} ${name}. Give at most ${limit} ${name}.`);
