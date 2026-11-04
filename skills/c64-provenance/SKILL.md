@@ -125,7 +125,7 @@ With `--shift`, the addresses of `segments`, `common` and `differences` are the 
 With `--frames`, the body also holds:
 
 - `runtime` in each difference: one item for each release that started, by the number of the release. `start` and `end` are the addresses in the release, without the shift.
-  - `first`: the first access in that release: `read`, `write`, `execute` or `none`. An instruction that reads and then writes the same byte, for example INC, counts as `read`. A store counts as `write`, also an indexed store that first makes a dummy read of the byte, for example `STA ($06),Y`. The operand bytes of an executed instruction count as `execute`, for example the `$03` of `LDA #$03`. During a `press` step, no access stops the run. Thus a range that the program reads and writes during a `press` step counts as `read`.
+  - `first`: the first access in that release: `read`, `write`, `read-write`, `execute` or `none`. An instruction that reads and then writes the same byte, for example INC, counts as `read`. A store counts as `write`, also an indexed store that first makes a dummy read of the byte, for example `STA ($06),Y`. The operand bytes of an executed instruction count as `execute`, for example the `$03` of `LDA #$03`. During a `press` step, no access stops the run. Thus a range that the program reads and writes during a `press` step counts as `read-write`: the order is not known.
   - `changed`: `true` when the bytes at the end of the run are not the bytes of the release.
 - `run`: `frames`, `steps` and `releases`. `releases` tells for each release, by its number, if it started, or the `reason` that it did not start. `skipped` tells that the releases have no differences, so no release ran.
 

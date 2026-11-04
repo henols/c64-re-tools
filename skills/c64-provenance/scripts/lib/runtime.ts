@@ -15,7 +15,7 @@ import { isStore } from "#src/opcodes.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import { lastOpcode, readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 
-export type FirstAccess = "read" | "write" | "execute" | "none";
+export type FirstAccess = "read" | "write" | "read-write" | "execute" | "none";
 
 export interface RangeAccess {
   first: FirstAccess;
@@ -34,11 +34,12 @@ const MAX_WATCH = 256;
  * The first access that coverage flags show. A read and a write at one stop
  * are of the instruction that made the access (`opcode`, when the CPU history
  * gives it): an indexed store makes a dummy read before its write, and a
- * read-modify-write reads first. Without the instruction, the read is first.
+ * read-modify-write reads first. Without the instruction (the taps of a press,
+ * the end of the run), the order of a read and a write is not known: read-write.
  */
 export function accessOf(flags: number, opcode?: number): FirstAccess {
   if ((flags & EXECUTE) !== 0) return "execute";
-  if ((flags & READ) !== 0 && (flags & WRITE) !== 0 && opcode !== undefined && isStore(opcode)) return "write";
+  if ((flags & READ) !== 0 && (flags & WRITE) !== 0) return opcode === undefined ? "read-write" : isStore(opcode) ? "write" : "read";
   if ((flags & READ) !== 0) return "read";
   if ((flags & WRITE) !== 0) return "write";
   return "none";
