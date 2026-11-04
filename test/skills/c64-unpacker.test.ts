@@ -9,9 +9,10 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { inspect, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/lib/evidence.ts";
-import { capturedProgram, removeStaleFiles, vicRam } from "../../skills/c64-unpacker/scripts/lib/machine.ts";
+import { capturedProgram, fromHere, readAsRam, removeStaleFiles, vicRam } from "../../skills/c64-unpacker/scripts/lib/machine.ts";
 import { callReturn, captureSegments, droppedRanges, executedIn, notExecutedUnderIo, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "../../skills/c64-unpacker/scripts/lib/stages.ts";
 import { COVERAGE } from "../../src/c64.ts";
+import { WireFailure } from "../../src/protocol/messages.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
 import { readEnvelope, seededBytes } from "../kit.ts";
 
@@ -372,6 +373,16 @@ test("a capture entry that no stage wrote is in the loaded bytes: the range of t
     { start: 0xc000, end: 0xc0ff, writtenBy: 0 },
   ]);
   assert.deepEqual(captureSegments([{ entry: 0x8000, wrote: [range(0xa000, 0xa0ff)] }], 0x81ff, { loaded: range(0x0801, 0x9fff) }), [{ start: 0x0801, end: 0xa0ff, loaded: true }], "a block that touches the loaded range joins it");
+  // A block that overlaps the loaded range over the start of the I/O area: the join is cut there.
+  assert.deepEqual(captureSegments([{ entry: 0x8000, wrote: [range(0xd000, 0xd7ff)] }], 0x81ff, { loaded: range(0x0801, 0xd3ff) }), [
+    { start: 0x0801, end: 0xcfff, loaded: true },
+    { start: 0xd000, end: 0xd7ff, loaded: true },
+  ]);
+  // The RAM under the I/O area stays a segment of its own, also next to the loaded range.
+  assert.deepEqual(captureSegments([{ entry: 0x8000, wrote: [range(0xd000, 0xdfff)] }], 0x81ff, { loaded: range(0x0801, 0xcfff) }), [
+    { start: 0x0801, end: 0xcfff, loaded: true },
+    { start: 0xd000, end: 0xdfff, writtenBy: 0 },
+  ]);
   // A written block holds the entry: the loaded bytes are the packer, not a segment.
   assert.deepEqual(captureSegments([{ entry: 0x080d, wrote: [range(0xc000, 0xc0ff)] }], 0xc000, { loaded: range(0x0801, 0x0fff) }), [{ start: 0xc000, end: 0xc0ff, writtenBy: 0 }]);
 });
@@ -424,8 +435,9 @@ test("a capture names the program file that it ran by its path in the project, a
   const cwd = process.cwd();
   process.chdir(root);
   try {
-    assert.deepEqual(capturedProgram("./releases/../releases/game.prg"), { file: "releases/game.prg", sha256: createHash("sha256").update("game").digest("hex") });
-    assert.equal(capturedProgram("../outside.prg"), undefined);
+    // The SHA-256 is of the bytes that ran.
+    assert.deepEqual(capturedProgram("./releases/../releases/game.prg", Buffer.from("game")), { file: "releases/game.prg", sha256: createHash("sha256").update("game").digest("hex") });
+    assert.equal(capturedProgram("../outside.prg", Buffer.from("game")), undefined);
   } finally {
     process.chdir(cwd);
   }
@@ -447,4 +459,82 @@ test("a capture again into its folder removes the segment PRGs and the drive RAM
     process.chdir(cwd);
   }
   assert.deepEqual(readdirSync(folder).sort(), ["SEGMENT-2000-2FFF.PRG", "entry_state.json", "image.bin", "image.json", "notes.txt", "segment-1000-1fff.prg", "segment-1000-1fff.prg.bak", "segment-3000-3fff.prg"]);
+});
+
+/**
+ * A stand-in emulator for the RAM check: each run stops at a watchpoint with the next of `stops` (the range index and the
+ * opcode in the CPU history), and after the last one runs all frames. With "stores", each run stops at a store.
+ */
+function ramCheckClient(stops: Array<{ range: number; opcode: number } | "jam" | "late"> | "stores", refuseAdd?: WireFailure, timing = true) {
+  const ranges = new Map<number, number>();
+  let next = 0;
+  let last = 0;
+  const client = {
+    snapshot: async () => ({}),
+    observe: async () => (timing ? { timing: { rasterLine: 0, rasterCycle: 0 } } : {}),
+    watchpoint: async (params: { action: string; address?: number; id?: number }) => {
+      if (params.action === "add") {
+        if (refuseAdd !== undefined) throw refuseAdd;
+        const id = ranges.size + 1;
+        ranges.set(id, params.address! < 0xd200 ? 0 : 1);
+        return { id };
+      }
+      return { removed: true, id: params.id };
+    },
+    execution: async () => {
+      const stop = stops === "stores" ? { range: 1, opcode: 0x9d } : stops[next++];
+      if (stop === undefined) return { state: "stopped", advancedFrames: 250, stopReason: "frames" };
+      if (stop === "jam") return { state: "stopped", advancedFrames: 10, stopReason: "jam" };
+      if (stop === "late") throw new WireFailure("operation-failed", "The emulator did not reach the next frame in time.");
+      last = stop.opcode;
+      const id = [...ranges].find(([, range]) => range === stop.range)![0];
+      return { state: "stopped", advancedFrames: 0, stopReason: "watchpoint", pointId: id };
+    },
+    cpuHistory: async () => ({ entries: [{ bytes: last.toString(16).padStart(2, "0") }] }),
+  };
+  return client as unknown as Parameters<typeof readAsRam>[0];
+}
+
+test("the RAM check under the I/O area takes no stop after a store as a read, and gives the ranges as not decided when the stores end the check", async () => {
+  const ranges = [{ start: 0xd000, end: 0xd0ff }, { start: 0xd200, end: 0xd3ff }];
+  // STA $d300,X, then LDA $d080: only the load is a read.
+  assert.deepEqual(await readAsRam(ramCheckClient([{ range: 1, opcode: 0x9d }, { range: 0, opcode: 0xad }]), ranges, 250), { read: [ranges[0]], undecided: [] });
+  // Stores only: the guard ends the check, and no range counts as not read.
+  assert.deepEqual(await readAsRam(ramCheckClient("stores"), ranges, 250), { read: [], undecided: ranges });
+  // A JAM before the frames ran: the range without a read is not decided.
+  assert.deepEqual(await readAsRam(ramCheckClient([{ range: 0, opcode: 0xad }, "jam"]), ranges, 250), { read: [ranges[0]], undecided: [ranges[1]] });
+  // A frame that does not come in time, and a check whose time is over, end the check without a failure.
+  assert.deepEqual(await readAsRam(ramCheckClient(["late"]), ranges, 250), { read: [], undecided: ranges });
+  assert.deepEqual(await readAsRam(ramCheckClient([]), ranges, 250, 0), { read: [], undecided: ranges });
+  // A watchpoint that the emulator refuses ends the check too; a lost session fails it.
+  assert.deepEqual(await readAsRam(ramCheckClient([], new WireFailure("invalid-input", "no condition")), ranges, 250), { read: [], undecided: ranges });
+  await assert.rejects(readAsRam(ramCheckClient([], new WireFailure("machine-unavailable", "lost")), ranges, 250), /lost/);
+  // No raster position from the emulator ends the check too.
+  assert.deepEqual(await readAsRam(ramCheckClient([], undefined, false), ranges, 250), { read: [], undecided: ranges });
+});
+
+test("fromHere removes its snapshot also when the restore fails, and throws the error of the work with the failed restore in it", async () => {
+  const client = (restoreFails: boolean) => {
+    const actions: string[] = [];
+    return {
+      actions,
+      client: {
+        snapshot: async ({ action }: { action: string }) => {
+          actions.push(action);
+          if (action === "restore" && restoreFails) throw new Error("restore failed");
+          return {};
+        },
+      } as unknown as Parameters<typeof fromHere>[0],
+    };
+  };
+  const both = client(true);
+  await assert.rejects(fromHere(both.client, async () => Promise.reject(new Error("work failed"))), /^Error: work failed\. The machine did not go back to the snapshot: restore failed$/);
+  assert.deepEqual(both.actions, ["save", "restore", "remove"]);
+  // A work that throws no Error still names the failed restore.
+  const text = client(true);
+  await assert.rejects(fromHere(text.client, async () => Promise.reject("work failed")), /^Error: work failed\. The machine did not go back to the snapshot: restore failed$/);
+  const restore = client(true);
+  await assert.rejects(fromHere(restore.client, async () => 1), /restore failed/);
+  assert.deepEqual(restore.actions, ["save", "restore", "remove"]);
+  assert.equal(await fromHere(client(false).client, async () => 7), 7);
 });

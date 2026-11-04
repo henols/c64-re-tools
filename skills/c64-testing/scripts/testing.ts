@@ -5,6 +5,8 @@
 // show tells what a recording holds; diff shows what changed between two
 // states; checklist gives the Markdown list for a human tester.
 
+import { basename } from "node:path";
+
 import { symbolsPath } from "#src/build-name.ts";
 import { COVERAGE, formatC64Address } from "#src/c64.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
@@ -24,7 +26,7 @@ import { LOCAL_DIRECTORY, PROJECT_DIRECTORY, projectRelative, projectRoot } from
 import { OPTIONS, reply, runScript, UsageError, type Call, type CommandSpec, type Reply } from "#src/script.ts";
 import { diffFiles } from "./lib/diff-files.ts";
 import { CANCELLED, play } from "./lib/play.ts";
-import { readRecordFile, record, showRecording } from "./lib/recording.ts";
+import { entryStateCheck, loaderEntryState, readRecordFile, record, showRecording } from "./lib/recording.ts";
 import { replay, replayAll } from "./lib/replay.ts";
 import { keepRun, runFile } from "./lib/runs.ts";
 import { namesOf, readScenario, runScenario, scenarioNames, type Scenario, type ScenarioResult } from "./lib/scenario.ts";
@@ -43,6 +45,11 @@ const ALWAYS = [
 
 /** The hint of a test or replay verdict: what to do after a FAIL or an INCONCLUSIVE. */
 const INCONCLUSIVE_HINT = "reason tells why the script could not compare. This is not a failure of the program. Correct the cause, then run the command again.";
+
+/** What to do when the reference at its entry is not in the entry state that the loader of a rebuild writes. */
+const RECAPTURE = "Capture the program again with the input of the record file before the entry. Then put the capture into the project knowledge, and generate the loader again.";
+const ENTRY_STATE_REMEDY = `The loader of a rebuild writes the entry state of the project knowledge, so the rebuild starts from another state than the reference. ${RECAPTURE}`;
+const ENTRY_STATE_HINT = `At their entries, the reference and the rebuild have other bytes in entryStateDiffers: the loader of the rebuild wrote another entry state. ${RECAPTURE}`;
 
 async function test(call: Call): Promise<ScenarioResult | Reply> {
   const scenario = readScenario(call.subject(0));
@@ -99,7 +106,8 @@ async function recordCommand(call: Call): Promise<Reply> {
     // The loader of a rebuild jumps to the entry of the program in the knowledge. replay finds it in the reference by the names of the
     // knowledge, also for symbols none. With the names of a build, or with load true (no loader entry), record marks no entry.
     const namedAsKnowledge = file.symbols === "knowledge" || file.symbols === "none";
-    const outcome = await record(core, file, workspace, person, file.load || !namedAsKnowledge ? undefined : programEntry(db));
+    const entry = file.load || !namedAsKnowledge ? undefined : programEntry(db);
+    const outcome = await record(core, file, workspace, person, entry);
     const summary = {
       name: file.name,
       frames: Math.round(outcome.recording.ticks / PAL_FRAME_CYCLES),
@@ -133,9 +141,12 @@ async function recordCommand(call: Call): Promise<Reply> {
     ].join("");
     // The recording replays on the reference and on a rebuild without a loader: the event before the entry is no refusal.
     const loader = outcome.loaderProblem === undefined ? "" : `${outcome.loaderProblem}, then record again. Until then, the recording replays on the reference and on a rebuild without a loader, not on a rebuild with a loader. `;
+    const state = entry === undefined || outcome.entryRam === undefined ? undefined : loaderEntryState(db, entry);
+    const checked = state === undefined ? {} : entryStateCheck(outcome.entryRam!, outcome.recording.input ?? [], state);
+    const entryState = checked.entryStateDiffers === undefined ? "" : `At its entry ${formatC64Address(entry!)}, the program has other bytes than the entry state of the project knowledge in entryStateDiffers. ${ENTRY_STATE_REMEDY} `;
     return reply(
-      { result: "PASS", recorded: true, out, ...summary, files, ...(evidence.length === 0 ? {} : { evidence }) },
-      { hint: `${loader}${keep}${recordFile}${cited} ${summary.coverageFrom === null ? "The coverage did not start: the map is empty." : "The map has no marks for the code that ran before coverageFrom."} To make sure that the recording replays, run nextAction.`, nextAction: call.next("replay", out) },
+      { result: "PASS", recorded: true, out, ...summary, files, ...(evidence.length === 0 ? {} : { evidence }), ...checked },
+      { hint: `${loader}${entryState}${keep}${recordFile}${cited} ${summary.coverageFrom === null ? "The coverage did not start: the map is empty." : "The map has no marks for the code that ran before coverageFrom."} To make sure that the recording replays, run nextAction.`, nextAction: call.next("replay", out) },
     );
   } finally {
     db?.close();
@@ -238,7 +249,8 @@ const COMMANDS: CommandSpec[] = [
         if (screen !== undefined) throw new UsageError("--screen needs one recording. Give one recording, or leave out --screen.");
         const all = await replayAll(folders, values);
         const first = all.recordings.find((item) => item.result !== "PASS");
-        if (first === undefined) return all;
+        const entryState = all.recordings.some((item) => item.entryStateDiffers !== undefined) ? ` For each recording with entryStateDiffers: ${ENTRY_STATE_HINT}` : "";
+        if (first === undefined) return entryState === "" ? all : reply(all, { hint: entryState.trimStart() });
         // The same comparison, alone: its own result gives the hint and the nextAction of that recording.
         const flags = [
           ...(checkpoint === undefined ? [] : ["--checkpoint", checkpoint]),
@@ -246,24 +258,25 @@ const COMMANDS: CommandSpec[] = [
           ...values.pin.flatMap((item) => ["--pin", item]),
           ...(rebuild === undefined ? [] : ["--rebuild", rebuild]),
           ...(symbols === undefined ? [] : ["--symbols", symbols]),
-          ...(out === undefined ? [] : ["--out", `${out}/${first.recording.replace(/\/+$/, "").split("/").at(-1)!}`]),
+          ...(out === undefined ? [] : ["--out", `${out}/${basename(first.recording)}`]),
         ];
-        return reply(all, { hint: "Each item of recordings has the result of one recording. Run nextAction: it replays the first recording that did not pass alone, and its result gives the hint for it.", nextAction: call.next("replay", first.recording, ...flags) });
+        return reply(all, { hint: `Each item of recordings has the result of one recording. Run nextAction: it replays the first recording that did not pass alone, and its result gives the hint for it.${entryState}`, nextAction: call.next("replay", first.recording, ...flags) });
       }
       const result = await replay({ ...values, folder: call.subject(0), ...(screen === undefined ? {} : { screen }) });
       if (result.result === "INCONCLUSIVE") return reply(result, { hint: INCONCLUSIVE_HINT });
-      if (result.result !== "FAIL") return result;
+      const entryState = result.entryStateDiffers === undefined ? "" : `${ENTRY_STATE_HINT} `;
+      if (result.result !== "FAIL") return entryState === "" ? result : reply(result, { hint: entryState.trimEnd() });
       const [reference, rebuilt] = result.files ?? [];
       if (reference !== undefined && rebuilt !== undefined) {
-        return reply(result, { hint: "files holds the RAM of each side at the first different checkpoint. Run nextAction to compare them. Then examine the first different state item in the emulator.", nextAction: call.next("diff", reference.out, rebuilt.out) });
+        return reply(result, { hint: `${entryState}files holds the RAM of each side at the first different checkpoint. Run nextAction to compare them. Then examine the first different state item in the emulator.`, nextAction: call.next("diff", reference.out, rebuilt.out) });
       }
       if (result.firstDifference === undefined) {
         // Without --symbols and without a symbol file of its build, the rebuild has the names of the recording: no loader or start-screen labels.
         const own = rebuild === undefined ? undefined : symbolsPath(rebuild);
         const unnamed = symbols === undefined && own !== undefined && result.symbols !== own;
-        return reply(result, { hint: unnamed ? `The rebuild has the names of the recording, as ${own} does not exist. Give --symbols with the symbol file of the rebuild.` : "reason tells how many checkpoints the rebuild came to. Examine the rebuild in the emulator after its last checkpoint." });
+        return reply(result, { hint: `${entryState}${unnamed ? `The rebuild has the names of the recording, as ${own} does not exist. Give --symbols with the symbol file of the rebuild.` : "reason tells how many checkpoints the rebuild came to. Examine the rebuild in the emulator after its last checkpoint."}` });
       }
-      return reply(result, { hint: `A difference in a random value with the same input often shows a missing --pin.${out === undefined ? " Give --out to get the RAM of each side at the first different checkpoint." : ""}` });
+      return reply(result, { hint: `${entryState}A difference in a random value with the same input often shows a missing --pin.${out === undefined ? " Give --out to get the RAM of each side at the first different checkpoint." : ""}` });
     },
   },
   {

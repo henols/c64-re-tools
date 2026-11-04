@@ -308,21 +308,28 @@ test("a routine that the program writes and calls, and that returns, starts no s
   assert.deepEqual(fromScreen(found[0]!.wrote), [{ start: "$4100", end: "$4101" }, { start: "$9e00", end: "$9e7f" }], "the two counters of the program are small blocks");
 });
 
-test("a capture holds the RAM under the I/O area that a stage wrote", { skip: liveSkip, timeout: 180_000 }, async () => {
-  // 10 SYS 2061; with all RAM ($01 = $34) it fills $d000-$d0ff with $5a, then waits at $0821.
+test("a capture holds the RAM under the I/O area that a stage wrote, and tells the parts that the program reads as RAM", { skip: liveSkip, timeout: 180_000 }, async () => {
+  // 10 SYS 2061; with all RAM ($01 = $34) it fills $d000-$d0ff and $d200-$d3ff with $5a. From the entry $0827 it waits for
+  // raster line 0 with many reads of $d012 as I/O, then with all RAM reads $d080 and stores to $d300,X, for ever.
   writeFileSync(
     join(project, "io.prg"),
     Uint8Array.from([
       0x01, 0x08, 0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00,
       0x78, 0xa9, 0x34, 0x85, 0x01, 0xa2, 0x00, // $080d: SEI; LDA #$34; STA $01; LDX #0
-      0xa9, 0x5a, 0x9d, 0x00, 0xd0, 0xe8, 0xd0, 0xf8, // $0814: LDA #$5A; STA $D000,X; INX; BNE $0814
-      0xa9, 0x37, 0x85, 0x01, 0x58, 0x4c, 0x21, 0x08, // $081c: LDA #$37; STA $01; CLI; JMP $0821
+      0xa9, 0x5a, 0x9d, 0x00, 0xd0, 0x9d, 0x00, 0xd2, 0x9d, 0x00, 0xd3, 0xe8, 0xd0, 0xf2, // $0814: LDA #$5A; STA $D000,X; STA $D200,X; STA $D300,X; INX; BNE $0814
+      0xa9, 0x37, 0x85, 0x01, 0x58, // $0822: LDA #$37; STA $01; CLI
+      0xad, 0x12, 0xd0, 0xd0, 0xfb, // $0827: LDA $D012; BNE $0827
+      0x78, 0xa9, 0x34, 0x85, 0x01, 0xad, 0x80, 0xd0, 0x9d, 0x00, 0xd3, // $082c: SEI; LDA #$34; STA $01; LDA $D080; STA $D300,X
+      0xa9, 0x37, 0x85, 0x01, 0x58, 0x4c, 0x27, 0x08, // $0837: LDA #$37; STA $01; CLI; JMP $0827
     ]),
   );
-  const { status, json } = await unpack("capture", "io.prg", "--until", "$0821", "--out", "unpacked/io", "--timeout-frames", "200");
+  const { status, json, envelope } = await unpack("capture", "io.prg", "--until", "$0827", "--out", "unpacked/io", "--timeout-frames", "200");
   assert.equal(status, 0, JSON.stringify(json));
   const segments = json.segments as Array<{ start: string; end: string }>;
   assert.ok(segments.some((segment) => segment.start === "$d000" && segment.end === "$d0ff"), `the RAM under the I/O area is a segment: ${JSON.stringify(segments)}`);
+  // No code runs under the I/O area. The program reads $d080 as RAM. It only stores to $d300, and the dummy read of the indexed store is no read: only $d200-$d3ff is in the hint.
+  assert.deepEqual([json.readUnderIo, json.notExecutedUnderIo], [[{ start: "$d000", end: "$d0ff" }], [{ start: "$d200", end: "$d3ff" }]]);
+  assert.ok(envelope.hint?.includes("$d200-$d3ff") && !envelope.hint.includes("$d000-$d0ff"), envelope.hint);
   // The colour RAM: 1000 colours of 4 bits, which a start screen of a stage takes. It is no difference from READY.
   const state = JSON.parse(readFileSync(join(project, "unpacked", "io", "entry_state.json"), "utf8")) as Record<string, any>;
   assert.equal(state.io.colour.bytes.length, 1000 * 2);

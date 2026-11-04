@@ -297,7 +297,7 @@ test("checkpoint parameters and typed conditions are validated", () => {
       size: 2,
       access: "write",
       space: "c64",
-      condition: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" },
+      condition: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu", mask: 0x0f },
     }),
     {
       action: "add",
@@ -305,7 +305,7 @@ test("checkpoint parameters and typed conditions are validated", () => {
       size: 2,
       access: "write",
       space: "c64",
-      condition: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" },
+      condition: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu", mask: 0x0f },
     },
   );
   for (const params of [
@@ -313,6 +313,7 @@ test("checkpoint parameters and typed conditions are validated", () => {
     { action: "add", address: 0x2100, space: "c64", condition: { kind: "register", register: "a", operator: "==", value: 1 } },
     { action: "add", address: 0x2100, space: "c64", condition: { kind: "register", register: "a", operator: "eq", value: 256 } },
     { action: "add", address: 0x2100, space: "c64", condition: { kind: "raster", line: 400 } },
+    { action: "add", address: 0x2100, space: "c64", condition: { kind: "memory", address: 1, operator: "eq", value: 0, space: "c64", view: "cpu", mask: 256 } },
     { action: "add", address: 0x2100, space: "c64", condition: { kind: "expression", text: "A == 1" } },
     { action: "remove", id: 0 },
     { action: "toggle", id: 1 },

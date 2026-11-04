@@ -111,7 +111,9 @@ export function captureBlocks(before: Uint8Array, after: Uint8Array, map: Uint8A
  * variables all the time.
  */
 export async function loads(program: string, options: { out: string; steps: LoadStep[]; drive: boolean; minBlock: number; exclude: AddressRange[] }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
-  const ran = capturedProgram(program);
+  // The file is read once: image.json gets the SHA-256 of the bytes that the emulator ran.
+  const file = readProjectFile(program).bytes;
+  const ran = capturedProgram(program, file);
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
     // A clean machine at the READY prompt shows what the program changed at each capture. The run goes on after a capture, so it is read first.
@@ -123,7 +125,7 @@ export async function loads(program: string, options: { out: string; steps: Load
     /** False while the map holds the writes of the KERNAL RAM test. */
     let writesKnown = true;
     if (program.toLowerCase().endsWith(".prg")) {
-      const { bytes } = readProjectFile(program);
+      const bytes = file;
       if (!(await autostartLoaded(client, program, bytes))) return { output: { loaded: false, reason: `The program was not in memory after ${LOAD_LIMIT_FRAMES} frames.`, captures: [] }, failed: true };
       // The RAM before RUN, without the program, so the first capture holds the program too.
       previous = await readMemoryInParts(client, 0x0000, 0x10000, "ram");

@@ -39,8 +39,12 @@ test("align gives a run at its entry the beam position and the CIA timers of ano
     let phase = "";
     const first = await toEntry(core, 0, async (session) => {
       await session.command("mark c000");
+      await session.write(0x00fb, Uint8Array.of(0x42));
       const reached = await session.status(`run-pc c000 ${50_000_000}`);
       phase = /phase=([0-9a-f]+)/.exec(await session.command("marked"))![1]!;
+      // The mark also keeps the stack pointer and pages 0-3 there.
+      const [, s, ram] = /^ok s=([0-9a-f]{2}) ram=([0-9a-f]{2048})$/.exec(await session.command("marked-ram"))!;
+      assert.deepEqual([Number.parseInt(s!, 16), Buffer.from(ram!, "hex")[0xfb]], [reached.s, 0x42]);
       return reached;
     });
     // 1234 cycles later: another line, and another timer value.

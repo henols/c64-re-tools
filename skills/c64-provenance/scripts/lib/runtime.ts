@@ -6,7 +6,6 @@
 // tells which instruction made a read and a write.
 
 import { type AddressRange, COVERAGE, EXECUTE, instructionLength, READ, WRITE } from "#src/c64.ts";
-import { isRefusal } from "#src/errors.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
 import { startAtEntry, type EntryState } from "#src/host-client/entry-state.ts";
@@ -14,9 +13,9 @@ import { runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { knowledgeAt } from "#src/knowledge/names.ts";
 import { isStore } from "#src/opcodes.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
-import { readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { lastOpcode, readMemoryInParts, type ViceSessionClient } from "#src/host-client/vice-session.ts";
 
-export type FirstAccess = "read" | "write" | "execute" | "none";
+export type FirstAccess = "read" | "write" | "read-write" | "execute" | "none";
 
 export interface RangeAccess {
   first: FirstAccess;
@@ -35,25 +34,15 @@ const MAX_WATCH = 256;
  * The first access that coverage flags show. A read and a write at one stop
  * are of the instruction that made the access (`opcode`, when the CPU history
  * gives it): an indexed store makes a dummy read before its write, and a
- * read-modify-write reads first. Without the instruction, the read is first.
+ * read-modify-write reads first. Without the instruction (the taps of a press,
+ * the end of the run), the order of a read and a write is not known: read-write.
  */
 export function accessOf(flags: number, opcode?: number): FirstAccess {
   if ((flags & EXECUTE) !== 0) return "execute";
-  if ((flags & READ) !== 0 && (flags & WRITE) !== 0 && opcode !== undefined && isStore(opcode)) return "write";
+  if ((flags & READ) !== 0 && (flags & WRITE) !== 0) return opcode === undefined ? "read-write" : isStore(opcode) ? "write" : "read";
   if ((flags & READ) !== 0) return "read";
   if ((flags & WRITE) !== 0) return "write";
   return "none";
-}
-
-/** The opcode of the last instruction in the CPU history, or undefined when the session gives no history (after a JAM, or none since a restore). */
-async function lastOpcode(client: ViceSessionClient): Promise<number | undefined> {
-  try {
-    const [entry] = (await client.cpuHistory({ limit: 1, space: "c64" })).entries;
-    return entry === undefined ? undefined : Buffer.from(entry.bytes, "hex")[0];
-  } catch (error) {
-    if (isRefusal(error) && error.code === "operation-failed") return undefined;
-    throw error;
-  }
 }
 
 /** Starts the release; returns why it did not start, or undefined. */

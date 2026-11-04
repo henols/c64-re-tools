@@ -22,7 +22,7 @@ import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandS
 import { basicStart, inspect, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
 import { callReturn, captureSegments, droppedRanges, executedIn, mergeMaps, notExecutedUnderIo, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "./lib/stages.ts";
-import { capturedProgram, entryStateFile, machineState, readyState, vectorsOf, vicRam, writeCapture } from "./lib/machine.ts";
+import { capturedProgram, entryStateFile, fromHere, machineState, readAsRam, readyState, vectorsOf, vicRam, writeCapture } from "./lib/machine.ts";
 
 /** Written-then-executed bytes from this many on are unpacking, decrypting or relocating, not self-changing code. */
 const UNPACKED_BYTES = 256;
@@ -508,23 +508,17 @@ async function stages(program: string, options: { frames: number; entry?: number
 /** Frames that the program runs after its entry to show the memory that it uses. */
 const AFTER_ENTRY_FRAMES = 250;
 
-const ENTRY_SNAPSHOT = "capture-entry";
-
 /**
  * Runs the program on from its entry and gives the RAM that it used: the
  * evidence that a block that a loader or a stage left is part of the
  * program. The machine then goes back to the entry.
  */
 async function usedAfter(client: ViceSessionClient): Promise<(address: number) => boolean> {
-  await client.snapshot({ action: "save", name: ENTRY_SNAPSHOT });
-  try {
+  return fromHere(client, async () => {
     await client.memmap({ action: "clear" });
     await client.execution({ action: "advance-frames", count: AFTER_ENTRY_FRAMES, space: "c64" });
     return usedAfterEntry(await readCoverage(client));
-  } finally {
-    await client.snapshot({ action: "restore", name: ENTRY_SNAPSHOT });
-    await client.snapshot({ action: "remove", name: ENTRY_SNAPSHOT });
-  }
+  });
 }
 
 /** Why a capture can wait for --until in vain: a step ran over it. */
@@ -561,7 +555,10 @@ async function capture(
     const used = options.range === undefined ? await usedAfter(client) : undefined;
     const found = used === undefined ? [options.range!] : captureSegments(followed.stages, registers.pc, { loaded: { start: load, end: Math.min(0xffff, load + bytes.length - 3) }, used });
     const segments = withoutRanges(found, options.exclude);
-    const underIo = used === undefined ? [] : notExecutedUnderIo(segments, used, vicRam(state.io, memory)).map(formatC64RangeFields);
+    // The memory map cannot show a read of the RAM under the I/O area: a run with watchpoints finds the parts that the program read as RAM.
+    const notExecuted = used === undefined ? [] : notExecutedUnderIo(segments, used, vicRam(state.io, memory));
+    const { read: readUnderIo, undecided } = notExecuted.length === 0 ? { read: [], undecided: [] } : await readAsRam(client, notExecuted, AFTER_ENTRY_FRAMES);
+    const underIo = notExecuted.filter((range) => !readUnderIo.includes(range) && !undecided.includes(range)).map(formatC64RangeFields);
     // The written ranges that the leftover rule took out of the segments. A --range takes no rule.
     const dropped = (options.range === undefined ? droppedRanges(followed.stages, registers.pc, [...found, ...options.exclude]) : []).map((range) => ({
       ...formatC64RangeFields(range),
@@ -571,7 +568,7 @@ async function capture(
     const vectors = vectorsOf(state, memory);
     // A clean machine at the READY prompt shows what the loader and the stages changed.
     const entry = entryStateFile(registers, state, vectors, await readyState(client));
-    const ran = capturedProgram(program);
+    const ran = capturedProgram(program, bytes);
     const { written, removed } = writeCapture(
       options.out,
       memory,
@@ -600,6 +597,8 @@ async function capture(
         ...(removed.length === 0 ? {} : { removed }),
         segments: segments.map((segment) => ({ ...formatC64RangeFields(segment), ...("loaded" in segment ? { loaded: true } : {}) })),
         ...(underIo.length === 0 ? {} : { notExecutedUnderIo: underIo }),
+        ...(readUnderIo.length === 0 ? {} : { readUnderIo: readUnderIo.map(formatC64RangeFields) }),
+        ...(undecided.length === 0 ? {} : { undecidedUnderIo: undecided.map(formatC64RangeFields) }),
         ...(options.exclude.length === 0 ? {} : { excluded: options.exclude.map(formatC64RangeFields) }),
         ...(dropped.length === 0 ? {} : { dropped }),
         stages: showStages(followed.stages),
@@ -692,13 +691,15 @@ function captured(call: Call, { output, failed }: { output: Record<string, unkno
   if (failed) return result;
   const dropped = ((output.dropped ?? []) as Array<{ start: string; end: string }>).reduce((sum, range) => sum + parseC64Address(range.end) - parseC64Address(range.start) + 1, 0);
   const underIo = ((output.notExecutedUnderIo ?? []) as Array<{ start: string; end: string }>).map((range) => `${range.start}-${range.end}`);
+  const undecided = ((output.undecidedUnderIo ?? []) as Array<{ start: string; end: string }>).map((range) => `${range.start}-${range.end}`);
   return reply(result, {
     hint: joined([
       `Disassemble the code at ${output.pc as string}. Make sure that it is the program and not the unpacker again.`,
       dropped === 0 ? undefined : `The segments do not hold ${dropped} bytes that the stages wrote, because they are in blocks with the entry of a later stage. dropped gives their ranges. Make sure that the program does not use these bytes.`,
       underIo.length === 0
         ? undefined
-        : `In the RAM under the I/O area, the program executed no code in ${underIo.join(", ")} after the entry. The memory map cannot show reads of this RAM. Make sure that the program uses these bytes. If it does not, give each of these ranges as --exclude and capture again.`,
+        : `In the RAM under the I/O area, the program did not execute or read ${underIo.join(", ")} in the ${AFTER_ENTRY_FRAMES} frames after the entry. Make sure that the program does not use these bytes later. If it does not, give each of these ranges as --exclude and capture again.`,
+      undecided.length === 0 ? undefined : `In the RAM under the I/O area, the check for reads of ${undecided.join(", ")} did not complete. Keep these ranges in the capture.`,
       `Then put the capture ${call.string("out")!}/image.json into the project knowledge.`,
     ]),
   });

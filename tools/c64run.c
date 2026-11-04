@@ -27,7 +27,7 @@
 #include "systems/c1541.h"
 #include "systems/c64.h"
 
-#define C64RUN_PROTOCOL 7
+#define C64RUN_PROTOCOL 8
 // The key code of matrix place 0 (row 0, column 0); place n has code 0x80 + n.
 #define C64RUN_KEY_PLACE 0x80
 #ifndef CHIPS_COMMIT
@@ -237,6 +237,9 @@ static int counted_pcs;
 // "mark": the counts and the tick at the first opcode fetch at mark_pc, before that fetch counts.
 static uint64_t marked[MAX_COUNTED];
 static uint64_t mark_tick;
+// "mark": pages 0-3 of RAM and the stack pointer at that fetch, the part of the entry state that a loader writes.
+static uint8_t mark_ram[0x400];
+static uint8_t mark_s;
 static int mark_pc = -1;  // -1: no mark waits
 static int mark_set;      // marked and mark_tick hold the mark
 
@@ -290,6 +293,8 @@ static void count_fetch(uint16_t pc) {
         for (int i = 0; i < counted_pcs; i++) marked[i] = counted[i];
         mark_tick = ticks;
         phase_get(&mark_phase);
+        memcpy(mark_ram, sys.ram, sizeof mark_ram);
+        mark_s = sys.cpu.S;
         mark_pc = -1;
         mark_set = 1;
     }
@@ -625,6 +630,14 @@ int main(int argc, char** argv) {
                 printf("\n");
             }
             else printf("ok none\n");
+        } else if (!strcmp(cmd, "marked-ram")) {
+            // marked-ram: the stack pointer and RAM $0000-$03ff (hex) at the mark when it came, else none
+            if (mark_set) {
+                printf("ok s=%02x ram=", mark_s);
+                for (size_t i = 0; i < sizeof mark_ram; i++) printf("%02x", mark_ram[i]);
+                printf("\n");
+            }
+            else printf("ok none\n");
         } else if (!strcmp(cmd, "align")) {
             // align <phase hex>: at an opcode fetch, hold the CPU on the fetch (RDY, as the VIC-II
             // does on a bad line) until the beam is at the position of the phase, then give the
@@ -673,14 +686,14 @@ int main(int argc, char** argv) {
             for (int i = 0; i < site_count; i++) if (sites[i].pc == pc && sites[i].addr == addr) count = sites[i].count;
             printf("ok count=%llu\n", (unsigned long long)count);
         } else if (!strcmp(cmd, "joy")) {
-            // joy <port 1 mask> <port 2 mask> (hex): 1 up, 2 down, 4 left, 8 right, 10 fire
+            // joy <port 1 mask> <port 2 mask> (hex): 1 up, 2 down, 4 left, 8 right, 10 fire. Answers the tick.
             unsigned j1, j2;
             if (sscanf(line, "%*s %x %x", &j1, &j2) != 2) { printf("err joy: give two masks\n"); continue; }
             c64_joystick(&sys, (uint8_t)j1, (uint8_t)j2);
-            printf("ok\n");
+            printf("ok tick=%llu\n", (unsigned long long)ticks);
         } else if (!strcmp(cmd, "key")) {
             // key <code hex> down|up: 80 + place is the key at matrix place row * 8 + column
-            // (80-bf), ff is RESTORE (NMI). chips holds at most 4 keys at once.
+            // (80-bf), ff is RESTORE (NMI). chips holds at most 4 keys at once. Answers the tick.
             unsigned code;
             if (sscanf(a1, "%x", &code) != 1 || (strcmp(a2, "down") && strcmp(a2, "up"))) { printf("err key: give a code and down or up\n"); continue; }
             if ((code < C64RUN_KEY_PLACE || code >= C64RUN_KEY_PLACE + 64) && code != C64_KEY_RESTORE) { printf("err key: give 80-bf (a matrix place) or ff (RESTORE)\n"); continue; }
@@ -692,7 +705,7 @@ int main(int argc, char** argv) {
                 kbd_update(&sys.kbd, 20000);
                 kbd_update(&sys.kbd, 0);
             }
-            printf("ok\n");
+            printf("ok tick=%llu\n", (unsigned long long)ticks);
         } else if (!strcmp(cmd, "inputs")) {
             // inputs <addr|from-to,...>: the I/O addresses that record and replay handle
             memset(input_addr, 0, sizeof input_addr);

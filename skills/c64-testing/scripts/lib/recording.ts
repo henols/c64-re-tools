@@ -9,14 +9,16 @@
 // state can be chosen at replay time, with the names that the knowledge has then.
 
 import { readFileSync, writeFileSync } from "node:fs";
+import type { DatabaseSync } from "node:sqlite";
 
 import { Refusal } from "#src/errors.ts";
-import { c64AddressOf, COVERAGE, formatC64Address, hexWord, parseC64Address } from "#src/c64.ts";
+import { type AddressRange, c64AddressOf, COVERAGE, formatC64Address, formatC64RangeFields, hexWord, inRanges, parseC64Address, rangesWhere } from "#src/c64.ts";
 import { keyTaps, type KeyTap } from "#src/c64-keys.ts";
 import { READY_FRAMES } from "#src/host-client/entry-state.ts";
 import { ACTION_STEP_KINDS, checkActionStep, keyboardBytes, stepKind, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { isInteger, isObject } from "#src/host-client/tools.ts";
 import { readProjectFile, readProjectJson, type Written } from "#src/host-client/transfer.ts";
+import { entryMemory, programImage } from "#src/knowledge/program.ts";
 import { RECORDING_FILES } from "#src/knowledge/recording-files.ts";
 import { LOADER_JUMP, startScreenLabels } from "#src/knowledge/start-screen.ts";
 import { refuseAbsoluteInFile } from "#src/project.ts";
@@ -136,6 +138,18 @@ export interface Recording {
   /** The cycles of the session, and the state hash at its end (RAM from $0002 and colour RAM). */
   ticks: number;
   hash: string;
+  /**
+   * The cycles of the input (see trackInput): keys down, a joystick that is not centered, typed keys in the queue,
+   * and each press step to the end of its frames. None without input.
+   */
+  input?: TickSpan[];
+}
+
+/** The cycles from `from` up to `to`. `typed`: the keys of a type step, which are input only while the KERNAL queue holds keys. */
+export interface TickSpan {
+  from: number;
+  to: number;
+  typed?: true;
 }
 
 /** Steps that are input or time: the replay gives the program the reads that they caused, and does not do them again. */
@@ -145,8 +159,10 @@ const QUEUE = 0x0277;
 const QUEUE_LENGTH = 0x00c6;
 const QUEUE_SIZE = 10;
 
-/** The key code of the replay core for a matrix place: 80 + the place. RESTORE is ff. */
-const coreKey = (place: number) => (0x80 + place).toString(16);
+/** The key code of the replay core for a matrix place: 80 + the place. */
+const coreKey = (place: number) => 0x80 + place;
+/** The key code of RESTORE in the replay core. */
+const RESTORE_KEY = 0xff;
 
 /** The joystick mask of the replay core: 1 up, 2 down, 4 left, 8 right, $10 fire. */
 export function joystickMask(direction: Extract<ActionStep, { joystick: unknown }>["joystick"]["direction"], fire: boolean): number {
@@ -278,6 +294,9 @@ export function readRecording(folder: string): Recording {
     checkState(compare.state, where);
     if (compare.pin !== undefined) checkState(compare.pin, where, "pin");
   }
+  if (value.input !== undefined && (!Array.isArray(value.input) || !value.input.every((span) => isObject(span) && isInteger(span.from, 0, Number.MAX_SAFE_INTEGER) && isInteger(span.to, 0, Number.MAX_SAFE_INTEGER) && (span.typed === undefined || span.typed === true)))) {
+    fail(`input must be a list of { from, to } cycles. ${remedy}`);
+  }
   (value.events as unknown[]).forEach((event, index) => {
     const at = `event ${index + 1}`;
     const where = (message: string): never => fail(`${message}. ${remedy}`);
@@ -343,8 +362,15 @@ export function siteMap(sites: RecordedSite[], from: Map<string, number>, to: Ma
   return moved;
 }
 
+/** Pages 0-3 of RAM and the stack pointer of a program at its entry. */
+export interface EntryRam {
+  sp: number;
+  /** $0000-$03ff. */
+  ram: Uint8Array;
+}
+
 /** Where the reference came to the entry that the loader of a rebuild jumps to. */
-export interface EntryPoint {
+export interface EntryPoint extends EntryRam {
   /** The tick of the first opcode fetch at the entry. */
   tick: number;
   /**
@@ -370,6 +396,12 @@ async function markEntry(core: C64RunSession, entry: number) {
     const answer = /tick=(\d+) phase=([0-9a-f]+)/.exec(await core.command("marked"));
     return answer === null ? undefined : { tick: Number(answer[1]), phase: answer[2]! };
   };
+  /** Pages 0-3 and the stack pointer at the mark, which came. */
+  const memory = async (): Promise<EntryRam> => {
+    const answer = /s=([0-9a-f]{2}) ram=([0-9a-f]{2048})/.exec(await core.command("marked-ram"));
+    if (answer === null) throw new Refusal("operation-failed", "c64run marked-ram gave no memory at the mark");
+    return { sp: Number.parseInt(answer[1]!, 16), ram: Uint8Array.from(Buffer.from(answer[2]!, "hex")) };
+  };
   let came: { tick: number; phase: string } | undefined;
   let eventsBefore = 0;
   return {
@@ -379,10 +411,10 @@ async function markEntry(core: C64RunSession, entry: number) {
       came = await marked();
       if (came === undefined) eventsBefore = index + 1;
     },
-    /** Where the program came to the entry, or undefined when it did not come to it. */
-    async end(): Promise<{ tick: number; phase: string; eventsBefore: number } | undefined> {
+    /** Where the program came to the entry, with its memory there, or undefined when it did not come to it. */
+    async end(): Promise<({ tick: number; phase: string; eventsBefore: number } & EntryRam) | undefined> {
       came ??= await marked();
-      return came === undefined ? undefined : { ...came, eventsBefore };
+      return came === undefined ? undefined : { ...came, eventsBefore, ...(await memory()) };
     },
   };
 }
@@ -396,6 +428,137 @@ export function eventBeforeEntry(events: readonly RecordedEvent[], eventsBefore:
   if (early === undefined) return undefined;
   const what = early.step === undefined ? "the RESTORE of the play" : `step ${early.step}`;
   return `${what} ran before the program came to its entry ${formatC64Address(entry)}. A rebuild with a loader has no point for it. Make the steps of the record file start after the entry`;
+}
+
+/** The memory that the loader of a rebuild writes at an entry: $0002-$03ff of the program of the knowledge at its entry, and its stack pointer. */
+export interface LoaderEntryState {
+  sp: number;
+  /** The parts of $0002-$03ff that the loader writes. */
+  written: AddressRange[];
+  byteAt: (address: number) => number;
+}
+
+/** Pages 0-3 without the CPU port: the memory of the entry state check. */
+const LOW_PAGES: AddressRange = { start: 0x0002, end: 0x03ff };
+
+/**
+ * The entry state of the knowledge at `entry`, as the loader of a rebuild writes it ($0002-$03ff: the segments there,
+ * and the pages that the entry state has). Undefined when the knowledge has no entry state, one at another entry, one
+ * without a stack pointer, or when the loader writes nothing of $0002-$03ff.
+ */
+export function loaderEntryState(db: DatabaseSync | undefined, entry: number): LoaderEntryState | undefined {
+  const image = programImage(db);
+  if (image?.state === undefined || image.entry !== entry) return undefined;
+  const sp = isObject(image.state.registers) ? image.state.registers.sp : undefined;
+  if (!isInteger(sp, 0, 0xff)) return undefined;
+  const memory = entryMemory(image);
+  const written = memory.segments.flatMap((segment) => (segment.end < LOW_PAGES.start || segment.start > LOW_PAGES.end ? [] : [{ start: Math.max(segment.start, LOW_PAGES.start), end: Math.min(segment.end, LOW_PAGES.end) }]));
+  return written.length === 0 ? undefined : { sp, written, byteAt: memory.byteAt };
+}
+
+/**
+ * The bytes that the entry state check does not compare: the bytes of the KERNAL that its interrupt and its screen
+ * editor change by time alone, and the bytes that the start of the program sets in another way in the emulator of a
+ * capture than in the replay core. These bytes differ also with the same input, and no new capture makes them the
+ * same. The bytes of the keyboard scan ($91, $c5, $cb, $f5/$f6, $028b/$028c) change with the input, and the check
+ * compares them.
+ */
+const UNCOMPARED_BYTES: readonly AddressRange[] = [
+  // The jiffy clock: each interrupt counts it up.
+  { start: 0x00a0, end: 0x00a2 },
+  // The load of the emulator sets them to the start of the BASIC text; the start of the replay core puts the program into RAM without them.
+  { start: 0x00ac, end: 0x00ad },
+  // $cd: the interrupts to the next blink of the cursor. $ce: the character under the cursor at the last blink.
+  // $cf: the blink phase. A key that the editor takes ends the blink at the phase that the time gave.
+  { start: 0x00cd, end: 0x00cf },
+  // The colour under the cursor at the last blink.
+  { start: 0x0287, end: 0x0287 },
+];
+
+/**
+ * Where a program at its entry differs from the entry state that the loader of a rebuild writes: the ranges of $0002-$03ff
+ * with other bytes. The free part of the stack page, from $0100 up to the stack pointer of either state, holds no state,
+ * and the bytes of UNCOMPARED_BYTES are not compared.
+ */
+export function entryStateDiffers(program: EntryRam, loader: LoaderEntryState): AddressRange[] {
+  const free = 0x0100 + Math.max(program.sp, loader.sp);
+  const compared = (address: number) => inRanges(loader.written, address) && (address < 0x0100 || address > free) && !inRanges(UNCOMPARED_BYTES, address);
+  return rangesWhere((address) => compared(address) && program.ram[address] !== loader.byteAt(address));
+}
+
+/**
+ * The spans of the input of a session: from the input that starts while no input is held to the end of the last one.
+ * Input is a key down (a press step, the play, RESTORE) and a joystick that is not centered (a joystick step, the
+ * play): the key() and joy() of the core report each one with its tick. `typed` starts a typed span for the keys of a
+ * type step, and `settle` ends it when the KERNAL queue is empty; it can end late, so the queue at the entry decides
+ * (entryStateCheck). `cover` makes the key spans from `from` on one span up to `to`, for the frames of a step. `spans`
+ * closes a span that is still open at `end`, and ends the tracking.
+ */
+export function trackInput(core: Pick<C64RunSession, "onInput" | "peek" | "status">): {
+  typed: (tick: number) => void;
+  settle: () => Promise<void>;
+  cover: (from: number, to: number) => void;
+  spans: (end: number) => TickSpan[];
+} {
+  const down = new Set<number>();
+  let joystick = false;
+  const spans: TickSpan[] = [];
+  const typedSpans: TickSpan[] = [];
+  let typedFrom: number | undefined;
+  let since: number | undefined;
+  const held = () => down.size > 0 || joystick;
+  const change = (tick: number, update: () => void) => {
+    const before = held();
+    update();
+    if (!before && held()) since = tick;
+    else if (before && !held()) {
+      spans.push({ from: since!, to: tick });
+      since = undefined;
+    }
+  };
+  core.onInput((input, tick) =>
+    change(tick, () => {
+      if (input.kind === "joy") joystick = input.masks.some((mask) => mask !== 0);
+      else if (input.down) down.add(input.code);
+      else down.delete(input.code);
+    }),
+  );
+  const settle = async () => {
+    if (typedFrom === undefined || (await core.peek(QUEUE_LENGTH, 1))[0] !== 0) return;
+    typedSpans.push({ from: typedFrom, to: (await core.status("status")).tick, typed: true });
+    typedFrom = undefined;
+  };
+  const cover = (from: number, to: number) => {
+    const later = spans.filter((span) => span.from >= from);
+    const earlier = spans.filter((span) => span.from < from);
+    // An input that is still held (a joystick) carries the step: its open span starts at the step.
+    if (since !== undefined) since = Math.min(since, from);
+    else if (later.length > 0) earlier.push({ from, to: Math.max(to, ...later.map((span) => span.to)) });
+    else return;
+    spans.splice(0, spans.length, ...earlier);
+  };
+  const end = (at: number) => {
+    core.onInput(undefined);
+    const open = [...(since === undefined ? [] : [{ from: since, to: at }]), ...(typedFrom === undefined ? [] : [{ from: typedFrom, to: at, typed: true as const }])];
+    return [...spans, ...typedSpans, ...open].sort((a, b) => a.from - b.from);
+  };
+  return { typed: (tick) => (typedFrom ??= tick), settle, cover, spans: end };
+}
+
+/** The note in place of the entry state check when the program came to its entry during the input. */
+export const ENTRY_DURING_INPUT = "not compared: the program came to its entry during the input of the session";
+
+/**
+ * The entry state check of a program at its entry (`tick`) against the entry state that the loader writes: the
+ * differing ranges, or nothing when all bytes are the same. A capture stops at the first arrival after its steps, so
+ * at an entry during the input (`input`) it holds a later state, which no new capture changes: then only the note.
+ * A typed span counts only when the KERNAL queue at the entry still holds keys.
+ */
+export function entryStateCheck(program: EntryRam & { tick: number }, input: readonly TickSpan[], loader: LoaderEntryState): { entryStateDiffers?: Array<{ start: string; end: string }>; entryState?: string } {
+  const during = (span: TickSpan) => program.tick >= span.from && program.tick < span.to && (span.typed !== true || program.ram[QUEUE_LENGTH] !== 0);
+  if (input.some(during)) return { entryState: ENTRY_DURING_INPUT };
+  const differs = entryStateDiffers(program, loader);
+  return differs.length === 0 ? {} : { entryStateDiffers: differs.map(formatC64RangeFields) };
 }
 
 /**
@@ -495,9 +658,9 @@ async function doAction(core: C64RunSession, step: ActionStep | RestoreAction, a
   if ("restore" in step) {
     // The NMI line is low while RESTORE is down: hold it as a press step holds a key.
     const tick = (await core.status("status")).tick;
-    await core.command("key ff down");
+    await core.key(RESTORE_KEY, true);
     await core.status("run " + (tick + KEY_FRAMES * PAL_FRAME_CYCLES));
-    await core.command("key ff up");
+    await core.key(RESTORE_KEY, false);
   } else if ("write" in step) {
     await core.write(at.data(step.write.address), Buffer.from(step.write.data, "hex"));
   } else if ("type" in step) {
@@ -547,6 +710,8 @@ export interface RecordOutcome {
   reason?: string;
   /** With an entry: why a rebuild with a loader cannot replay the recording, as replay finds it on the reference. */
   loaderProblem?: string;
+  /** With an entry that the program came to: its pages 0-3 and its stack pointer there, and the cycle of its arrival. */
+  entryRam?: EntryRam & { tick: number };
 }
 
 /**
@@ -564,6 +729,23 @@ export async function record(
   input?: (core: C64RunSession, restore: () => Promise<string | undefined>) => Promise<string | undefined>,
   entry?: number,
 ): Promise<RecordOutcome> {
+  try {
+    return await recordSession(core, file, workspace, input, entry);
+  } finally {
+    // The input listener of the session ends with the record, also when the record fails.
+    core.onInput(undefined);
+  }
+}
+
+async function recordSession(
+  core: C64RunSession,
+  file: RecordFile,
+  workspace: Workspace,
+  input: Parameters<typeof record>[3],
+  entry: number | undefined,
+): Promise<RecordOutcome> {
+  // Every key and joystick goes through key() and joy() of the core: the steps, the play and a RESTORE.
+  const tracked = trackInput(core);
   const prg = readProjectFile(file.program).bytes;
   const same = (address: number) => address;
   const at = sideAddresses(namesOf(file.symbols), "reference", { code: same, data: same });
@@ -624,32 +806,38 @@ export async function record(
       await core.status(`run ${tick + step.frames * PAL_FRAME_CYCLES}`);
     } else if ("joystick" in step) {
       masks[step.joystick.port - 1] = joystickMask(step.joystick.direction, step.joystick.fire ?? false);
-      await core.command(`joy ${masks[0]!.toString(16)} ${masks[1]!.toString(16)}`);
+      await core.joy(masks[0]!, masks[1]!);
     } else if ("press" in step) {
       const hold = step.press.frames * PAL_FRAME_CYCLES;
+      const start = tick;
       for (const tap of keyTaps(step.press.keys) as KeyTap[]) {
-        for (const place of tap.keys) await core.command(`key ${coreKey(place)} down`);
+        for (const place of tap.keys) await core.key(coreKey(place), true);
         // RESTORE is no read: an event at the next read of the program, with the keys of the tap down.
         if (tap.restore) reason = await runEvent({ restore: true }, index + 1);
         if (reason !== undefined) break;
         tick = (await core.status("status")).tick;
         await core.status(`run ${(tick += hold)}`);
-        for (const place of tap.keys) await core.command(`key ${coreKey(place)} up`);
+        for (const place of tap.keys) await core.key(coreKey(place), false);
         await core.status(`run ${(tick += hold)}`);
         // Frames ran: the next RESTORE is no event right after an event.
         afterEvent = false;
       }
+      // A press step is key input to the end of its frames, as the steps of a capture end there.
+      tracked.cover(start, (await core.status("status")).tick);
       if (reason !== undefined) {
         reason = `step ${index + 1}: RESTORE: ${reason}`;
         break;
       }
     } else {
       reason = await runEvent(step, index + 1);
+      // The keys of a type step are input from the start of the step until the KERNAL took them from its queue.
+      if ("type" in step && reason === undefined) tracked.typed(tick);
       if (reason !== undefined) {
         reason = `step ${index + 1}: ${reason}`;
         break;
       }
     }
+    await tracked.settle();
     afterEvent = event;
   }
   // The play runs frames before each RESTORE: a RESTORE never runs where an event of the steps ended.
@@ -667,6 +855,8 @@ export async function record(
         ? `the program did not come to its entry ${formatC64Address(entry)} in the session, where the loader of a rebuild jumps. Make the session go on until the program runs from its entry`
         : eventBeforeEntry(events, came.eventsBefore, entry);
   const end = await core.status("status");
+  await tracked.settle();
+  const spans = tracked.spans(end.tick);
   const sites = (await core.command("sites")).split(" ").slice(2).map((entry): RecordedSite => {
     const [where, reads, kind] = entry.split(":");
     const [site, addr] = where!.split("/");
@@ -688,6 +878,7 @@ export async function record(
     sites,
     ticks: end.tick,
     hash: end.hash,
+    ...(spans.length === 0 ? {} : { input: spans }),
   };
   return {
     recording,
@@ -696,6 +887,7 @@ export async function record(
     ...(from === null ? {} : { coverageFrom: { tick: Number(from[1]), pc: Number.parseInt(from[2]!, 16) } }),
     ...(reason === undefined ? {} : { reason }),
     ...(loaderProblem === undefined ? {} : { loaderProblem }),
+    ...(came === undefined ? {} : { entryRam: { sp: came.sp, ram: came.ram, tick: came.tick } }),
   };
 }
 
@@ -715,6 +907,8 @@ export interface SideRun {
   problem?: string;
   /** True when the rebuild went on after the wait of its start screen. */
   startScreenSkipped?: boolean;
+  /** The rebuild with a `handover`: its pages 0-3 and its stack pointer at its entry, as its loader left them. */
+  entryRam?: EntryRam;
   /** The reference with an `entry`: where it came to that entry, when it came to it. */
   entryPoint?: EntryPoint;
   /**
@@ -800,6 +994,7 @@ export async function replaySide(
   // A pc key counts the opcode fetches from the start, also those of the code before the entry: the unpacker of
   // the reference, or the loader of the rebuild. The rebuild counts again from the jump of its loader, without those of the reference.
   const { handover } = options;
+  let entryRam: EntryRam | undefined;
   if (problem === undefined && handover !== undefined) {
     const jump = own.get(LOADER_JUMP)!;
     if ((await core.status(`run-pc ${hexWord(jump)} ${limit}`)).word !== "reached") problem = `the rebuild did not come to the jump of its loader at ${formatC64Address(jump)}`;
@@ -808,6 +1003,7 @@ export async function replaySide(
       const reached = await core.status(`run-pc ${hexWord(handover.entry)} ${limit}`);
       if (reached.word !== "reached") problem = `the rebuild did not come to its entry at ${formatC64Address(handover.entry)}`;
       else {
+        entryRam = { sp: reached.s, ram: await core.peek(0, 0x400) };
         // The loader sets the entry state of the capture, but the phase of the frame and of the CIA timers at the entry
         // depends on how the reference started: the rebuild waits at its entry for the beam position of the reference, and
         // gets its CIA timers and interrupt state there. A program that starts its timers without a load keeps that phase.
@@ -875,6 +1071,7 @@ export async function replaySide(
     ...(problem === undefined ? {} : { problem }),
     ...(screenSkipped ? { startScreenSkipped: true } : {}),
     ...(entryPoint === undefined ? {} : { entryPoint }),
+    ...(entryRam === undefined ? {} : { entryRam }),
     ...(ram === undefined ? {} : { ram }),
   };
 }
@@ -925,6 +1122,10 @@ export interface ReplayResult {
   movedSites?: number;
   /** Input reads of the rebuild that the recording had no value for: they got the idle value. */
   idleReads?: number;
+  /** A rebuild with a loader: where the reference at its entry differs from the entry state that the loader writes. */
+  entryStateDiffers?: Array<{ start: string; end: string }>;
+  /** A rebuild with a loader: why the entry state is not compared. */
+  entryState?: string;
   files?: Written[];
   /** The screen of the reference at the end of the session (--screen). */
   screen?: Written;

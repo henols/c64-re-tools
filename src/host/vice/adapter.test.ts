@@ -27,6 +27,7 @@ test("typed conditions become parenthesized VICE expressions", () => {
     conditionExpression({ kind: "memory", address: 0xc020, operator: "ne", value: 3, space: "c64", view: "ram" }, "c64"),
     "(@ram:$c020 != $03)",
   );
+  assert.equal(conditionExpression({ kind: "memory", address: 1, operator: "eq", value: 0, space: "c64", view: "cpu", mask: 3 }, "c64"), "((@cpu:$0001 & $03) == $00)");
   assert.equal(conditionExpression({ kind: "raster", line: 100 }, "c64"), "(RL == $64)");
   assert.equal(conditionExpression({ kind: "raster", line: 0x130, cycle: 20 }, "c64"), "((RL == $130) && (CY >= $14))");
   for (const [operator, symbol] of [["lt", "<"], ["gt", ">"], ["gte", ">="]] as const) {

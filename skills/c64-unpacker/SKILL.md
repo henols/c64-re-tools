@@ -46,10 +46,10 @@ To get the command list, run the script with no arguments.
 
 ### Steps files
 
-A steps file is a JSON list of steps. The steps run right after the program starts. Use a steps file when an intro waits for a key or a menu waits for a choice. For example, wait 50 frames and type a space:
+A steps file is a JSON list of steps. The steps run right after the program starts. Use a steps file when an intro waits for a key or a menu waits for a choice. For example, wait 50 frames and push the space key:
 
 ```json
-[{ "frames": 50 }, { "type": { "mode": "text", "text": " " } }]
+[{ "frames": 50 }, { "press": { "keys": " " } }]
 ```
 
 Each step has one of these kinds:
@@ -193,7 +193,9 @@ Traps:
 - `captured`: true when the CPU got to `--until`. `pc` is that address.
 - `files`: each file that the command wrote, as `{out, bytes, sha256}`. `removed` names the segment files of an earlier capture that the new `image.json` does not list.
 - `segments` and `excluded`: the ranges of the segment files, and the ranges that `--exclude` removed. `loaded: true` marks a segment with the bytes that the program loaded.
-- `notExecutedUnderIo`: parts of the segments in the RAM under the I/O area. In these segments, the program executed no code in the 250 frames after the entry. The memory map shows a read of this RAM as an I/O read. Thus the script cannot tell if the program reads these bytes. The VIC-II always reads RAM, also under the I/O area. Thus the parts do not hold the RAM that the VIC-II shows at the entry. This RAM is the screen, the bitmap or the charset, and the pointer and the data of each sprite that is on. When no part is of this type, or with `--range`, the body has no `notExecutedUnderIo`.
+- `notExecutedUnderIo`: parts of the segments in the RAM under the I/O area. In the 250 frames after the entry, the program did not execute code in these parts, and it did not read them as RAM. The VIC-II always reads RAM, also under the I/O area. Thus the parts do not hold the RAM that the VIC-II shows at the entry. This RAM is the screen, the bitmap or the charset, and the pointer and the data of each sprite that is on. When no part is of this type, or with `--range`, the body has no `notExecutedUnderIo`.
+- `readUnderIo`: parts of the segments in the RAM under the I/O area that the program read as RAM in the 250 frames after the entry. The program did not execute code in these parts. When no part is of this type, the body has no `readUnderIo`.
+- `undecidedUnderIo`: parts of the segments in the RAM under the I/O area where the check for reads did not complete. Keep these parts in the capture. When no part is of this type, the body has no `undecidedUnderIo`.
 - `dropped`: the ranges from `$0400` that the stages wrote and that no segment holds. The ranges of `excluded` are not in `dropped`. Each range is in a block that is not a segment because it holds the entry of a later stage. `writtenBy` is the last stage that wrote the range. `stageEntry` is the entry of the later stage. When the capture dropped no byte, or with `--range`, the body has no `dropped`.
 - `stages`: one item for each stage, as `stages` gives it.
 - `differsFromReset`: the count of bytes that are not as a clean C64 has them at READY.
@@ -225,7 +227,7 @@ Traps:
 
 - The capture stops at the first arrival at `--until` after the steps. To capture a later arrival, add a `runUntil` step to an address after the first arrival.
 - A dropped range can be a part of the program. Make sure that the program does not use the bytes in `dropped`. If the program uses them, tell the user.
-- `captured: false`: the program did not get to `--until` in `--timeout-frames`. The reason tells where it stopped. Find a better address, or give more frames. If it stopped in a key wait, give `--steps` with a `type` step. If the CPU got to `--until` in a step, the reason names that step.
+- `captured: false`: the program did not get to `--until` in `--timeout-frames`. The reason tells where it stopped. Find a better address, or give more frames. If it stopped in a key wait, give `--steps` with a `press` step. If the CPU got to `--until` in a step, the reason names that step.
 
 ### `loads <program>`
 

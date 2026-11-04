@@ -9,12 +9,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
-import { firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, siteMap } from "../../skills/c64-testing/scripts/lib/recording.ts";
+import { ENTRY_DURING_INPUT, entryStateCheck, entryStateDiffers, firstDifference, joystickMask, mover, parseStateItem, pinLines, readRecordFile, readRecording, showRecording, loaderEntryState, record, siteMap, trackInput } from "../../skills/c64-testing/scripts/lib/recording.ts";
 import { rebuildNames, replay, replayAll } from "../../skills/c64-testing/scripts/lib/replay.ts";
 import { Refusal } from "../../src/errors.ts";
-import { C64RUN_PROTOCOL } from "../../src/native/c64run.ts";
+import { C64RUN_PROTOCOL, type C64RunSession } from "../../src/native/c64run.ts";
 import { namesOf } from "../../skills/c64-testing/scripts/lib/scenario.ts";
-import { withWrite } from "../../src/knowledge/database.ts";
+import { withRead, withWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
 import { importCoverage, importImage } from "../fixtures/program.ts";
 import { readEnvelope } from "../kit.ts";
@@ -86,9 +86,9 @@ test("the coverage of a record file starts at the first input read, at the progr
  * A stand-in replay core for record: it answers each command with the machine
  * state, writes the files that record and coverage name, logs the commands,
  * and answers coverage status with `from`. A mark comes at the second marked,
- * or with `marks` false never.
+ * or with `marks` false never. At the mark, the stack pointer is $f6 and pages 0-3 are `pages`.
  */
-function recordingCore(name: string, from: string, marks = true): { path: string; log: string } {
+function recordingCore(name: string, from: string, marks = true, pages = new Uint8Array(0x400)): { path: string; log: string } {
   const path = join(project, name);
   const log = join(project, `${name}.log`);
   const state = "ok tick=982800 sync=1 pc=1aed a=00 x=00 y=00 s=fd p=16 line=0 cycle=7 hash=0123abcd";
@@ -100,10 +100,12 @@ function recordingCore(name: string, from: string, marks = true): { path: string
       `  echo "$cmd $rest" >> ${log}`,
       '  case "$cmd" in',
       `    version) echo "ok c64run protocol=${C64RUN_PROTOCOL} chips=test" ;;`,
-      '    inputs|joy|key|write) echo "ok" ;;',
+      '    inputs|write) echo "ok" ;;',
+      '    key|joy) echo "ok tick=982800" ;;',
       '    record) [ "$rest" = off ] || : > "$rest"; echo "ok" ;;',
       '    sites) echo "ok unknown=0" ;;',
       `    marked) if [ ${marks} = true ] && [ -e ${log}.marked ]; then echo "ok tick=990000 phase=00"; else : > ${log}.marked; echo "ok none"; fi ;;`,
+      `    marked-ram) echo "ok s=f6 ram=${Buffer.from(pages).toString("hex")}" ;;`,
       '    coverage) case "$rest" in',
       `        status) echo "${from}" ;;`,
       '        on*|off) echo "ok" ;;',
@@ -289,6 +291,10 @@ test("replayAll replays the recordings in turn with the same options and an --ou
   assert.deepEqual(calls, ["tests/recordings/a main_loop room build/clean.prg results/a", "b/ main_loop room build/clean.prg results/b", "c main_loop room build/clean.prg results/c"]);
   assert.deepEqual({ ...all, recordings: all.recordings.map((item) => `${item.recording} ${item.result}${item.reason === undefined ? "" : ` ${item.reason}`}`) }, { result: "FAIL", passed: 1, failed: 1, inconclusive: 1, recordings: ["tests/recordings/a PASS", "b/ FAIL", "c INCONCLUSIVE c is no recording"] });
   assert.equal((await replayAll(["a", "c"], { state: [], pin: [] }, one)).result, "INCONCLUSIVE");
+  // The folder of an absolute path gets the name of the recording folder alone.
+  calls.length = 0;
+  await replayAll([join(project, "tests", "recordings", "d")], { state: [], pin: [], out: "results" }, one);
+  assert.ok(calls[0]!.endsWith(" results/d"), calls[0]);
   await assert.rejects(
     replayAll(["a"], { state: [], pin: [] }, async () => {
       throw new Refusal("installation-incomplete", "c64run is missing");
@@ -333,4 +339,136 @@ test("record gives the hint of replay when an event ran before the program came 
   // The names of a build: replay finds the entry of the loader in the reference by them, not by the names of the knowledge.
   const build = record("build", "build-names.json", true);
   assert.ok(!build.marked && !build.hint.includes("entry $0400"), build.hint);
+});
+
+test("record lists where the program at the entry of the knowledge differs from the entry state that the loader of a rebuild writes", { skip: process.platform === "win32" ? "the stand-in replay core is a shell script" : false }, () => {
+  writeFileSync(join(project, "game.prg"), Uint8Array.of(0x01, 0x08, 0x00));
+  // The knowledge: a segment at $0300-$04ff, and an entry state with zero pages and the stack pointer $f6.
+  const memory = new Uint8Array(0x10000).fill(0xee, 0x0300, 0x0500);
+  const page = "00".repeat(0x100);
+  const state = { registers: { pc: "$0400", a: 0, x: 0, y: 0, sp: 0xf6, flags: {} }, cpuPort: { $00: 0x2f, $01: 0x37 }, pages: { $0000: page, $0100: page, $0200: page, $0300: page } };
+  importImage(project, memory, { segments: [{ start: 0x0300, end: 0x04ff }], entry: 0x0400, state });
+  // The program at its entry: the keyboard table pointer and the repeat delay of a key press, the jiffy clock, the free stack, and the bytes of the segment.
+  const pages = new Uint8Array(0x400).fill(0xee, 0x0300);
+  pages.set([0x81, 0xeb], 0xf5);
+  pages[0x028c] = 0x0e;
+  pages.set([0x01, 0x02, 0x03], 0xa0);
+  pages[0x01f6] = 0x55;
+  // The mark of the stand-in comes after the first event.
+  const core = recordingCore("c64run-entry-state", "ok from tick=982800 pc=1aed", true, pages);
+  const run = spawnSync(process.execPath, [...process.execArgv, resolve(home, "skills/c64-testing/scripts/testing.ts"), "record", file("entry-state.json", { name: "entry state", program: "game.prg", symbols: "none", steps: [{ write: { address: "$c000", data: "01" } }, { frames: 10 }] }), "--out", "tests/recordings/entry-state"], {
+    cwd: project,
+    encoding: "utf8",
+    env: { ...process.env, C64RT_C64RUN: core.path },
+  });
+  const { json } = readEnvelope(run.stdout, run.status);
+  assert.deepEqual([json.result, json.entryStateDiffers], ["PASS", [{ start: "$00f5", end: "$00f6" }, { start: "$028c", end: "$028c" }]], JSON.stringify(json));
+});
+
+test("the entry state check leaves out $0000-$0001, the bytes that time or the start path sets and the free stack below the higher stack pointer", () => {
+  const ram = new Uint8Array(0x400);
+  // The jiffy clock and the cursor blink change by time, $ac/$ad by the start path; the keyboard scan ($91, $cb, $f5/$f6, $028c) changes with the input.
+  for (const address of [0x0000, 0x0001, 0x0091, 0x00a1, 0x00ac, 0x00ad, 0x00cb, 0x00cd, 0x00ce, 0x00cf, 0x00f5, 0x00f6, 0x0150, 0x01f6, 0x01f7, 0x0287, 0x028c, 0x03ff]) ram[address] = 1;
+  const loader = { sp: 0xf0, written: [{ start: 0x0002, end: 0x03ff }], byteAt: () => 0 };
+  assert.deepEqual(entryStateDiffers({ sp: 0xf6, ram }, loader), [
+    { start: 0x0091, end: 0x0091 },
+    { start: 0x00cb, end: 0x00cb },
+    { start: 0x00f5, end: 0x00f6 },
+    { start: 0x01f7, end: 0x01f7 },
+    { start: 0x028c, end: 0x028c },
+    { start: 0x03ff, end: 0x03ff },
+  ]);
+});
+
+test("the entry state is compared when the program came to its entry after a press step, and only noted as not compared when it came during one", () => {
+  const ram = new Uint8Array(0x400);
+  ram.set([0x81, 0xeb], 0xf5);
+  const loader = { sp: 0xf6, written: [{ start: 0x0002, end: 0x03ff }], byteAt: () => 0 };
+  const presses = [{ from: 1000, to: 2000 }];
+  assert.deepEqual(entryStateCheck({ sp: 0xf6, ram, tick: 2000 }, presses, loader), { entryStateDiffers: [{ start: "$00f5", end: "$00f6" }] });
+  assert.deepEqual(entryStateCheck({ sp: 0xf6, ram, tick: 1500 }, presses, loader), { entryState: ENTRY_DURING_INPUT });
+  assert.deepEqual(entryStateCheck({ sp: 0xf6, ram: new Uint8Array(0x400), tick: 2000 }, presses, loader), {});
+  // A typed span counts only while the KERNAL queue ($c6) at the entry holds keys.
+  const typed = [{ from: 1000, to: 50_000, typed: true as const }];
+  assert.deepEqual(entryStateCheck({ sp: 0xf6, ram, tick: 1500 }, typed, loader), { entryStateDiffers: [{ start: "$00f5", end: "$00f6" }] });
+  const queued = Uint8Array.from(ram);
+  queued[0xc6] = 1;
+  assert.deepEqual(entryStateCheck({ sp: 0xf6, ram: queued, tick: 1500 }, typed, loader), { entryState: ENTRY_DURING_INPUT });
+});
+
+test("the input of a record spans from an input while none is held to the end of the last one: keys, a joystick and typed keys", async () => {
+  // A stand-in core: it keeps the input listener; each status is 100 cycles later, and the KERNAL queue is empty at the second peek.
+  let listener: Parameters<C64RunSession["onInput"]>[0];
+  let tick = 0;
+  let peeks = 0;
+  const core = {
+    onInput: (given: typeof listener) => (listener = given),
+    status: async () => ({ tick: (tick += 100) }),
+    peek: async () => Uint8Array.of(++peeks < 2 ? 1 : 0),
+  } as unknown as Parameters<typeof trackInput>[0];
+  const key = (code: number, down: boolean) => listener!({ kind: "key", code, down }, (tick += 100));
+  const joy = (port2: number) => listener!({ kind: "joy", masks: [0, port2] }, (tick += 100));
+  const tracked = trackInput(core);
+  // A key of the play, RESTORE (ff) while it is down: one span.
+  key(0x81, true);
+  key(0xff, true);
+  key(0x81, false);
+  key(0xff, false);
+  // A joystick that leaves the center and comes back: one span.
+  joy(0x10);
+  joy(0);
+  // A type step at 650: its keys are input until the queue is empty.
+  tracked.typed(650);
+  await tracked.settle();
+  await tracked.settle();
+  // A key held at the end.
+  key(0x82, true);
+  assert.deepEqual(tracked.spans(9000), [
+    { from: 100, to: 400 },
+    { from: 500, to: 600 },
+    { from: 650, to: 700, typed: true },
+    { from: 800, to: 9000 },
+  ]);
+  assert.equal(listener, undefined, "the tracking ends with spans");
+  // A press step of two taps from 0 to 5000: its spans become the one span of the step.
+  const step = trackInput(core);
+  key(0x81, true);
+  key(0x81, false);
+  key(0x82, true);
+  key(0x82, false);
+  step.cover(0, 5000);
+  assert.deepEqual(step.spans(9000), [{ from: 0, to: 5000 }]);
+  // A press step while the joystick is held: the open span of the joystick starts at the step.
+  const held = trackInput(core);
+  joy(0x10);
+  key(0x81, true);
+  key(0x81, false);
+  held.cover(50, (tick += 100));
+  joy(0);
+  assert.deepEqual(held.spans(99_000), [{ from: 50, to: tick }]);
+});
+
+test("the entry state check compares only what the loader writes: the segments in pages 0-3 and the pages that the entry state has", () => {
+  const own = join(project, "loader-state");
+  mkdirSync(join(own, ".c64-re-tools"), { recursive: true });
+  const memory = new Uint8Array(0x10000).fill(0xee, 0x0300, 0x0310);
+  const registers = { pc: "$0400", a: 0, x: 0, y: 0, sp: 0xf6, flags: {} };
+  const written = (pages: Record<string, string>, segments = [{ start: 0x0400, end: 0x04ff }]) => {
+    importImage(own, memory, { segments, entry: 0x0400, state: { registers, cpuPort: { $00: 0x2f, $01: 0x37 }, pages } });
+    return withRead((db) => loaderEntryState(db, 0x0400), own)?.written;
+  };
+  // No pages and no segment there: nothing to compare, so no field.
+  assert.equal(written({}), undefined);
+  // One page: only that page.
+  assert.deepEqual(written({ $0200: "00".repeat(0x100) }), [{ start: 0x0200, end: 0x02ff }]);
+  // A segment in pages 0-3 too, and the program bytes at the entry that are outside them are left out.
+  assert.deepEqual(written({ $0200: "00".repeat(0x100) }, [{ start: 0x0300, end: 0x030f }, { start: 0x0400, end: 0x04ff }]), [{ start: 0x0200, end: 0x030f }]);
+});
+
+test("a record that fails ends the input listener of the session", async () => {
+  let listener: unknown = "none yet";
+  const core = { onInput: (given: unknown) => (listener = given) } as unknown as C64RunSession;
+  const recordFile = readRecordFile(file("missing-program.json", { ...valid, program: "missing.prg" }));
+  await assert.rejects(record(core, recordFile, {} as Parameters<typeof record>[2]), /missing\.prg/);
+  assert.equal(listener, undefined);
 });

@@ -223,10 +223,10 @@ const RESTORE = Symbol("restore");
  * undefined: the recording is complete. Cancel gives CANCELLED, and a RESTORE
  * that fails gives its reason. No frame runs after End or Cancel.
  */
-export async function play(core: Pick<C64RunSession, "command" | "status">, options: PlayOptions): Promise<string | undefined> {
+export async function play(core: Pick<C64RunSession, "command" | "status" | "key" | "joy">, options: PlayOptions): Promise<string | undefined> {
   const palette = (await core.command("palette")).split(" ").slice(1).join(" ");
   const viewers = new Set<ServerResponse>();
-  const pending: Array<string | typeof RESTORE> = [];
+  const pending: Array<{ code: number; down: boolean } | typeof RESTORE> = [];
   let mask = 0;
   let port = options.joystick;
   let reason: string | undefined;
@@ -270,7 +270,7 @@ export async function play(core: Pick<C64RunSession, "command" | "status">, opti
       const keys = (url.searchParams.get("keys") ?? "").split(",").map((key) => (/^\d{1,2}$/.test(key) ? Number(key) : -1));
       if (!keys.every((key) => PAGE_KEYS.has(key))) return void response.writeHead(400).end();
       const state = url.searchParams.get("down") === "1" ? "down" : "up";
-      if (phase === "playing") for (const key of keys) pending.push("key " + (0x80 + key).toString(16) + " " + state);
+      if (phase === "playing") for (const key of keys) pending.push({ code: 0x80 + key, down: state === "down" });
       answer(phase === "playing");
     } else if (request.method === "POST" && url.pathname === "/restore") {
       if (phase === "playing") pending.push(RESTORE);
@@ -302,15 +302,16 @@ export async function play(core: Pick<C64RunSession, "command" | "status">, opti
     await leftWaiting;
     while (phase === "playing") {
       const started = Date.now();
-      const joy = port === 1 ? "joy " + mask.toString(16) + " 0" : "joy 0 " + mask.toString(16);
+      const masks: [number, number] = port === 1 ? [mask, 0] : [0, mask];
+      const joy = masks.join(" ");
       if (joy !== sent) {
-        await core.command(joy);
+        await core.joy(...masks);
         sent = joy;
       }
       while (pending.length > 0 && phase === "playing") {
         const next = pending.shift()!;
         if (next !== RESTORE) {
-          await core.command(next);
+          await core.key(next.code, next.down);
           continue;
         }
         const failed = await options.restore();
@@ -332,7 +333,7 @@ export async function play(core: Pick<C64RunSession, "command" | "status">, opti
       await new Promise((resolve) => setTimeout(resolve, Math.max(0, FRAME_MS - (Date.now() - started))));
     }
   } finally {
-    await core.command("joy 0 0");
+    await core.joy(0, 0);
     for (const viewer of viewers) viewer.end();
     await new Promise((resolve) => server.close(resolve));
   }

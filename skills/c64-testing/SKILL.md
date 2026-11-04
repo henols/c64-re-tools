@@ -229,11 +229,14 @@ The script does the steps of the record file on the reference program. Then it w
 - `coverageFrom`: the `frame` and the `pc` where the coverage map starts. `null` when the coverage did not start.
 - `reason`: with a FAIL, why the session did not complete.
 - `evidence`: only when the project knowledge gives a file of `--out` as evidence, and this record changed the file. Each item has the `file`, its `state` and the `revisions` that give the file.
+- `entryStateDiffers`: the ranges of `$0002`-`$03ff` where the program at its entry has other bytes than the entry state of the project knowledge. The script compares only when it examines the entry. The script does not compare the free part of the stack page. It does not compare the KERNAL bytes that change by time alone: the jiffy clock and the cursor blink. It does not compare the load pointer at `$00ac`-`$00ad`, which the start sets. When no byte is different, the body has no `entryStateDiffers`.
+- `entryState`: a note in place of `entryStateDiffers`. The program came to its entry during the input of the session. Input is a key, a joystick that is not centered, or the keys of a `type` step. A new capture cannot remove that difference. Do not capture again for it.
 
 Do this for each result:
 
 - `PASS`: for a folder in `tests/recordings/`, `hint` tells you to commit the folder and to add its coverage map to the project knowledge as coverage. Git ignores `.c64-re-tools/local/`, thus the project knowledge must not name a file in it. For a folder there, `hint` tells you to record again with `--out tests/recordings/<name>`. `nextAction` replays the recording on the reference. Run it to make sure that the recording replays.
 - `PASS`, and `hint` names a step that "ran before the program came to its entry", or tells that "the program did not come to its entry". The entry is the entry in the project knowledge, where the loader of a rebuild starts the program. Thus `replay` on a rebuild with a loader gives `INCONCLUSIVE`. A `replay` on the reference, or on a rebuild without a loader, can use the recording. For a rebuild with a loader, make the steps of the record file start after the entry. Make the session continue until the program runs from its entry. Then record the session again. The script examines the entry only when `symbols` of the record file is `knowledge` or `none`.
+- `PASS` with `entryStateDiffers`: the input of the record file before the entry is not the input of the capture of the program. The loader of a rebuild writes the entry state of the capture. Thus a replay on that rebuild starts from a different state. Capture the program again with the input of the record file before the entry. Then put the capture into the project knowledge, and generate the loader again.
 - `PASS` with `evidence`: you recorded into the folder of an earlier recording. Put the new coverage map into the project knowledge as coverage, as `hint` tells. It replaces the map of the earlier recording. For another file in `evidence`, examine the facts of its revisions against the new recording.
 - `FAIL` after a cancel on the page: `hint` tells you to ask the user what to do. Do not record a session from steps in place of the session of the user.
 - Another `FAIL`: `reason` names the step that did not complete. Examples are a `runUntil` step that did not get to its target, and a `type` step with too many keys. Change the step, then run `record` again.
@@ -286,6 +289,8 @@ A `$` address is an address of the reference. On the rebuild, it moves with the 
 - `movedSites`: the number of input sites at a different address in the rebuild.
 - `startScreen`: `skipped` when the rebuild started after its start screen.
 - `idleReads`: the number of input reads of the rebuild that the recording had no value for.
+- `entryStateDiffers`: only for a rebuild with a loader. The ranges of `$0002`-`$03ff` where the reference at its entry has other bytes than the rebuild at its entry. The loader of the rebuild wrote these bytes. The script does not compare the free part of the stack page. It does not compare the KERNAL bytes that change by time alone: the jiffy clock and the cursor blink. It does not compare the load pointer at `$00ac`-`$00ad`, which the start sets. When no byte is different, the body has no `entryStateDiffers`.
+- `entryState`: a note in place of `entryStateDiffers`. The program came to its entry during the input of the session. Input is a key, a joystick that is not centered, or the keys of a `type` step. A new capture cannot remove that difference. Do not capture again for it.
 - `files`: with `--out` and a FAIL, the RAM of each side at the first different checkpoint.
 - `screen`: with `--screen`, the PNG file of the screen of the reference at the end of the session.
 
@@ -296,6 +301,7 @@ Do this for each result:
 - `PASS`: each checkpoint of the rebuild has the state of the reference. Without `--rebuild`, the recording replays on the reference.
 - `FAIL` with `--out`: `files` has the RAM of each side at the first different checkpoint. `nextAction` compares the two files with `diff`. Then examine the first different state item in the emulator.
 - `FAIL` without `--out`: `hint` tells you to give `--out`. A FAIL where an enemy or an event is different, but the input is the same, often shows that a `--pin` is missing.
+- A result with `entryStateDiffers`: the rebuild starts from a different state than the reference. A FAIL can come from this difference. Capture the program again with the input of the record file before the entry. Then put the capture into the project knowledge, generate the loader again, and replay again.
 - `FAIL` with no `firstDifference`: the rebuild did not get to all checkpoints. `reason` gives the number. When the rebuild has the names of the recording, `hint` tells you to give `--symbols`. Else examine the rebuild in the emulator after its last checkpoint.
 - `INCONCLUSIVE`: `reason` gives the cause:
   - "does not reproduce": the reference does not end the session with the recorded state. Record the session again.

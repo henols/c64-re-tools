@@ -17,7 +17,7 @@ test("a read and a write at one stop are a write for a store and a read for a re
   assert.equal(accessOf(both, 0x9d), "write", "STA abs,X");
   assert.equal(accessOf(both, 0x9f), "write", "SHA abs,Y, an undocumented store");
   assert.equal(accessOf(both, 0xee), "read", "INC abs reads first");
-  assert.equal(accessOf(both), "read", "without the instruction, the read is first");
+  assert.equal(accessOf(both), "read-write", "without the instruction, the order is not known");
   assert.equal(accessOf(both | COVERAGE.ramExecute, 0x91), "execute");
   assert.equal(accessOf(COVERAGE.ramRead, 0x91), "read", "a store decides only a read and a write");
   assert.equal(accessOf(COVERAGE.ioWrite), "write");

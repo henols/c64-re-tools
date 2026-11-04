@@ -12,7 +12,7 @@ import type { SupervisedProcess } from "./processes.ts";
 import type { ToolContext } from "./run.ts";
 
 /** The command protocol that this module speaks; c64run --version and version name it. */
-export const C64RUN_PROTOCOL = 7;
+export const C64RUN_PROTOCOL = 8;
 
 /** CPU cycles in one PAL frame: 312 lines of 63 cycles. */
 export const PAL_FRAME_CYCLES = 19_656;
@@ -35,6 +35,13 @@ export function commandLimitMs(text: string): number {
   const at = UNTIL_ARGUMENT[name!];
   const target = at === undefined ? 0 : Number(rest[at]);
   return COMMAND_MS + (Number.isFinite(target) ? (target * 1000) / SLOWEST_CYCLES_PER_SECOND : 0);
+}
+
+/** The tick of an answer "ok tick=<n>". */
+function tickOf(answer: string): number {
+  const tick = /tick=(\d+)/.exec(answer);
+  if (tick === null) throw new WireFailure("operation-failed", `c64run gave no tick: ${answer}`);
+  return Number(tick[1]);
 }
 
 /** The machine state that most commands answer with. */
@@ -84,8 +91,15 @@ export function parseStatus(answer: string): CoreStatus {
   };
 }
 
+/** Input that the core got: a key of the matrix (80 + its place) or RESTORE (ff), or the masks of both joysticks. */
+export type CoreInput = { kind: "key"; code: number; down: boolean } | { kind: "joy"; masks: [number, number] };
+
+/** The commands of the input, which go only through key() and joy(), so that each input reaches the input listener. */
+const INPUT_COMMANDS = /^(key|joy)( |$)/;
+
 export class C64RunSession {
   readonly #process: SupervisedProcess;
+  #onInput: ((input: CoreInput, tick: number) => void) | undefined;
   readonly #waiting: Array<{ resolve: (line: string) => void; reject: (error: Error) => void }> = [];
   #stderr = "";
   #ended: WireFailure | undefined;
@@ -127,6 +141,30 @@ export class C64RunSession {
    * A core that does not answer within the limit is stopped: every command then fails.
    */
   command(text: string, limitMs = commandLimitMs(text)): Promise<string> {
+    if (INPUT_COMMANDS.test(text)) return Promise.reject(new WireFailure("operation-failed", `c64run ${text.split(" ")[0]}: send input with key() or joy()`));
+    return this.#send(text, limitMs);
+  }
+
+  /** The listener of each key and joystick input, with the tick of the input; undefined for none. */
+  onInput(listener: ((input: CoreInput, tick: number) => void) | undefined): void {
+    this.#onInput = listener;
+  }
+
+  /** A key of the matrix (80 + its place) or RESTORE (ff) down or up. Gives the tick. */
+  async key(code: number, down: boolean): Promise<number> {
+    const tick = tickOf(await this.#send(`key ${code.toString(16)} ${down ? "down" : "up"}`));
+    this.#onInput?.({ kind: "key", code, down }, tick);
+    return tick;
+  }
+
+  /** The masks of joystick 1 and 2. Gives the tick. */
+  async joy(port1: number, port2: number): Promise<number> {
+    const tick = tickOf(await this.#send(`joy ${port1.toString(16)} ${port2.toString(16)}`));
+    this.#onInput?.({ kind: "joy", masks: [port1, port2] }, tick);
+    return tick;
+  }
+
+  #send(text: string, limitMs = commandLimitMs(text)): Promise<string> {
     if (this.#ended !== undefined) return Promise.reject(this.#ended);
     const answer = new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {

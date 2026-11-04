@@ -5,6 +5,7 @@
 // comparison, else the record file gave it.
 
 import { existsSync } from "node:fs";
+import { basename } from "node:path";
 
 import { symbolsPath } from "#src/build-name.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
@@ -19,7 +20,7 @@ import { localToolContext } from "#src/native/local.ts";
 import { Workspace } from "#src/native/staging.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { UsageError } from "#src/script.ts";
-import { eventBeforeEntry, firstDifference, loaderEntry, mover, parseStateItem, pinLines, readRecording, replaySide, siteMap, type Comparison, type ReplayResult, type ReplaySubject } from "./recording.ts";
+import { entryStateCheck, eventBeforeEntry, firstDifference, loaderEntry, mover, parseStateItem, pinLines, readRecording, replaySide, siteMap, type Comparison, type ReplayResult, type ReplaySubject } from "./recording.ts";
 import { cachedNames } from "./scenario.ts";
 
 const MAX_STATE_ITEMS = 16;
@@ -63,7 +64,7 @@ export interface ReplayAll {
 export async function replayAll(folders: readonly string[], values: Omit<ReplayOptions, "folder" | "screen">, one: (values: ReplayOptions) => Promise<ReplayResult> = replay): Promise<ReplayAll> {
   const recordings: ReplayResult[] = [];
   for (const folder of folders) {
-    const name = folder.replace(/\/+$/, "").split("/").at(-1)!;
+    const name = basename(folder);
     try {
       recordings.push(await one({ ...values, folder, ...(values.out === undefined ? {} : { out: `${values.out}/${name}` }) }));
     } catch (error) {
@@ -170,8 +171,11 @@ export async function replay(values: ReplayOptions): Promise<ReplayResult> {
     const pins = pinLines(expected, compare!.state);
     const replayed = await side(rebuild, { compare: compare!, stop: expected.length, pins, ...(handover === undefined ? {} : { handover }) });
     const difference = firstDifference(expected, replayed.samples, compare!.state);
+    // The loader of the rebuild writes the entry state of the capture it was made from: the rebuild at its entry has it.
+    const { entryRam } = replayed;
+    const entryState = handover === undefined || entryRam === undefined ? {} : entryStateCheck(handover.reference, recording.input ?? [], { sp: entryRam.sp, written: [{ start: 0x0002, end: 0x03ff }], byteAt: (address) => entryRam.ram[address]! });
     // A read that the recording has no value for gets the idle value: it is in the result, never silent.
-    const base = { checkpoints: expected.length, ...named, movedSites, ...(replayed.startScreenSkipped === true ? { startScreen: "skipped" } : {}), ...(replayed.unknown > 0 ? { idleReads: replayed.unknown } : {}) };
+    const base = { checkpoints: expected.length, ...named, movedSites, ...(replayed.startScreenSkipped === true ? { startScreen: "skipped" } : {}), ...(replayed.unknown > 0 ? { idleReads: replayed.unknown } : {}), ...entryState };
     if (difference === undefined && replayed.samples.length >= expected.length) return result("PASS", "rebuild", { ...base, compared: expected.length });
     const reason =
       difference !== undefined
