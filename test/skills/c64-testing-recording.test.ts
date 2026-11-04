@@ -396,6 +396,11 @@ test("the key input of a record spans from a key down while no key is down to th
     { from: 100, to: 600 },
     { from: 700, to: 9000 },
   ]);
+  // A press step of two taps from 1000 to 2000: its key spans become the one span of the step.
+  const step = trackKeys(core);
+  for (const text of ["key 81 down", "key 81 up", "key 82 down", "key 82 up"]) await step.core.command(text);
+  step.cover(0, 5000);
+  assert.deepEqual(step.spans(9000), [{ from: 0, to: 5000 }]);
 });
 
 test("the entry state check compares only what the loader writes: the segments in pages 0-3 and the pages that the entry state has", () => {

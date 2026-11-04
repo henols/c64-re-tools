@@ -480,9 +480,10 @@ export function entryStateDiffers(program: EntryRam, loader: LoaderEntryState): 
 
 /**
  * The core with the spans of the key input: from a key down while no key is down to the key up that leaves no key
- * down, at the tick that the key command answers. `spans` closes a span that is still open at `end`.
+ * down, at the tick that the key command answers. `cover` makes the spans from `from` on one span up to `to`, for
+ * the frames of a press step. `spans` closes a span that is still open at `end`.
  */
-export function trackKeys(core: C64RunSession): { core: C64RunSession; spans: (end: number) => TickSpan[] } {
+export function trackKeys(core: C64RunSession): { core: C64RunSession; cover: (from: number, to: number) => void; spans: (end: number) => TickSpan[] } {
   const down = new Set<string>();
   const spans: TickSpan[] = [];
   let since: number | undefined;
@@ -510,7 +511,11 @@ export function trackKeys(core: C64RunSession): { core: C64RunSession; spans: (e
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
-  return { core: tracked, spans: (end) => (since === undefined ? [...spans] : [...spans, { from: since, to: end }]) };
+  const cover = (from: number, to: number) => {
+    const first = spans.findIndex((span) => span.from >= from);
+    if (since === undefined && first >= 0) spans.splice(first, spans.length - first, { from, to: Math.max(to, spans.at(-1)!.to) });
+  };
+  return { core: tracked, cover, spans: (end) => (since === undefined ? [...spans] : [...spans, { from: since, to: end }]) };
 }
 
 /** The note in place of the entry state check when the program came to its entry during the key input. */
@@ -720,7 +725,6 @@ export async function record(
   // From READY on: the start of the C64 itself is never in the map.
   await core.command(COVERAGE_COMMANDS.get(file.coverage) ?? `coverage on-pc ${hexWord(parseC64Address(file.coverage))}`);
   const events: RecordedEvent[] = [];
-  const pressSteps: TickSpan[] = [];
   const masks = [0, 0];
   let reason: string | undefined;
   let afterEvent = false;
@@ -775,7 +779,8 @@ export async function record(
         // Frames ran: the next RESTORE is no event right after an event.
         afterEvent = false;
       }
-      pressSteps.push({ from: start, to: (await core.status("status")).tick });
+      // A press step is key input to the end of its frames, as the steps of a capture end there.
+      tracked.cover(start, (await core.status("status")).tick);
       if (reason !== undefined) {
         reason = `step ${index + 1}: RESTORE: ${reason}`;
         break;
@@ -804,7 +809,7 @@ export async function record(
         ? `the program did not come to its entry ${formatC64Address(entry)} in the session, where the loader of a rebuild jumps. Make the session go on until the program runs from its entry`
         : eventBeforeEntry(events, came.eventsBefore, entry);
   const end = await core.status("status");
-  const keys = [...pressSteps, ...tracked.spans(end.tick)].sort((a, b) => a.from - b.from);
+  const keys = tracked.spans(end.tick);
   const sites = (await core.command("sites")).split(" ").slice(2).map((entry): RecordedSite => {
     const [where, reads, kind] = entry.split(":");
     const [site, addr] = where!.split("/");
