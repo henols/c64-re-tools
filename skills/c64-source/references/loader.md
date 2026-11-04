@@ -23,15 +23,15 @@ This file gives the loader program of `generate --out <dir> --loader`, the field
 
 ## The loader of other switch values
 
-To get the loader program of other switch values, build `main.asm` of the source with these switch values, for example `TRAINER=1`. `config.asm` does not change. The build result then has the loader program in `loader.out` and its symbols file in `loader.symbolsFile.out`. No check of this loader program runs, so `loader.verified` is `false`. Test the loader program before you trust it.
+To get the loader program of other switch values, build `main.asm` of the source with these switch values, for example `TRAINER=1`. `config.asm` and the other files of the source do not change. The build result then has the loader program in `loader.out` and its symbols file in `loader.symbolsFile.out`. With a start screen of a captured stage, the loader program also has the show stage of `start_screen_stage.asm`. Then `loader.stage` gives the space of the stage. No check of this loader program runs, so `loader.verified` is `false`. Test the loader program before you trust it.
 
-The build refuses the loader program in these cases:
+The build writes no loader program in these cases. `loader.reason` tells why.
 
-- A segment of the program starts below $0400.
-- The switch values change a byte that `loader.asm` holds between its free ranges.
-- The start screen is of a captured stage.
+- The switch values change a byte that `loader.asm` holds. These bytes are between the free ranges of `loader.asm`, or below $0400.
+- The start screen is of a captured stage, and the source has no `start_screen_stage.asm`.
+- The memory has no room for the show stage.
 
-In these cases, set the switch values in `config.asm`. Then run `generate --out <dir> --loader`.
+Do the action that `loader.reason` gives.
 
 ## The fields of the loader
 
@@ -74,6 +74,6 @@ The loader program then shows the start screen before it unpacks the program. Th
 - The loader program has only the bytes of the stage that the start screen uses. These are the screen, the bitmap and the charset. With a call, they are also each byte of the stage that is not free from the call, as in "The free ranges". A call thus needs the coverage of the stage.
 - With colours from the colour RAM of the capture, the loader program sets the colour RAM to these colours.
 - The patches of the stage are in at the defaults of their switches. Thus a patch under a switch can remove the text of a crack from the picture.
-- `start_screen_stage.asm` holds the show code and the bytes of the stage. Do not edit it. To make the loader program again, run `generate --out <dir> --loader`.
+- `start_screen_stage.asm` holds the show code and the bytes of the stage. Do not edit it. To make the loader program again, run `generate --out <dir> --loader`. A build with other switch values also uses the bytes of the stage in this file.
 - The show stage needs Exomizer. The show code needs free memory in $0400-$9fff or $c000-$cfff. When the memory is too small, the reason gives the largest free ranges.
 - The check also compares the VIC-II, the screen bytes and the colour RAM with the start screen.

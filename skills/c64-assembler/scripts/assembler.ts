@@ -5,9 +5,12 @@
 // values. A generated source with loader.asm then also gets its loader
 // program with the same values: the build of loader.asm in the plain form,
 // and in the packed form the pack of the build of main.asm with the build of
-// loader.asm, the copier, as generate packs it. No check of that loader runs.
-// When the knowledge or the builds do not permit the pack, the build writes
-// the program of main.asm and no loader program, and tells why.
+// loader.asm, the copier, as generate packs it. A start screen of a captured
+// stage then wraps that pack in the show stage, with the bytes of the stage
+// from start_screen_stage.asm of the source, as generate wraps it. No check
+// of that loader runs. When the knowledge or the builds do not permit the
+// loader, the build writes the program of main.asm and no loader program,
+// and tells why.
 
 import { posix } from "node:path";
 
@@ -18,13 +21,14 @@ import { readSourceTree, writeReported } from "#src/host-client/transfer.ts";
 import { withRead } from "#src/knowledge/database.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
 import { releaseImage, requireProgram } from "#src/knowledge/program.ts";
-import { currentStartScreen, listSwitches, releaseLabeled } from "#src/knowledge/read.ts";
+import { currentStartScreen, listSwitches, releaseLabeled, type StartScreenRow } from "#src/knowledge/read.ts";
 import { LEFTOVER_FOLDER, LEFTOVERS_SWITCH, RELEASE_DEFINE, START_SCREEN_SWITCH, type Space } from "#src/knowledge/schema.ts";
-import { checkPackedBuilds, COPIER_SOURCE, leftoverRange, loaderSymbols, packedRanges, packLoader, type PackedLoader } from "#src/loader.ts";
+import { checkPackedBuilds, COPIER_SOURCE, leftoverRange, loaderSymbols, packedRanges, packLoader, type PackedLoader, settingsLines } from "#src/loader.ts";
 import { assemble, showSymbol, symbolsFileText } from "#src/native/acme.ts";
 import { EXOMIZER, findTool } from "#src/native/discover.ts";
 import { localToolContext } from "#src/native/local.ts";
 import type { AcmeParams, AssembledSymbol } from "#src/native/types.ts";
+import { type PackedStage, packStage, STAGE_FILE, stageOfBuild } from "#src/stage.ts";
 import { listed as listedItems, OPTIONS, reply, runScript, UsageError } from "#src/script.ts";
 import { compareBuild, type LeftOutLeftover, type Reference } from "#src/compare.ts";
 
@@ -64,12 +68,49 @@ function refusalOf(work: () => void): string | undefined {
   }
 }
 
+/** The build of a file of the source, with these switch values. Refuses with its first diagnostic. */
+async function assembleSource(params: AcmeParams, contents: Buffer[], file: string): Promise<{ program: Buffer; symbols: AssembledSymbol[] }> {
+  const { result, attachments } = await assemble({ ...params, entrySource: file }, contents, localToolContext());
+  if (!result.assembled) {
+    const [first] = result.diagnostics;
+    const where = first === undefined ? "" : `: ${first.file ?? file}${first.line === undefined ? "" : ` line ${first.line}`}: ${first.message}`;
+    throw new Refusal("operation-failed", `${file} does not assemble with these switch values${where}. Generate the source with the loader again. If it still does not assemble, give this message to the user.`);
+  }
+  return { program: attachments![0]!, symbols: result.symbols ?? [] };
+}
+
+/**
+ * The show stage of a start screen from a captured stage around the packed
+ * loader of these switch values, as generate builds it. The bytes of the stage
+ * do not depend on the switch values: they come from the build of
+ * start_screen_stage.asm of the source, and the show stage is planned again
+ * around this packed loader. Gives why the build gets no loader when the
+ * stage does not fit or the file does not hold its bytes.
+ */
+async function showStage(packed: PackedLoader, row: StartScreenRow, source: { params: AcmeParams; contents: Buffer[]; stageIndex: number; settings: string[] }): Promise<PackedStage | string> {
+  const { params, contents, stageIndex } = source;
+  const generated = await assembleSource(params, contents, STAGE_FILE);
+  // Each plan of the show stage builds with the other files of the source, and its text in place of start_screen_stage.asm.
+  const assembleStage = (text: string) => {
+    const bytes = Buffer.from(text, "utf8");
+    const files = params.files.map((file, index) => (index === stageIndex ? { ...file, size: bytes.length } : file));
+    return assembleSource({ ...params, files }, contents.map((content, index) => (index === stageIndex ? bytes : content)), STAGE_FILE);
+  };
+  try {
+    return await packStage(packed.program, stageOfBuild(generated.program, generated.symbols, row.colourRam === true), row, { settings: source.settings, header: [] }, assembleStage, localToolContext());
+  } catch (error) {
+    if (!isRefusal(error) || error.code !== "invalid-input") throw error;
+    return `The show stage of the start screen from ${row.stage} cannot be built. ${error.message}`;
+  }
+}
+
 /**
  * What a generated source needs from the knowledge of the space, in one read:
  * the default of each switch (the knowledge gives them, the start screen is in
  * and the leftovers are out), and for the packed form, given the leftover
- * ranges of the source, the loaded ranges or why the build gets no loader (a
- * start screen of a captured stage, a segment below $0400).
+ * ranges of the source, the loaded ranges or why the build gets no loader (no
+ * program in the knowledge), and a start screen of a captured stage, whose
+ * show stage holds the packed loader.
  */
 function generatedKnowledge(space: Space, leftovers: readonly AddressRange[] | undefined) {
   return withRead((db) => {
@@ -79,9 +120,11 @@ function generatedKnowledge(space: Space, leftovers: readonly AddressRange[] | u
       leftovers === undefined
         ? undefined
         : refusalOf(() => {
-            loaded = packedRanges(requireProgram(db, space).segments, leftovers, currentStartScreen(db, space)?.stage);
+            loaded = packedRanges(requireProgram(db, space).segments, leftovers);
           });
-    return { defaults, loaded, noLoader };
+    const startScreen = leftovers === undefined ? undefined : currentStartScreen(db, space);
+    const stageScreen: StartScreenRow | undefined = startScreen?.stage === undefined ? undefined : startScreen;
+    return { defaults, loaded, noLoader, stageScreen };
   });
 }
 
@@ -170,6 +213,11 @@ await runScript({
         const loaded = generated?.loaded;
         // Why the build writes no loader program.
         let noLoader = generated?.noLoader;
+        // A start screen of a captured stage: the show stage of the source holds its bytes.
+        const stageScreen = generated?.stageScreen;
+        if (stageScreen !== undefined && noLoader === undefined && inSource(STAGE_FILE) < 0) {
+          noLoader = `The start screen is of the captured stage ${stageScreen.stage}, and ${sourceRoot} has no ${STAGE_FILE} with its bytes. Generate the source with the loader.`;
+        }
         // The toolkit never installs a tool: without Exomizer the build refuses by name before ACME runs.
         if (packedForm && noLoader === undefined) findTool(EXOMIZER);
 
@@ -182,25 +230,25 @@ await runScript({
         const shown = shownOf(result.symbols!);
 
         // The loader is made before a file is written: a refusal writes nothing.
-        let loader: { program: Buffer; symbols: AssembledSymbol[]; packed?: PackedLoader } | undefined;
+        let loader: { program: Buffer; symbols: AssembledSymbol[]; packed?: PackedLoader; stage?: { space: string } & Pick<PackedLoader, "packedBytes" | "unpackedBytes"> } | undefined;
         if (loaderIndex >= 0 && noLoader === undefined) {
-          const copier = await assemble({ ...params, entrySource: LOADER_FILE }, contents, localToolContext());
-          if (!copier.result.assembled) {
-            const [first] = copier.result.diagnostics;
-            const where = first === undefined ? "" : `: ${first.file ?? LOADER_FILE}${first.line === undefined ? "" : ` line ${first.line}`}: ${first.message}`;
-            throw new Refusal("operation-failed", `${LOADER_FILE} does not assemble with these switch values${where}. Generate the source with the loader again. If it still does not assemble, give this message to the user.`);
-          }
-          const copierBuild = copier.attachments![0]!;
-          const symbols = loaderSymbols(result.symbols!, copier.result.symbols!);
-          if (loaded === undefined) loader = { program: copierBuild, symbols };
+          const copier = await assembleSource(params, contents, LOADER_FILE);
+          const symbols = loaderSymbols(result.symbols!, copier.symbols);
+          if (loaded === undefined) loader = { program: copier.program, symbols };
           else {
-            const at = copier.result.symbols!.find((symbol) => symbol.name === COPIER_SOURCE);
+            const at = copier.symbols.find((symbol) => symbol.name === COPIER_SOURCE);
             if (at?.kind !== "address") throw new Refusal("invalid-input", `${LOADER_FILE} has no label ${COPIER_SOURCE} at its copier. Generate the source with the loader again.`);
             const packedFrom = loaded;
-            noLoader = refusalOf(() => checkPackedBuilds(built, copierBuild, packedFrom));
+            noLoader = refusalOf(() => checkPackedBuilds(built, copier.program, copier.symbols, packedFrom));
             if (noLoader === undefined) {
-              const packed = await packLoader(built, copierBuild, { loaded: packedFrom, copier: at.address }, localToolContext());
-              loader = { program: packed.program, symbols, packed };
+              const packed = await packLoader(built, copier.program, { loaded: packedFrom, copier: at.address }, localToolContext());
+              if (stageScreen === undefined) loader = { program: packed.program, symbols, packed };
+              else {
+                const settings = settingsLines({ switches: inSource("switches.asm") >= 0, config: config >= 0 });
+                const stage = await showStage(packed, stageScreen, { params, contents, stageIndex: inSource(STAGE_FILE), settings });
+                if (typeof stage === "string") noLoader = stage;
+                else loader = { program: stage.packed.program, symbols: loaderSymbols(result.symbols!, copier.symbols, stage.symbols), packed, stage: { space: stageScreen.stage!, packedBytes: stage.packed.packedBytes, unpackedBytes: stage.packed.unpackedBytes } };
+              }
             }
           }
         }
@@ -245,6 +293,7 @@ await runScript({
                   ...writeReported(loaderPath, loader.program),
                   symbolsFile: writeReported(symbolsPath(loaderPath), symbolsFileText(shownOf(loader.symbols))),
                   ...(loader.packed === undefined ? {} : { packed: { packedBytes: loader.packed.packedBytes, unpackedBytes: loader.packed.unpackedBytes } }),
+                  ...(loader.stage === undefined ? {} : { stage: loader.stage }),
                   verified: false,
                 },
               }),

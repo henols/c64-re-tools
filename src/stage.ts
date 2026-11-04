@@ -1,17 +1,22 @@
 // The show stage of a start screen from a captured stage: the picture is not
 // in the program at the entry, so it shows before the loader. Exomizer packs
-// the loader as it is in memory before it starts (the plain loader file, or
-// the parts of the packed form), the bytes of the stage that the start screen
+// the packed loader program, the bytes of the stage that the start screen
 // uses at their own addresses, the bytes of the loader that those cover in a
 // stash, and the show code into one loader program. The show code shows the
 // screen with start-screen.asm, calls the routine of the stage, waits for a
 // key or a fire button, stops the interrupts of the stage, sets the CIAs as
-// RUN leaves them, copies the stash back and starts the loader.
+// RUN leaves them, copies the stash back and starts the loader. c64-source
+// builds it for the loader that it checks, with the bytes of the stage from
+// the knowledge; c64-assembler builds it for other switch values, with the
+// bytes of the stage from start_screen_stage.asm of the source.
 
-import { type AddressRange, formatC64Address, formatC64Byte, formatC64Range, hexWord, mergeRanges, rangesOverlap, subtract } from "#src/c64.ts";
-import { WireFailure } from "#src/host-client/tools.ts";
-import type { StartScreenRow } from "#src/knowledge/read.ts";
-import { largestFree, placePieces, START_SCREEN_FILE, startScreenValues, type StartScreenPlan } from "./loader.ts";
+import { type AddressRange, formatC64Address, formatC64Byte, formatC64Range, hexWord, mergeRanges, rangesOverlap, subtract } from "./c64.ts";
+import { Refusal } from "./errors.ts";
+import type { StartScreenRow } from "./knowledge/read.ts";
+import { START_SCREEN_CONTINUE, START_SCREEN_FILE, START_SCREEN_WAIT, startScreenPlan, startScreenValues, type StartScreenPlan } from "./knowledge/start-screen.ts";
+import { largestFree, packParts, type PackedLoader, placePieces } from "./loader.ts";
+import type { ToolContext } from "./native/run.ts";
+import type { AssembledSymbol } from "./native/types.ts";
 
 /** Bytes at an address. */
 export interface StagePart {
@@ -19,10 +24,16 @@ export interface StagePart {
   body: Uint8Array;
 }
 
+/** The bytes of the stage that the start screen uses, in address order, at $0400 or higher, and the colour RAM of its capture when the start screen takes its colours from it. */
+export interface StageBytes {
+  parts: StagePart[];
+  colourRam?: Uint8Array;
+}
+
 export interface StageInput {
-  /** The loader as it is in memory before it starts: the plain loader file, or the parts of the packed form. */
+  /** The loader as it is in memory before it starts: the packed loader program. */
   inner: StagePart[];
-  /** Where the loader starts, and the value of $01 that it needs there: $080d with $37, or the copier of the packed form with $34. */
+  /** Where the loader starts, and the value of $01 that it needs there. */
   innerStart: number;
   innerPort: number;
   /** The bytes of the stage that the start screen uses, in address order, at $0400 or higher. */
@@ -56,7 +67,11 @@ export const STAGE_CODE_END = "c64_source_stage_code_end";
 export const STAGE_COLOURS = "c64_source_stage_colours";
 /** The label of a part of the stage: its first byte and the byte after it. */
 const stageLabel = (start: number, part: "from" | "end") => `stage_${part}_${hexWord(start)}`;
+/** The first label of a part, with the address of the part. */
+const STAGE_PART_LABEL = /^stage_from_([0-9a-f]{4})$/;
 
+/** The bytes of the colour RAM. */
+const COLOURS = 1000;
 /** One copy of the stash: the length, where it is read and where it is written. */
 const COPY_ENTRY = 6;
 /** X indexes the table, so the table holds at most this many copies in 256 bytes. */
@@ -68,6 +83,12 @@ const CODE_AREAS: readonly AddressRange[] = [
 ];
 /** The RAM that the stash can use: the copy runs with all RAM in, and not on the hardware vectors. */
 const STASH_AREA: AddressRange = { start: 0x0400, end: 0xfff9 };
+/** The packed loader program loads here, and RUN starts its unpacker after the BASIC line, with the BASIC ROM and the KERNAL in. */
+const LOADER_LOAD = 0x0801;
+const LOADER_RUN = 0x080d;
+const LOADER_PORT = 0x37;
+/** The loader program must end before the I/O area: loading it must not write $d000-$dfff. */
+const LOAD_LIMIT = 0xcfff;
 
 const rangeOf = (part: StagePart): AddressRange => ({ start: part.start, end: part.start + part.body.length - 1 });
 
@@ -77,7 +98,7 @@ function byteOf(parts: readonly StagePart[], address: number): number {
     const part = parts[index]!;
     if (address >= part.start && address < part.start + part.body.length) return part.body[address - part.start]!;
   }
-  throw new WireFailure("operation-failed", `No part holds ${formatC64Address(address)}. This is a defect of the script.`);
+  throw new Refusal("operation-failed", `No part holds ${formatC64Address(address)}. This is a defect of the script.`);
 }
 
 /**
@@ -91,7 +112,7 @@ export function planStage(input: StageInput): StagePlan {
   const covered = mergeRanges(input.inner.map(rangeOf)).flatMap((inner) => input.stage.map(rangeOf).flatMap((part) => (rangesOverlap(part, inner) ? [{ start: Math.max(part.start, inner.start), end: Math.min(part.end, inner.end) }] : [])));
   const stashed = mergeRanges(covered).map((range) => ({ what: `the loader at ${formatC64Range(range)}`, range, bytes: (address: number) => byteOf(input.inner, address) }));
   const refuse = (why: string): never => {
-    throw new WireFailure("invalid-input", `${why} The largest free ranges outside the loader and the bytes of the stage: ${largestFree(free)}. Capture the stage with less memory, so that its program holds only the start screen and the routine of the call.`);
+    throw new Refusal("invalid-input", `${why} The largest free ranges outside the loader and the bytes of the stage: ${largestFree(free)}. Capture the stage with less memory, so that its program holds only the start screen and the routine of the call.`);
   };
   for (let copies = Math.max(stashed.length, 1); copies <= MAX_COPIES; ) {
     const size = input.codeSize + COPY_ENTRY * copies + 2;
@@ -255,4 +276,96 @@ export function stageParts(input: StageInput, plan: StagePlan, build: Uint8Array
   const stash = plan.stash.map((item) => ({ start: item.at, body: Uint8Array.from({ length: item.target.end - item.target.start + 1 }, (_, offset) => byteOf(input.inner, item.target.start + offset)) }));
   const stage = input.stage.map((part) => ({ start: part.start, body: slice(labels(stageLabel(part.start, "from")), labels(stageLabel(part.start, "end"))) }));
   return [...loader, ...stash, ...stage, { start: plan.code, body: slice(plan.code, labels(STAGE_CODE_END)) }];
+}
+
+/** The value of each label of a build, by name. */
+const labelsOf = (symbols: readonly AssembledSymbol[]) => new Map(symbols.map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]));
+
+/**
+ * The bytes of the stage in a build of start_screen_stage.asm: each part
+ * between its labels, and with `colourRam` the colour RAM at STAGE_COLOURS.
+ * The parts do not depend on the switch values of the build. Refuses by
+ * name when the build has no part, or no colour RAM that the start screen
+ * needs.
+ */
+export function stageOfBuild(build: Uint8Array, symbols: readonly AssembledSymbol[], colourRam: boolean): StageBytes {
+  const labels = labelsOf(symbols);
+  const start = build[0]! | (build[1]! << 8);
+  const slice = (from: number, length: number) => Uint8Array.from(build.subarray(2 + from - start, 2 + from - start + length));
+  const parts = [...labels]
+    .flatMap(([name, from]) => {
+      const found = STAGE_PART_LABEL.exec(name);
+      const end = found === null ? undefined : labels.get(stageLabel(Number.parseInt(found[1]!, 16), "end"));
+      return end === undefined || end <= from ? [] : [{ start: from, body: slice(from, end - from) }];
+    })
+    .sort((a, b) => a.start - b.start);
+  const colours = labels.get(STAGE_COLOURS);
+  if (parts.length === 0 || (colourRam && colours === undefined)) {
+    throw new Refusal("invalid-input", `${STAGE_FILE} of the source does not hold the bytes of the stage that the start screen uses. Generate the source with the loader again.`);
+  }
+  return { parts, ...(colourRam ? { colourRam: slice(colours!, COLOURS) } : {}) };
+}
+
+/** A build of start_screen_stage.asm with the files of the source: its program and its labels. The function refuses when the text does not assemble. */
+export type AssembleStage = (text: string) => Promise<{ program: Uint8Array; symbols: readonly AssembledSymbol[] }>;
+
+/** What the show stage gives: the loader program, the text of start_screen_stage.asm, and what a check of it needs. */
+export interface PackedStage {
+  /** The loader program: the pack of the show stage with the packed loader program. */
+  packed: PackedLoader;
+  /** start_screen_stage.asm of the plan. */
+  text: string;
+  /** The labels of the build of start_screen_stage.asm. */
+  symbols: AssembledSymbol[];
+  plan: StagePlan;
+  screen: StartScreenPlan;
+  /** The wait of the start screen for a key or a fire button, and the code after it. */
+  wait: number;
+  continue: number;
+}
+
+/**
+ * Builds the show stage of a start screen from a captured stage around a
+ * packed loader program: plans it, assembles start_screen_stage.asm with
+ * `assembleStage` and packs it with the loader as the loader is in memory
+ * before it starts. Its unpacker unpacks the loader over the start screen
+ * after the wait. Refuses by name.
+ */
+export async function packStage(loader: Uint8Array, stage: StageBytes, row: StartScreenRow, text: { settings: string[]; header: string[] }, assembleStage: AssembleStage, context: ToolContext): Promise<PackedStage> {
+  const screen = startScreenPlan(row);
+  const input: StageInput = {
+    inner: [{ start: LOADER_LOAD, body: loader.subarray(2) }],
+    innerStart: LOADER_RUN,
+    innerPort: LOADER_PORT,
+    stage: stage.parts,
+    ...(stage.colourRam === undefined ? {} : { colourRam: stage.colourRam }),
+    row,
+    plan: screen,
+    settings: text.settings,
+    header: text.header,
+    codeSize: 0,
+  };
+  const build = async (source: string) => {
+    const built = await assembleStage(source);
+    const labels = labelsOf(built.symbols);
+    const label = (name: string) => {
+      const value = labels.get(name);
+      if (value === undefined) throw new Refusal("operation-failed", `The build of ${STAGE_FILE} has no ${name} label. This is a defect of the script.`);
+      return value;
+    };
+    return { program: built.program, symbols: [...built.symbols], label };
+  };
+  // The size of the show code does not depend on its address: one build without a stash and without the parts gives it.
+  const probe = await build(stageText({ ...input, stage: [] }, 0x1000, []));
+  input.codeSize = probe.label(STAGE_CODE_END) - probe.label(STAGE_START) - 2;
+  const plan = planStage(input);
+  const built = await build(plan.text);
+  if (built.label(STAGE_START) !== plan.code || built.label(STAGE_CODE_END) - plan.code !== input.codeSize + COPY_ENTRY * plan.stash.length + 2) {
+    throw new Refusal("operation-failed", `The build of ${STAGE_FILE} does not have the planned layout. This is a defect of the script.`);
+  }
+  const parts = stageParts(input, plan, built.program, built.label);
+  const packed = await packParts(parts, plan.code, LOADER_PORT, "the loader and the start screen of the stage", "the show stage", context);
+  const end = LOADER_LOAD + packed.program.length - 3;
+  if (end > LOAD_LIMIT) throw new Refusal("invalid-input", `The loader with the start screen of ${row.stage} would end at ${formatC64Address(end)}, after $cfff: loading it would write the I/O area. Capture the stage with less memory, so that its program holds only the start screen and the routine of the call.`);
+  return { packed, text: plan.text, symbols: built.symbols, plan, screen, wait: built.label(START_SCREEN_WAIT), continue: built.label(START_SCREEN_CONTINUE) };
 }

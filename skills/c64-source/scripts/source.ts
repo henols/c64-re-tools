@@ -43,26 +43,22 @@ import { isoCet } from "#src/time.ts";
 import { zipFiles } from "#src/zip.ts";
 import { listed, OPTIONS, reply, runScript, UsageError, type Call, type Reply } from "#src/script.ts";
 import { knowledgeNames } from "#src/knowledge/names.ts";
-import { COPIER_SOURCE, leftoverRange, loaderSymbols, packLoader, packParts, type PackedLoader } from "#src/loader.ts";
+import { COPIER_SOURCE, leftoverRange, loaderSymbols, packLoader, type PackedLoader, settingsLines } from "#src/loader.ts";
 import {
   loaderLimits,
   planLoader,
-  startScreenPlan,
   rasterLine,
   loaderState,
-  settingsLines,
   simulate,
   START_SCREEN_CODE,
-  START_SCREEN_FILE,
   stopCause,
   VIC_DISPLAY_REGISTERS,
   type EntryState,
   type LoaderPlan,
-  type StartScreenPlan,
 } from "./lib/loader.ts";
 import { instructionWith, OPCODES } from "#src/opcodes.ts";
-import { capturedColourRam, LOADER_JUMP, START_SCREEN_CONTINUE, START_SCREEN_WAIT } from "#src/knowledge/start-screen.ts";
-import { planStage, STAGE_CODE_END, STAGE_FILE, STAGE_START, stageParts, stageText, type StageInput, type StagePart, type StagePlan } from "./lib/stage.ts";
+import { capturedColourRam, LOADER_JUMP, START_SCREEN_CONTINUE, START_SCREEN_FILE, START_SCREEN_WAIT, type StartScreenPlan } from "#src/knowledge/start-screen.ts";
+import { packStage, type PackedStage, STAGE_FILE, type StageBytes, type StagePart } from "#src/stage.ts";
 import { freeName, planDrops, readmeText, rewriteTest } from "./lib/export.ts";
 import type { UnresolvedFlow } from "#src/knowledge/separate.ts";
 import { configText, entriesInData, entryOutsideImage, hasConfigFile, hasSwitchFile, layout, literalOperand, probeForms, render, stagePatchText, switchesOf, type Layout, type PatchBlock, type Rendered, type SourceSwitch } from "./lib/source.ts";
@@ -921,7 +917,7 @@ async function buildLoader(
  * of the stage whose switch default is not its base value is in, as in the
  * default build. Pages 0-3 are left out: the unpacker of Exomizer uses them.
  */
-async function stageBytes(row: StartScreenRow): Promise<{ parts: StagePart[]; colourRam?: Uint8Array }> {
+async function stageBytes(row: StartScreenRow): Promise<StageBytes> {
   const stage = row.stage!;
   const knowledge = readKnowledge(stage);
   const colourRam = row.colourRam === true ? capturedColourRam(knowledge.program.state) : undefined;
@@ -955,42 +951,16 @@ async function stageBytes(row: StartScreenRow): Promise<{ parts: StagePart[]; co
 }
 
 /** What the show stage gives: the loader program, the source of the stage, and what its check needs. */
-interface BuiltStage {
-  program: Buffer;
-  text: string;
-  /** The labels of the build of start_screen_stage.asm. */
-  symbols: AssembledSymbol[];
-  plan: StagePlan;
-  parts: StagePart[];
-  colourRam?: Uint8Array;
-  packed: PackedLoader;
-  wait: number;
-  continue: number;
-  screen: StartScreenPlan;
-}
+type BuiltStage = PackedStage & StageBytes;
 
 /**
- * Builds the show stage of a start screen from a captured stage: plans it,
- * assembles start_screen_stage.asm and packs it with the loader as the loader
- * is in memory before it starts. Refuses by name.
+ * Builds the show stage of a start screen from a captured stage around the
+ * packed program, with the bytes of the stage from the knowledge. A text of
+ * start_screen_stage.asm that does not assemble goes to the local folder.
+ * Refuses by name.
  */
 async function buildStage(files: Array<{ name: string; text: string }>, laid: Layout, program: PackedLoader, row: StartScreenRow, values: ReadonlyMap<string, number>, header: string[], mark: string): Promise<BuiltStage> {
-  const { parts: stage, colourRam } = await stageBytes(row);
-  // The packed program, as RUN would start it: its unpacker unpacks it over the start screen after the wait.
-  const inner: StagePart[] = [{ start: 0x0801, body: program.program.subarray(2) }];
-  const screen = startScreenPlan(row);
-  const input: StageInput = {
-    inner,
-    innerStart: 0x080d,
-    innerPort: 0x37,
-    stage,
-    ...(colourRam === undefined ? {} : { colourRam }),
-    row,
-    plan: screen,
-    settings: settingsLines({ switches: hasSwitchFile(laid), config: hasConfigFile(laid) }),
-    header,
-    codeSize: 0,
-  };
+  const stage = await stageBytes(row);
   const support = [...withValues(files, laid, values).filter((file) => file.name === CONFIG_FILE || file.name === "switches.asm"), { name: START_SCREEN_FILE, text: START_SCREEN_CODE }];
   const assembleStage = async (text: string) => {
     const built = await assembleFiles([...support, { name: STAGE_FILE, text }], STAGE_FILE);
@@ -1002,25 +972,11 @@ async function buildStage(files: Array<{ name: string; text: string }>, laid: La
       writeFileSync(resolveProjectPath(kept), `${mark}\n${text}`);
       throw new WireFailure("operation-failed", `${STAGE_FILE} does not assemble: ${built.diagnostics.map((diagnostic) => diagnostic.message).join("; ")}. The source that failed is ${kept}. This is a defect of the script.`);
     }
-    const labels = new Map((built.symbols ?? []).map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]));
-    const label = (name: string) => {
-      const value = labels.get(name);
-      if (value === undefined) throw new WireFailure("operation-failed", `The build of ${STAGE_FILE} has no ${name} label. This is a defect of the script.`);
-      return value;
-    };
-    return { program: built.program, symbols: built.symbols ?? [], label };
+    return { program: built.program, symbols: built.symbols ?? [] };
   };
-  // The size of the show code does not depend on its address: one build without a stash and without the parts gives it.
-  const probe = await assembleStage(stageText({ ...input, stage: [] }, 0x1000, []));
-  input.codeSize = probe.label(STAGE_CODE_END) - probe.label(STAGE_START) - 2;
-  const plan = planStage(input);
-  const built = await assembleStage(plan.text);
-  if (built.label(STAGE_START) !== plan.code || built.label(STAGE_CODE_END) - plan.code !== input.codeSize + 6 * plan.stash.length + 2) throw new WireFailure("operation-failed", `The build of ${STAGE_FILE} does not have the planned layout. This is a defect of the script.`);
-  const parts = stageParts(input, plan, built.program, built.label);
-  const packed = await packParts(parts, plan.code, 0x37, "the loader and the start screen of the stage", "the show stage", localToolContext());
-  const end = 0x0801 + packed.program.length - 3;
-  if (end > 0xcfff) throw new Refusal("invalid-input", `The loader with the start screen of ${row.stage} would end at ${formatC64Address(end)}, after $cfff: loading it would write the I/O area. Capture the stage with less memory, so that its program holds only the start screen and the routine of the call.`);
-  return { program: packed.program, text: `${mark}\n${plan.text}`, symbols: built.symbols, plan, parts: stage, ...(colourRam === undefined ? {} : { colourRam }), packed, wait: built.label(START_SCREEN_WAIT), continue: built.label(START_SCREEN_CONTINUE), screen };
+  const settings = settingsLines({ switches: hasSwitchFile(laid), config: hasConfigFile(laid) });
+  const built = await packStage(program.program, stage, row, { settings, header }, assembleStage, localToolContext());
+  return { ...built, text: `${mark}\n${built.text}`, ...stage };
 }
 
 /** An operand expression that the source writes as a number, as a result lists it. */
@@ -1240,7 +1196,7 @@ async function generate(call: Call): Promise<{ output: Record<string, unknown>; 
       return { output: { ...output, loader: notVerified({ reason: `The show stage of the start screen from ${stageRow.stage} cannot be built. ${error.message}` }) }, removed, failed: true };
     }
   }
-  const program = stage?.program ?? packed?.program ?? copierBuild;
+  const program = stage?.packed.program ?? packed?.program ?? copierBuild;
   // The check runs the new loader from a scratch file. Only a loader whose check ran goes to the build folder, so a check
   // that cannot run (no host, or a host of another release) keeps the loader program of an earlier run.
   ensureLocal(projectRoot());

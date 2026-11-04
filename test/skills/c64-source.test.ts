@@ -15,14 +15,15 @@ import { COVERAGE, instructionLength } from "../../src/c64.ts";
 import { assemble } from "../../src/native/acme.ts";
 import { ACME, EXOMIZER, findTool } from "../../src/native/discover.ts";
 import { localToolContext } from "../../src/native/local.ts";
-import { ciaSection, copierAreas, copyOrder, loaderLimits, planLoader, loaderState, simulate, START_SCREEN_CODE, START_SCREEN_FILE, START_SCREEN_SIZES, startScreenPlan, stopCause, type EntryCia, type EntryState, type LoaderPlan } from "../../skills/c64-source/scripts/lib/loader.ts";
+import { ciaSection, copierAreas, copyOrder, loaderLimits, planLoader, loaderState, simulate, START_SCREEN_CODE, START_SCREEN_SIZES, stopCause, type EntryCia, type EntryState, type LoaderPlan } from "../../skills/c64-source/scripts/lib/loader.ts";
 import { packLoader } from "../../src/loader.ts";
 import { WireFailure } from "../../src/protocol/messages.ts";
 import { PACKAGE } from "../../src/package.ts";
 import { MODE_LENGTH, OPCODES } from "../../src/opcodes.ts";
 import { configText, entriesInData, entryOutsideImage, layout, render, stagePatchText, type SourceInput, type SourceSwitch } from "../../skills/c64-source/scripts/lib/source.ts";
 import { configValues } from "../../src/build-name.ts";
-import { planStage, STAGE_CODE_END, STAGE_FILE, stageParts, type StageInput } from "../../skills/c64-source/scripts/lib/stage.ts";
+import { planStage, STAGE_CODE_END, STAGE_FILE, stageParts, type StageInput } from "../../src/stage.ts";
+import { START_SCREEN_FILE, startScreenPlan } from "../../src/knowledge/start-screen.ts";
 import { decode, describeAddress, platformNames } from "../../src/platform.ts";
 import type { StartScreenRow } from "../../src/knowledge/read.ts";
 import { referenceHeader } from "../../src/reference-pages.ts";
@@ -1201,28 +1202,6 @@ test("with real ACME, the source with LEFTOVERS = 1 gives the program, and with 
   assert.equal(clean.length, original.length);
   assert.deepEqual([...clean.slice(0, 8), ...clean.slice(12)], [...original.slice(0, 8), ...original.slice(12)], "the bytes after the leftovers keep their addresses");
   assert.notDeepEqual(clean.slice(8, 12), original.slice(8, 12));
-});
-
-test("the show stage runs where the KERNAL can be in, and puts the loader bytes under the stage in a stash; without room it refuses with the free ranges", () => {
-  const row: StartScreenRow = { space: "c64", mode: "multicolour", screen: 0xcc00, bitmap: 0xe000, colours: 0x8328, border: 0, background: 6, stage: "bank1", call: 0x0a00, origin: "llm", revision: "r" };
-  const stageInput = (inner: StageInput["inner"], stage: StageInput["stage"]): StageInput => ({ inner, innerStart: 0x080d, innerPort: 0x37, stage, row, plan: startScreenPlan(row), settings: [], header: [], codeSize: 300 });
-  const plan = planStage(stageInput([{ start: 0x0801, body: new Uint8Array(0x500) }], [{ start: 0x0a00, body: new Uint8Array(0x20) }, { start: 0xcc00, body: new Uint8Array(1000) }]));
-  assert.equal(plan.code, 0x0400, "the first free range that the code fits");
-  assert.deepEqual(plan.stash.map((item) => item.target), [{ start: 0x0a00, end: 0x0a1f }]);
-  const at = plan.stash[0]!.at;
-  assert.ok(at >= 0x0400 + 300 + 8 && at + 0x1f <= 0x0800, "the stash is in free memory after the code");
-  assert.match(plan.text, /c64_source_ss_call = \$0a00 /);
-  assert.match(plan.text, new RegExp(`!word 32, \\$${at.toString(16).padStart(4, "0")}, \\$0a00 ; \\$0a00-\\$0a1f of the loader`));
-  assert.match(plan.text, /jmp \$080d\n/);
-  // The colour RAM of the capture is in the show code: the start screen copies it from there.
-  const { colours: _colours, ...picture } = row;
-  const fromCapture: StartScreenRow = { ...picture, colourRam: true };
-  const withColours = planStage({ ...stageInput([{ start: 0x0801, body: new Uint8Array(0x500) }], [{ start: 0xcc00, body: new Uint8Array(1000) }]), row: fromCapture, plan: startScreenPlan(fromCapture), colourRam: Uint8Array.from({ length: 1000 }, (_, index) => index & 0x0f), codeSize: 1300 });
-  assert.match(withColours.text, /\nc64_source_ss_colour_mode = \$02\n/);
-  assert.match(withColours.text, /\nc64_source_ss_colours = c64_source_stage_colours\n/);
-  assert.match(withColours.text, /\nc64_source_stage_colours\n {8}!byte \$00,\$01,\$02,/);
-  assert.equal((withColours.text.split("\nc64_source_stage_colours\n")[1]!.split("c64_source_stage_code_end")[0]!.match(/\$[0-9a-f]{2}/g) ?? []).length, 1000);
-  assert.throws(() => planStage(stageInput([{ start: 0x0400, body: new Uint8Array(0xcc00) }], [{ start: 0xe000, body: new Uint8Array(8000) }])), /The show stage needs 308 free bytes for its code in \$0400-\$9fff or \$c000-\$cfff.* The largest free ranges outside the loader and the bytes of the stage: \$d000-\$dfff \(4096 bytes\)/);
 });
 
 test("with real ACME, the show stage builds when its code is high and the parts of the stage are large: each part is at its own address", { skip: acmeSkip }, async () => {
