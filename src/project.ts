@@ -66,13 +66,20 @@ function isProject(folder: string): boolean {
  */
 function homeFolders(): string[] {
   const home = homedir();
-  try {
-    const real = realLocation(home);
-    return real === home ? [home] : [home, real];
-  } catch {
-    return [home];
+  if (homes?.home !== home) {
+    let real = home;
+    try {
+      real = realLocation(home);
+    } catch {
+      // The home folder as the environment gives it.
+    }
+    homes = { home, folders: real === home ? [home] : [home, real] };
   }
+  return homes.folders;
 }
+
+/** The spellings of the home folder, found once for each home folder that the environment gives. */
+let homes: { home: string; folders: string[] } | undefined;
 
 /** True when `folder` is the home folder, in either spelling. */
 function isHome(folder: string): boolean {
