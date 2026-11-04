@@ -167,13 +167,13 @@ const c64Screen = defineTool({
     ...WrittenOutput,
   }),
   readOnly: false,
-  async run(input, session) {
+  async run(input, session, file) {
     const { action, ...fields } = input;
     if (action === "capture") {
       requireFields(action, fields, ["baseline", "out"]);
       const shot = await session.screenCapture(fields.baseline);
       const result = { width: shot.width, height: shot.height, ...(shot.baseline === undefined ? {} : { baseline: shot.baseline }) };
-      if (fields.out !== undefined) return { ...result, ...writeOut(fields.out, Buffer.from(shot.png, "base64")) };
+      if (fields.out !== undefined) return { ...result, ...writeOut(file, Buffer.from(shot.png, "base64")) };
       return new ToolOutput(result, [{ type: "image", data: shot.png, mimeType: "image/png" }]);
     }
     if (action === "compare") {
@@ -184,7 +184,7 @@ const c64Screen = defineTool({
         mask: fields.mask ?? [],
         includeDiff: (fields.includeDiff ?? false) || fields.out !== undefined,
       });
-      if (fields.out !== undefined && diffPng !== undefined) return { ...result, ...writeOut(fields.out, Buffer.from(diffPng, "base64")) };
+      if (fields.out !== undefined && diffPng !== undefined) return { ...result, ...writeOut(file, Buffer.from(diffPng, "base64")) };
       return diffPng === undefined ? result : new ToolOutput(result, [{ type: "image", data: diffPng, mimeType: "image/png" }]);
     }
     if (action === "list") {

@@ -36,7 +36,7 @@ const c64MemoryRead = defineTool({
     .strict(),
   outputSchema: z.object({ address: AddressOutput, size: z.number().int().min(1).max(MAX_MEMORY_READ_OUT), data: HexData.optional(), ...WrittenOutput }),
   readOnly: false,
-  async run(input, session) {
+  async run(input, session, file) {
     const { out, ...read } = input;
     if (out === undefined) {
       if (read.size > MAX_MEMORY_READ) throw new WireFailure("invalid-input", `size can be at most ${MAX_MEMORY_READ} without out.`);
@@ -45,7 +45,7 @@ const c64MemoryRead = defineTool({
     }
     if (read.address + read.size > 0x10000) throw new WireFailure("invalid-input", "The range must not go past $ffff.");
     const bytes = await readMemoryInParts(session, read.address, read.size, read.view, read.space);
-    return { address: formatC64Address(read.address), size: read.size, ...writeOut(out, bytes) };
+    return { address: formatC64Address(read.address), size: read.size, ...writeOut(file, bytes) };
   },
 });
 
@@ -193,7 +193,7 @@ const c64Disassemble = defineTool({
     .strict(),
   outputSchema: z.object({ instructions: z.array(z.object({ address: AddressOutput, bytes: HexData, text: z.string() })).optional(), count: z.number().int().min(0).optional(), ...WrittenOutput }),
   readOnly: false,
-  async run(input, session) {
+  async run(input, session, file) {
     const { out, ...request } = input;
     if (out === undefined) {
       if (request.count > MAX_DISASSEMBLE) throw new WireFailure("invalid-input", `count can be at most ${MAX_DISASSEMBLE} without out.`);
@@ -220,7 +220,7 @@ const c64Disassemble = defineTool({
     const text = out.toLowerCase().endsWith(".json")
       ? `${JSON.stringify(instructions, null, 1)}\n`
       : linesText(instructions.map((instruction) => `${instruction.address}  ${spaced(instruction.bytes).padEnd(9)} ${instruction.text}`));
-    return { count: instructions.length, ...writeOut(out, text) };
+    return { count: instructions.length, ...writeOut(file, text) };
   },
 });
 

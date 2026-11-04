@@ -273,22 +273,50 @@ test("the project of a file of an MCP tool is the project at or above it by the 
   });
 });
 
-test("for an MCP tool, a folder without .c64-re-tools/ is a project only in the folder where the server started", () => {
+test("for an MCP tool, a folder without .c64-re-tools/ is a project only in the folder where the server started, when the project rules make that folder a project", () => {
   withHome((home) => {
     const start = join(home, "start");
     mkdirSync(join(start, "dev", "build"), { recursive: true });
     const elsewhere = join(home, "elsewhere");
     mkdirSync(elsewhere);
+    mkdirSync(join(home, ".ssh"));
     const marked = join(home, "marked");
     mkdirSync(join(marked, ".c64-re-tools"), { recursive: true });
+    const workspace = join(home, "workspace");
+    for (const name of ["a", "b"]) mkdirSync(join(workspace, name, ".c64-re-tools"), { recursive: true });
+    mkdirSync(join(workspace, "notes"));
+    const notInProject = refusal("invalid-input", /is not in a project folder\. A project folder has \.c64-re-tools\//);
     const saved = process.cwd();
     try {
       process.chdir(start);
-      assert.equal(fileProject(join(start, "dev", "build", "game.prg"), "read"), join(start, "dev", "build"));
-      for (const access of ["read", "write"] as const) {
-        assert.throws(() => fileProject(join(elsewhere, "x.bin"), access), refusal("invalid-input", /x\.bin is not in a project folder\. A project folder has \.c64-re-tools\//), access);
-      }
+      assert.equal(fileProject(join(start, "dev", "build", "game.prg"), "read"), start);
+      for (const access of ["read", "write"] as const) assert.throws(() => fileProject(join(elsewhere, "x.bin"), access), notInProject, access);
       assert.equal(fileProject(join(marked, "x.bin"), "write"), marked);
+      // The home folder and a folder with projects below it are no project, and no plain folder in them is one.
+      process.chdir(home);
+      assert.throws(() => fileProject(join(home, ".ssh", "authorized_keys"), "write"), notInProject);
+      process.chdir(workspace);
+      assert.throws(() => fileProject(join(workspace, "notes", "x.bin"), "write"), notInProject);
+      assert.equal(fileProject(join(workspace, "a", "x.bin"), "write"), join(workspace, "a"));
+    } finally {
+      process.chdir(saved);
+    }
+  });
+});
+
+test("an absolute path through a symbolic link to the project folder is inside it, in the spelling of the project folder", { skip: process.platform === "win32" ? "symbolic links need extra rights on Windows" : false }, () => {
+  withHome((home) => {
+    const game = join(home, "game");
+    mkdirSync(join(game, "build"), { recursive: true });
+    const link = join(home, "linked");
+    symlinkSync(game, link);
+    assert.equal(resolveProjectPath(join(link, "build", "game.prg"), game), join(game, "build", "game.prg"));
+    assert.equal(resolveProjectPath(join(link, "new", "deep", "x.bin"), game), join(game, "new", "deep", "x.bin"));
+    assert.throws(() => resolveProjectPath(join(home, "x.bin"), game), /leads out of the project folder/);
+    const saved = process.cwd();
+    try {
+      process.chdir(game);
+      assert.equal(fileProject(join(link, "build", "game.prg"), "read"), game);
     } finally {
       process.chdir(saved);
     }

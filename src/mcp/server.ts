@@ -8,7 +8,7 @@ import { z } from "zod";
 import { formatC64Address } from "../c64.ts";
 import { Byte, TOOL_INPUTS } from "./inputs.ts";
 import { LostBeforeAnswer, type ViceSessionClient } from "../host-client/vice-session.ts";
-import { checkOut } from "../host-client/transfer.ts";
+import { checkOut, type ToolFile } from "../host-client/transfer.ts";
 import { describeErrorStack, isRefusal } from "../errors.ts";
 import { PACKAGE } from "../package.ts";
 import { shownMessage, WireFailure, type WireError } from "../protocol/messages.ts";
@@ -117,7 +117,8 @@ export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z
   outputSchema: O;
   /** True for operations that only observe the machine. */
   readOnly: boolean;
-  run(input: z.output<I>, session: ViceSessionApi): Promise<z.input<O> | ToolOutput<z.input<O>>>;
+  /** `out` is the file of the input out, checked before the tool runs; undefined without out. */
+  run(input: z.output<I>, session: ViceSessionApi, out?: ToolFile): Promise<z.input<O> | ToolOutput<z.input<O>>>;
 }
 
 /** A condition as a result shows it: the input form, with the memory address as "$xxxx". */
@@ -220,14 +221,14 @@ async function runCall(
   try {
     // An out path is checked before the tool runs: a refused path must not lose the work or leave its side effects.
     const fields = parsed.data as { out?: unknown };
-    if (typeof fields.out === "string") checkOut(fields.out);
+    const out = typeof fields.out === "string" ? checkOut(fields.out) : undefined;
     let output: unknown;
     try {
-      output = await tool.run(parsed.data, await session());
+      output = await tool.run(parsed.data, await session(), out);
     } catch (error) {
       // A session that the emulator never answered had no machine state: the call goes again on a new session.
       if (!(error instanceof LostBeforeAnswer)) throw error;
-      output = await tool.run(parsed.data, await session());
+      output = await tool.run(parsed.data, await session(), out);
     }
     // The result goes out in the shape that the tool listing advertises: keys
     // that the output schema does not name are removed, and a result that does

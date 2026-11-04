@@ -163,7 +163,7 @@ const c64CpuHistory = defineTool({
     ...WrittenOutput,
   }),
   readOnly: false,
-  async run(input, session) {
+  async run(input, session, file) {
     const { out, ...request } = input;
     const { entries } = await session.cpuHistory(request);
     if (out === undefined) return { entries: entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
@@ -171,7 +171,7 @@ const c64CpuHistory = defineTool({
       const raster = entry.rasterLine === undefined ? "" : `  line ${entry.rasterLine} cycle ${entry.rasterCycle ?? 0}`;
       return `${formatC64Address(entry.address)}  ${spaced(entry.bytes).padEnd(9)} ${entry.text.padEnd(16)} a=${hexByte(entry.a)} x=${hexByte(entry.x)} y=${hexByte(entry.y)} sp=${hexByte(entry.sp)}${raster}`;
     });
-    return { count: entries.length, ...writeOut(out, linesText(lines)) };
+    return { count: entries.length, ...writeOut(file, linesText(lines)) };
   },
 });
 
@@ -303,7 +303,7 @@ const c64Trace = defineTool({
     ...WrittenOutput,
   }),
   readOnly: false,
-  async run(input, session) {
+  async run(input, session, file) {
     const { out, points, ...request } = input;
     const ranges = points.map((point) => ({ kind: point.kind, start: point.start, end: point.end ?? point.start }));
     if (ranges.some((point) => point.end < point.start)) throw new WireFailure("invalid-input", "A point end must not be before its start.");
@@ -312,7 +312,7 @@ const c64Trace = defineTool({
     const head = { end: traced.end, frames: traced.frames, pc: formatC64Address(traced.pc), count: traced.hits.length };
     const summary = traceSummary(traced.hits, ranges.map((point) => point.kind));
     if (out === undefined) return { ...head, summary, hits: shown.slice(0, TRACE_LISTED) };
-    return { ...head, summary, ...writeOut(out, linesText(shown.map((hit) => JSON.stringify(hit)))) };
+    return { ...head, summary, ...writeOut(file, linesText(shown.map((hit) => JSON.stringify(hit)))) };
   },
 });
 
@@ -445,7 +445,7 @@ const c64Memmap = defineTool({
     ...WrittenOutput,
   }),
   readOnly: false,
-  async run(input, session) {
+  async run(input, session, file) {
     const { action, ...fields } = input;
     if (action === "clear") {
       requireFields("clear", fields, []);
@@ -476,7 +476,7 @@ const c64Memmap = defineTool({
     requireFields("read", fields, ["start", "end", "maxRanges", "out"]);
     if (fields.out !== undefined) {
       const map = await readCoverage(session, start, end);
-      return { ...writeOut(fields.out, map), ...basicRomFlaw(romInBasicArea(map, start)) };
+      return { ...writeOut(file, map), ...basicRomFlaw(romInBasicArea(map, start)) };
     }
     const result = await session.memmap({ action: "read", start, end, maxRanges: fields.maxRanges ?? 256 });
     const ranges = result.ranges.map((range) => ({

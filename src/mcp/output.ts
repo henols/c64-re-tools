@@ -5,7 +5,7 @@
 
 import { z } from "zod";
 
-import { toolFile, writeReported, type Written } from "../host-client/transfer.ts";
+import { writeReported, type ToolFile, type Written } from "../host-client/transfer.ts";
 
 export const OutInput = z
   .string()
@@ -24,8 +24,12 @@ export function linesText(lines: readonly string[]): string {
   return lines.map((line) => `${line}\n`).join("");
 }
 
-/** Writes `data` to the file at the absolute path `path`, in the project at or above it, and gives what the result shows in its place: the absolute path, the size and the SHA-256. */
-export function writeOut(path: string, data: Uint8Array | string): Written {
-  const { file, root } = toolFile(path, "write");
-  return writeReported(file, data, { what: "out", root });
+/**
+ * Writes `data` to the file of out, that the server checked before the tool
+ * ran (checkOut), and gives what the result shows in its place: the absolute
+ * path, the size and the SHA-256.
+ */
+export function writeOut(target: ToolFile | undefined, data: Uint8Array | string): Written {
+  if (target === undefined) throw new Error("out has no file that the server checked before the tool ran");
+  return writeReported(target.file, data, { what: "out", root: target.root });
 }

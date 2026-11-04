@@ -11,21 +11,28 @@ import { MAX_ATTACHMENT_BYTES } from "../protocol/framing.ts";
 import { WireFailure } from "../protocol/messages.ts";
 import { MAX_TREE_FILES, type SourceTree } from "../protocol/tools.ts";
 
+/** A file that an MCP tool reads or writes: its absolute path, and its project. */
+export interface ToolFile {
+  file: string;
+  root: string;
+}
+
 /**
- * A file that an MCP tool reads or writes: its absolute path, and the project
- * that the project rules find at or above it (fileProject). Refuses a relative
- * path: the agent cannot see the working folder of the MCP server.
+ * The file of a path input of an MCP tool, with the project that the project
+ * rules find for it (fileProject). Refuses a relative path: the agent cannot
+ * see the working folder of the MCP server.
  */
-export function toolFile(path: string, access: "read" | "write"): { file: string; root: string } {
+export function toolFile(path: string, access: "read" | "write"): ToolFile {
   if (!isAbsolute(path)) throw new WireFailure("invalid-input", `${path} is relative. Give the absolute path of the file.`);
   const file = resolve(path);
   return { file, root: fileProject(file, access) };
 }
 
-/** Refuses an MCP `out` before the tool does any work, with the checks that every --out of a script gets. */
-export function checkOut(path: string): void {
-  const { file, root } = toolFile(path, "write");
-  checkOutputPath(file, "file", { root, what: "out" });
+/** The file of an MCP `out`, checked before the tool does any work with the checks that every --out of a script gets. */
+export function checkOut(path: string): ToolFile {
+  const target = toolFile(path, "write");
+  checkOutputPath(target.file, "file", { root: target.root, what: "out" });
+  return target;
 }
 
 /** The project folder of this process (--project or the project lookup), or a WireFailure. */
@@ -202,8 +209,8 @@ const posixRelative = (from: string, to: string) => relative(from, to).split(sep
  * staging, as readProjectTree does. An include folder is relative to the
  * source root, or absolute, and can be anywhere in the project folder. The
  * tree starts at the lowest folder that holds all these folders, but it holds
- * only their files. `sourceDir` is the source root in the tree, "" at its top, and
- * `includeDirs` are the include folders relative to the source root.
+ * only their files. `sourceDir` is the source root in the tree, "" at its
+ * top, and `includeDirs` are the include folders relative to the source root.
  */
 export function readSourceTree(sourceRoot: string, includes: readonly string[], options: { root?: string } = {}): { files: SourceTree; contents: Buffer[]; sourceDir: string; includeDirs: string[] } {
   const projectRootPath = options.root ?? currentProject();
@@ -214,16 +221,15 @@ export function readSourceTree(sourceRoot: string, includes: readonly string[], 
   const folders = includes.map((folder) => {
     const outside = new WireFailure("invalid-input", `The include folder ${folder} is outside the project folder. Give an include folder inside the project folder, relative to the source root or absolute.`);
     const candidate = resolve(source, folder);
-    // An absolute folder can name the project folder through a link: then its real location decides.
-    if (!isInside(project, candidate) && !(isAbsolute(folder) && isInside(resolve(projectRootPath), candidate))) throw outside;
-    let real: string;
+    let real: string | undefined;
     try {
       real = realpathSync(candidate);
     } catch {
-      throw missing(folder);
+      real = undefined;
     }
-    if (!isInside(project, real)) throw outside;
-    if (!statSync(real).isDirectory()) throw missing(folder);
+    // The real location decides: an absolute folder can reach the project folder through a link, for example /tmp to /private/tmp.
+    if (!isInside(project, real ?? candidate)) throw outside;
+    if (real === undefined || !statSync(real).isDirectory()) throw missing(folder);
     return { folder, real };
   });
   let top = source;
