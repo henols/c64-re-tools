@@ -206,7 +206,18 @@ export function writeCapture(
 const RAM_UNDER_IO = { kind: "memory", address: 0x0001, operator: "eq", value: 0, mask: 0x03, space: "c64", view: "cpu" } as const;
 /** The most stops at a store that the RAM check runs on after: a guard, as the emulator gives the dummy read of a store to a watchpoint only on request. */
 const MAX_STORE_STOPS = 256;
-const RAM_CHECK_SNAPSHOT = "capture-ram-reads";
+const ENTRY_SNAPSHOT = "capture-entry";
+
+/** Runs `work` from where the machine is, and then puts the machine back there, also when `work` fails. */
+export async function fromHere<T>(client: Pick<ViceSessionClient, "snapshot">, work: () => Promise<T>): Promise<T> {
+  await client.snapshot({ action: "save", name: ENTRY_SNAPSHOT });
+  try {
+    return await work();
+  } finally {
+    await client.snapshot({ action: "restore", name: ENTRY_SNAPSHOT });
+    await client.snapshot({ action: "remove", name: ENTRY_SNAPSHOT });
+  }
+}
 
 /**
  * Runs the program on from where it is for `frames` frames, with read watchpoints that stop only at a read of the RAM
@@ -221,47 +232,46 @@ export async function readAsRam<T extends AddressRange>(
   ranges: readonly T[],
   frames: number,
 ): Promise<{ read: T[]; undecided: T[] }> {
-  await client.snapshot({ action: "save", name: RAM_CHECK_SNAPSHOT });
   // The watchpoint ids of each range: a watchpoint covers at most MAX_WATCH_SIZE bytes.
   const points = new Map<number, number>();
   const read = new Set<number>();
   let complete = true;
-  try {
-    for (const [index, range] of ranges.entries()) {
-      for (let address = range.start; address <= range.end; address += MAX_WATCH_SIZE) {
-        const size = Math.min(MAX_WATCH_SIZE, range.end - address + 1);
-        points.set((await client.watchpoint({ action: "add", address, size, access: "read", space: "c64", condition: RAM_UNDER_IO })).id, index);
-      }
-    }
-    // The frames end at the raster position where the check starts, after a stop too.
-    const { timing } = await client.observe({ timing: true });
-    const anchor = { line: timing!.rasterLine, cycle: timing!.rasterCycle };
-    let left = frames;
-    let storeStops = 0;
-    while (left > 0 && read.size < ranges.length) {
-      const run = await client.execution({ action: "advance-frames", count: left, space: "c64", anchor });
-      left -= run.advancedFrames ?? 0;
-      const index = run.pointId === undefined ? undefined : points.get(run.pointId);
-      if (run.stopReason !== "watchpoint" || index === undefined) break;
-      const opcode = await lastOpcode(client);
-      if (opcode !== undefined && isStore(opcode)) {
-        if (++storeStops > MAX_STORE_STOPS) {
-          complete = false;
-          break;
+  await fromHere(client, async () => {
+    try {
+      for (const [index, range] of ranges.entries()) {
+        for (let address = range.start; address <= range.end; address += MAX_WATCH_SIZE) {
+          const size = Math.min(MAX_WATCH_SIZE, range.end - address + 1);
+          points.set((await client.watchpoint({ action: "add", address, size, access: "read", space: "c64", condition: RAM_UNDER_IO })).id, index);
         }
-        continue;
       }
-      read.add(index);
-      for (const [id, of] of [...points]) {
-        if (of !== index) continue;
-        await client.watchpoint({ action: "remove", id });
-        points.delete(id);
+      // The frames end at the raster position where the check starts, after a stop too.
+      const { timing } = await client.observe({ timing: true });
+      const anchor = { line: timing!.rasterLine, cycle: timing!.rasterCycle };
+      let left = frames;
+      let storeStops = 0;
+      while (left > 0 && read.size < ranges.length) {
+        const run = await client.execution({ action: "advance-frames", count: left, space: "c64", anchor });
+        left -= run.advancedFrames ?? 0;
+        const index = run.pointId === undefined ? undefined : points.get(run.pointId);
+        if (run.stopReason !== "watchpoint" || index === undefined) break;
+        const opcode = await lastOpcode(client);
+        if (opcode !== undefined && isStore(opcode)) {
+          if (++storeStops > MAX_STORE_STOPS) {
+            complete = false;
+            break;
+          }
+          continue;
+        }
+        read.add(index);
+        for (const [id, of] of [...points]) {
+          if (of !== index) continue;
+          await client.watchpoint({ action: "remove", id });
+          points.delete(id);
+        }
       }
+    } finally {
+      for (const id of points.keys()) await client.watchpoint({ action: "remove", id });
     }
-  } finally {
-    for (const id of points.keys()) await client.watchpoint({ action: "remove", id });
-    await client.snapshot({ action: "restore", name: RAM_CHECK_SNAPSHOT });
-    await client.snapshot({ action: "remove", name: RAM_CHECK_SNAPSHOT });
-  }
+  });
   return { read: ranges.filter((_, index) => read.has(index)), undecided: complete ? [] : ranges.filter((_, index) => !read.has(index)) };
 }

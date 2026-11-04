@@ -22,7 +22,7 @@ import { listed, OPTIONS, reply, runScript, UsageError, type Call, type CommandS
 import { basicStart, inspect, writtenThenExecuted } from "./lib/evidence.ts";
 import { loads, readLoadSteps } from "./lib/loads.ts";
 import { callReturn, captureSegments, droppedRanges, executedIn, mergeMaps, notExecutedUnderIo, stageCandidates, stagePoints, usedAfterEntry, withoutRanges } from "./lib/stages.ts";
-import { capturedProgram, entryStateFile, machineState, readAsRam, readyState, vectorsOf, vicRam, writeCapture } from "./lib/machine.ts";
+import { capturedProgram, entryStateFile, fromHere, machineState, readAsRam, readyState, vectorsOf, vicRam, writeCapture } from "./lib/machine.ts";
 
 /** Written-then-executed bytes from this many on are unpacking, decrypting or relocating, not self-changing code. */
 const UNPACKED_BYTES = 256;
@@ -508,23 +508,17 @@ async function stages(program: string, options: { frames: number; entry?: number
 /** Frames that the program runs after its entry to show the memory that it uses. */
 const AFTER_ENTRY_FRAMES = 250;
 
-const ENTRY_SNAPSHOT = "capture-entry";
-
 /**
  * Runs the program on from its entry and gives the RAM that it used: the
  * evidence that a block that a loader or a stage left is part of the
  * program. The machine then goes back to the entry.
  */
 async function usedAfter(client: ViceSessionClient): Promise<(address: number) => boolean> {
-  await client.snapshot({ action: "save", name: ENTRY_SNAPSHOT });
-  try {
+  return fromHere(client, async () => {
     await client.memmap({ action: "clear" });
     await client.execution({ action: "advance-frames", count: AFTER_ENTRY_FRAMES, space: "c64" });
     return usedAfterEntry(await readCoverage(client));
-  } finally {
-    await client.snapshot({ action: "restore", name: ENTRY_SNAPSHOT });
-    await client.snapshot({ action: "remove", name: ENTRY_SNAPSHOT });
-  }
+  });
 }
 
 /** Why a capture can wait for --until in vain: a step ran over it. */
