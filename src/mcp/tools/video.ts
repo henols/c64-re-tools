@@ -130,6 +130,7 @@ const Rectangle = z
   .strict();
 
 const c64Screen = defineTool({
+  outActions: ["capture", "compare"],
   name: "c64_screen",
   title: "Capture and compare the C64 screen",
   description:

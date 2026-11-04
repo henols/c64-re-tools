@@ -404,6 +404,7 @@ const RangeOutput = z.object({ start: AddressOutput, end: AddressOutput });
 const showRanges = (ranges: CodeRange[]) => ranges.slice(0, MAX_SUMMARY_RANGES).map(formatC64RangeFields);
 
 const c64Memmap = defineTool({
+  outActions: ["read"],
   name: "c64_memmap",
   title: "Memory access map",
   description:

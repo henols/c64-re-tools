@@ -234,13 +234,13 @@ function link(call: Call): Reply {
   /** A .md entry of a directory that is a symbolic link to no file, or to a file outside the folder of the run. */
   const unreadable = (page: string): Problem => ({ page, line: 1, kind: "missing-file", message: `${shown(page)} is a symbolic link to no file or to a file outside ${folder}.` });
 
-  // An absolute page becomes relative to the folder of the pages, also through a symbolic link, so that each page has one spelling. A page outside it becomes "..", which the check below refuses.
+  // An absolute page becomes relative to the folder of the pages, also through a symbolic link, so that each page has one spelling.
   const fromBase = (path: string) => {
     if (!isAbsolute(path)) return path;
     try {
       return projectRelative(path, join(root, scope.base)) || ".";
     } catch {
-      return "..";
+      throw new UsageError(`<page> must be a path inside ${folder}, relative to it or absolute, not ${path}`);
     }
   };
   const spelled = new Map(call.subjects.map((path) => [posix.normalize(fromBase(path)), path]));

@@ -324,6 +324,10 @@ test("docs.ts link takes the entry page in the project folder beside the docs di
   // Absolute paths in the project give the same reference and the same links.
   assert.equal(generate(root, join(root, "src"), "--out", join(root, "docs", "reference")).json.out, "docs/reference");
   assert.equal(link(root, join(root, "README.md"), join(root, "docs"), "--source", join(root, "src"), "--check").json.result, "PASS");
+  // Of two pages outside the project, the refusal names the first as given.
+  const outside = link(root, join(tmpdir(), "c64-re-tools-a", "x.md"), join(tmpdir(), "c64-re-tools-b", "y.md"), "--source", "src");
+  assert.equal(outside.status, 2);
+  assert.match((outside.json.error as { message: string }).message, /not \S*c64-re-tools-a.x\.md /);
   // Also through a symbolic link to the project folder, for example /var to /private/var on macOS.
   if (process.platform !== "win32") {
     const outer = mkdtempSync(join(tmpdir(), "c64-re-tools-docs-link-"));

@@ -221,22 +221,25 @@ export function readSourceTree(sourceRoot: string, includes: readonly string[], 
   const folders = includes.map((folder) => {
     const outside = new WireFailure("invalid-input", `The include folder ${folder} is outside the project folder. Give an include folder inside the project folder, relative to the source root or absolute.`);
     const candidate = resolve(source, folder);
+    // A path through a file (ENOTDIR) or to nothing names no folder: it is missing. Another error of the file system is a refusal.
+    const refused = (error: unknown) => {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOTDIR" || code === "ENOENT") return missing(folder);
+      return new WireFailure("invalid-input", `The include folder ${folder} cannot be read: the file system refuses it (${code ?? "an error"}). Give an include folder inside the project folder that you can read.`);
+    };
     // The real location decides, also of a folder that does not exist: an absolute folder can reach the project folder through a link, for example /tmp to /private/tmp.
-    let real = candidate;
+    let real: string;
     try {
       real = realLocation(candidate);
-    } catch {
-      // The path as given.
+    } catch (error) {
+      throw refused(error);
     }
     if (!isInside(project, real)) throw outside;
     let isFolder: boolean;
     try {
       isFolder = statSync(real, { throwIfNoEntry: false })?.isDirectory() === true;
     } catch (error) {
-      // A path through a file (ENOTDIR) names no folder: it is missing. Another error is a refusal.
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "ENOTDIR" || code === "ENOENT") throw missing(folder);
-      throw new WireFailure("invalid-input", `The include folder ${folder} cannot be read: the file system refuses it (${(error as NodeJS.ErrnoException).code ?? "an error"}). Give an include folder inside the project folder that you can read.`);
+      throw refused(error);
     }
     if (!isFolder) throw missing(folder);
     return { folder, real };

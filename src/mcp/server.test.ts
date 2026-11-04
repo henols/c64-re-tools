@@ -782,6 +782,10 @@ test("a wrong out is refused before the server asks for a session", async () => 
   });
   assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "dumps/mem.bin" })).code, "invalid-input");
   assert.equal(sessions, 0, "no session for a refused out");
+  // An action that takes no out names that, not the path.
+  assert.equal(errorOf(await call(client, "c64_snapshot", { action: "restore", name: "a", out: "relative.vsf" })).message, "out is not used with action restore.");
+  assert.equal(errorOf(await call(client, "c64_memmap", { action: "clear", out: "x.bin" })).message, "out is not used with action clear.");
+  assert.equal(sessions, 0, "no session for these refusals");
   await client.close();
 });
 

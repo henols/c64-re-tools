@@ -117,6 +117,8 @@ export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z
    * defineTool checks it then.
    */
   run(input: z.output<I>, session: ViceSessionApi, out?: ToolFile): Promise<z.input<O> | ToolOutput<z.input<O>>>;
+  /** The actions that take out, for a tool with actions where only some take it. */
+  outActions?: readonly string[];
   /** Set by defineTool: checks the input out before any work, also before a session starts, and gives its file. */
   prepare?(input: z.output<I>): ToolFile | undefined;
 }
@@ -153,7 +155,10 @@ export function toCondition(input: z.output<typeof TOOL_INPUTS.condition>): Cond
  */
 export function defineTool<I extends z.ZodObject, O extends z.ZodObject>(tool: ToolDefinition<I, O>): ToolDefinition {
   const prepare = (input: z.output<I>): ToolFile | undefined => {
-    const given = (input as { out?: unknown }).out;
+    const { out: given, action } = input as { out?: unknown; action?: unknown };
+    if (given === undefined) return undefined;
+    // An action that takes no out is the error to show, not the path.
+    if (tool.outActions !== undefined && typeof action === "string" && !tool.outActions.includes(action)) throw new WireFailure("invalid-input", `out is not used with action ${action}.`);
     return typeof given === "string" ? checkOut(given) : undefined;
   };
   const run: ToolDefinition<I, O>["run"] = async (input, session, out) => tool.run(input, session, out ?? prepare(input));

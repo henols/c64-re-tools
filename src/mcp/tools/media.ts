@@ -96,6 +96,7 @@ const c64DiskAttach = defineTool({
 });
 
 const c64Snapshot = defineTool({
+  outActions: ["save"],
   name: "c64_snapshot",
   title: "Machine snapshots",
   description:
