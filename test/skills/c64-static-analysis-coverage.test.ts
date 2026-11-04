@@ -130,7 +130,7 @@ test("code regions and JMP tables are entry points, and analyzer data over execu
   db.close();
 });
 
-test("the jump and call targets from code of any origin are DXA entry points, but not in data, in dual-use bytes or outside the image", () => {
+test("the jump and call targets from code of the other origins are DXA entry points, but not in data, in dual-use bytes or outside the image", () => {
   const db = openForWrite(fresh());
   importFindings(db, {
     analyzer: "decompiler",
@@ -151,10 +151,16 @@ test("the jump and call targets from code of any origin are DXA entry points, bu
       { from: 0x4100, to: 0x40a0, kind: "jump" },
     ],
   });
+  // DXA's own reference: a DXA run does not seed itself with it.
+  importFindings(db, { analyzer: "dxa", coverage: [{ start: 0x5000, end: 0x50ff }], authoritative: { symbols: false, regions: true, references: false }, symbols: [], regions: [{ start: 0x5000, end: 0x50ff, type: "code" }], references: [{ from: 0x5000, to: 0x50c0, kind: "jump" }] });
   classifyRegion(db, { origin: "llm" }, { start: 0x4090, end: 0x4092, type: "dual-use" });
   addReference(db, { origin: "llm" }, { from: 0x4012, to: 0x40b0, kind: "jump" });
-  const image: ImageByte = (address) => (address >= 0x4000 && address <= 0x4fff ? 0xea : undefined);
-  assert.deepEqual(referenceTargets(db, image, [{ start: 0x4080, end: 0x408f }]), [0x4050, 0x4060, 0x40b0]);
+  // A reference of the LLM from bytes that the LLM then classified as data.
+  addReference(db, { origin: "llm" }, { from: 0x4015, to: 0x40d0, kind: "call" });
+  classifyRegion(db, { origin: "llm" }, { start: 0x4015, end: 0x4017, type: "bytes" });
+  const image: ImageByte = (address) => (address >= 0x4000 && address <= 0x50ff ? 0xea : undefined);
+  assert.deepEqual(referenceTargets(db, "dxa", image, [{ start: 0x4080, end: 0x408f }]), [0x4050, 0x4060, 0x40b0]);
+  assert.deepEqual(referenceTargets(db, "decompiler", image, [{ start: 0x4080, end: 0x408f }]), [0x40b0, 0x50c0], "the decompiler's own references are left out of its run");
   db.close();
 });
 

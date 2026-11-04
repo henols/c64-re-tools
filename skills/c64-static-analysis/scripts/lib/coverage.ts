@@ -35,20 +35,26 @@ export function codeEntries(db: DatabaseSync | undefined, image: ImageByte, spac
 }
 
 /**
- * The targets of the jump and call references from code in the knowledge, of
- * any origin, inside the image: entry points for DXA. DXA drops code that it
+ * The targets of the jump and call references from code in the knowledge,
+ * inside the image: entry points for DXA. DXA drops code that it
  * reaches on one route only when another route runs into an instruction, for
  * example into the operand of a BIT skip; which code it drops changes with
  * the seeds. A target in a data range would make that range code, and DXA
  * cannot decode both instructions of a dual-use region: such targets are left out.
+ * The references of the analyzer that runs are left out: fed back, a wrong
+ * decode would seed itself, and a re-analysis could not retire it. A
+ * reference from a data region of the user or the LLM is left out too: their
+ * regions win over the code region of an analyzer.
  */
-export function referenceTargets(db: DatabaseSync | undefined, image: ImageByte, dataRanges: readonly AddressRange[], space: Space = DEFAULT_SPACE): number[] {
+export function referenceTargets(db: DatabaseSync | undefined, analyzer: Analyzer, image: ImageByte, dataRanges: readonly AddressRange[], space: Space = DEFAULT_SPACE): number[] {
   const regions = listRegions(db, undefined, undefined, undefined, space);
   const code = regions.filter((region) => INSTRUCTION_REGION_TYPES.includes(region.type));
+  const data = regions.filter((region) => isSemantic(region.origin) && !INSTRUCTION_REGION_TYPES.includes(region.type));
   const dualUse = regions.filter((region) => region.type === "dual-use");
   const targets = new Set<number>();
   for (const reference of listReferences(db, undefined, undefined, undefined, space)) {
-    if ((reference.kind === "jump" || reference.kind === "call") && inRanges(code, reference.from)) targets.add(reference.to);
+    if (reference.kind !== "jump" && reference.kind !== "call") continue;
+    if (reference.origin !== analyzer && inRanges(code, reference.from) && !inRanges(data, reference.from)) targets.add(reference.to);
   }
   return [...targets].filter((address) => image(address) !== undefined && !inRanges(dataRanges, address) && !inRanges(dualUse, address)).sort((a, b) => a - b);
 }

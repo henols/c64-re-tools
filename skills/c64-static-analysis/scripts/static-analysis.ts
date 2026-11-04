@@ -321,21 +321,24 @@ async function analyze(call: Call): Promise<unknown> {
   // DXA has one list, without the coverage starts that it reaches by fall-through from another seed, for example the
   // instruction after a JSR. Each target stays a seed: DXA drops routes that fall-through would show as reached.
   const limits = analyzer === "dxa" ? DXA_LIMITS : DECOMPILER_LIMITS;
-  const targets = analyzer === "dxa" ? referenceTargets(reader, inProgram, dataRanges, space) : [];
+  const targets = analyzer === "dxa" ? referenceTargets(reader, analyzer, inProgram, dataRanges, space) : [];
   const fallThrough = (from: readonly number[]) => (coverage === undefined ? new Set<number>() : dxaFallThrough(from, coverage, inProgram, seeds.dataRanges));
   const reached = analyzer === "dxa" ? fallThrough([...known, ...idioms.entryPoints, ...fromCoverage]) : new Set<number>();
   const kinds = analyzer === "dxa" || coverage === undefined ? { routines: fromCoverage.filter((entry) => !reached.has(entry)), codeStarts: [] } : coverageSeedKinds(coverage, inProgram);
   const ordered = [...new Set([...known, ...idioms.entryPoints, ...kinds.routines, ...targets])];
   seeds.entryPoints = ordered.slice(0, limits.entryPoints).sort((a, b) => a - b);
-  const allCodeStarts = kinds.codeStarts.filter((entry) => !seeds.entryPoints.includes(entry));
+  const seeded = new Set(seeds.entryPoints);
+  const allCodeStarts = kinds.codeStarts.filter((entry) => !seeded.has(entry));
   const codeStarts = allCodeStarts.slice(0, limits.codeStarts);
   // The seeds over the limits of the analyzer: it never sees them.
   const cut = { analyzer, entryPoints: ordered.slice(limits.entryPoints), codeStarts: allCodeStarts.slice(limits.codeStarts), dataRanges: dataRanges.slice(limits.dataRanges) };
   const overLimit = { entryPoints: cut.entryPoints.length, codeStarts: cut.codeStarts.length, dataRanges: cut.dataRanges.length };
-  const romUsed = fromRom.filter((range) => seeds.dataRanges.includes(range)).length;
+  const usedRanges = new Set(seeds.dataRanges);
+  const romUsed = fromRom.filter((range) => usedRanges.has(range)).length;
   // DXA also decodes a coverage start that it did not get, when a seed that it got reaches the start by fall-through.
   const followed = analyzer === "dxa" ? fallThrough(seeds.entryPoints) : new Set<number>();
-  const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry) || codeStarts.includes(entry) || followed.has(entry)).length;
+  const started = new Set(codeStarts);
+  const coverageUsed = fromCoverage.filter((entry) => seeded.has(entry) || started.has(entry) || followed.has(entry)).length;
   // Platform names are C64 names: drive code and banks get none.
   const platform = space === DEFAULT_SPACE ? platformNames() : [];
   /** The analyzer version of the last analysis of these bytes: a new version can change the findings by itself. */
