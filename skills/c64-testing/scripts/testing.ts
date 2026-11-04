@@ -5,6 +5,8 @@
 // show tells what a recording holds; diff shows what changed between two
 // states; checklist gives the Markdown list for a human tester.
 
+import { basename } from "node:path";
+
 import { symbolsPath } from "#src/build-name.ts";
 import { COVERAGE, formatC64Address } from "#src/c64.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
@@ -255,7 +257,7 @@ const COMMANDS: CommandSpec[] = [
           ...values.pin.flatMap((item) => ["--pin", item]),
           ...(rebuild === undefined ? [] : ["--rebuild", rebuild]),
           ...(symbols === undefined ? [] : ["--symbols", symbols]),
-          ...(out === undefined ? [] : ["--out", `${out}/${first.recording.replace(/\/+$/, "").split("/").at(-1)!}`]),
+          ...(out === undefined ? [] : ["--out", `${out}/${basename(first.recording)}`]),
         ];
         return reply(all, { hint: `Each item of recordings has the result of one recording. Run nextAction: it replays the first recording that did not pass alone, and its result gives the hint for it.${entryState}`, nextAction: call.next("replay", first.recording, ...flags) });
       }

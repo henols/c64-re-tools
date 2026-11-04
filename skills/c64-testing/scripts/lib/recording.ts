@@ -524,8 +524,13 @@ export function trackInput(core: Pick<C64RunSession, "onInput" | "peek" | "statu
     typedFrom = undefined;
   };
   const cover = (from: number, to: number) => {
-    const first = spans.findIndex((span) => span.from >= from);
-    if (since === undefined && first >= 0) spans.splice(first, spans.length - first, { from, to: Math.max(to, spans.at(-1)!.to) });
+    const later = spans.filter((span) => span.from >= from);
+    const earlier = spans.filter((span) => span.from < from);
+    // An input that is still held (a joystick) carries the step: its open span starts at the step.
+    if (since !== undefined) since = Math.min(since, from);
+    else if (later.length > 0) earlier.push({ from, to: Math.max(to, ...later.map((span) => span.to)) });
+    else return;
+    spans.splice(0, spans.length, ...earlier);
   };
   const end = (at: number) => {
     core.onInput(undefined);

@@ -5,6 +5,7 @@
 // comparison, else the record file gave it.
 
 import { existsSync } from "node:fs";
+import { basename } from "node:path";
 
 import { symbolsPath } from "#src/build-name.ts";
 import { isRefusal, Refusal } from "#src/errors.ts";
@@ -63,7 +64,7 @@ export interface ReplayAll {
 export async function replayAll(folders: readonly string[], values: Omit<ReplayOptions, "folder" | "screen">, one: (values: ReplayOptions) => Promise<ReplayResult> = replay): Promise<ReplayAll> {
   const recordings: ReplayResult[] = [];
   for (const folder of folders) {
-    const name = folder.replace(/\/+$/, "").split("/").at(-1)!;
+    const name = basename(folder);
     try {
       recordings.push(await one({ ...values, folder, ...(values.out === undefined ? {} : { out: `${values.out}/${name}` }) }));
     } catch (error) {

@@ -290,6 +290,10 @@ test("replayAll replays the recordings in turn with the same options and an --ou
   assert.deepEqual(calls, ["tests/recordings/a main_loop room build/clean.prg results/a", "b/ main_loop room build/clean.prg results/b", "c main_loop room build/clean.prg results/c"]);
   assert.deepEqual({ ...all, recordings: all.recordings.map((item) => `${item.recording} ${item.result}${item.reason === undefined ? "" : ` ${item.reason}`}`) }, { result: "FAIL", passed: 1, failed: 1, inconclusive: 1, recordings: ["tests/recordings/a PASS", "b/ FAIL", "c INCONCLUSIVE c is no recording"] });
   assert.equal((await replayAll(["a", "c"], { state: [], pin: [] }, one)).result, "INCONCLUSIVE");
+  // The folder of an absolute path gets the name of the recording folder alone.
+  calls.length = 0;
+  await replayAll([join(project, "tests", "recordings", "d")], { state: [], pin: [], out: "results" }, one);
+  assert.ok(calls[0]!.endsWith(" results/d"), calls[0]);
   await assert.rejects(
     replayAll(["a"], { state: [], pin: [] }, async () => {
       throw new Refusal("installation-incomplete", "c64run is missing");
@@ -433,6 +437,14 @@ test("the input of a record spans from an input while none is held to the end of
   key(0x82, false);
   step.cover(0, 5000);
   assert.deepEqual(step.spans(9000), [{ from: 0, to: 5000 }]);
+  // A press step while the joystick is held: the open span of the joystick starts at the step.
+  const held = trackInput(core);
+  joy(0x10);
+  key(0x81, true);
+  key(0x81, false);
+  held.cover(50, (tick += 100));
+  joy(0);
+  assert.deepEqual(held.spans(99_000), [{ from: 50, to: tick }]);
 });
 
 test("the entry state check compares only what the loader writes: the segments in pages 0-3 and the pages that the entry state has", () => {
