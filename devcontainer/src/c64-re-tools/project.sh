@@ -7,6 +7,7 @@
 #   project.sh install   the native tools, then the toolkit into the project (after create)
 #   project.sh update    the same at each start; on a failure the installed copy stays.
 #                        A new version tells the user to restart the agent session.
+# install and update then fill the npx cache of the MCP server (mcp_cache).
 # npx runs with --prefer-online: its cached package data can be minutes old and
 # not know a version that the registry just named.
 
@@ -77,6 +78,33 @@ tools() {
     echo "${VERSION}" | as_root tee "${SHARE}/tools.version" > /dev/null
 }
 
+# Fills the npx cache folder of the MCP server, so that no agent session must
+# install it. The MCP declaration starts npx -y --package=<spec> c64-re-tools-mcp
+# with the npm tag of VERSION, and npx keys its folder by that spec. A session
+# that stops during that install, or two sessions that install at the same time,
+# leave an incomplete folder that npx uses again: then the server does not start.
+# --help loads each module of the server, so it finds such a folder. Then the
+# folder is removed and filled again.
+mcp_cache() {
+    local spec cache folder
+    spec="@henols/c64-re-tools@latest"
+    [[ "${VERSION}" == *-* ]] && spec="@henols/c64-re-tools@next"
+    local run=(npx --prefer-online -y "--package=${spec}" c64-re-tools-mcp --help)
+    if "${run[@]}" > /dev/null 2>&1; then
+        return 0
+    fi
+    cache="$(npm config get cache)"
+    for folder in "${cache}"/_npx/*/; do
+        if grep -qF "\"${spec}\"" "${folder}package.json" 2> /dev/null; then
+            rm -rf "${folder}"
+        fi
+    done
+    if ! "${run[@]}" > /dev/null; then
+        say "the MCP server ${spec} does not start, so the agent cannot use the emulator."
+        return 1
+    fi
+}
+
 case "${1:-}" in
     tools)
         resolve || { say "the registry ${REGISTRY} gave no version for the channel ${CHANNEL}."; exit 1; }
@@ -85,7 +113,8 @@ case "${1:-}" in
     install)
         resolve || { say "the registry ${REGISTRY} gave no version for the channel ${CHANNEL}."; exit 1; }
         tools
-        exec npx --prefer-online -y "@henols/c64-re-tools@${VERSION}" install --target "${TARGET}"
+        npx --prefer-online -y "@henols/c64-re-tools@${VERSION}" install --target "${TARGET}"
+        mcp_cache
         ;;
     update)
         BEFORE="$(cat "${SHARE}/tools.version" 2> /dev/null || true)"
@@ -96,11 +125,14 @@ case "${1:-}" in
         else
             if ! npx --prefer-online -y "@henols/c64-re-tools@${VERSION}" update --target "${TARGET}"; then
                 say "the update failed; the installed copy stays."
-            elif [[ -n "${BEFORE}" && "${BEFORE}" != "${VERSION}" ]]; then
-                say "updated from ${BEFORE} to ${VERSION}. Restart the agent session so that its MCP server runs ${VERSION}."
-                # The MCP server runs the npm tag of its version: from a prerelease to a release, @next becomes @latest.
-                if [[ "${BEFORE}" == *-* && "${VERSION}" != *-* ]]; then
-                    say "${VERSION} is a release and newer than the newest prerelease, so the MCP server uses @latest."
+            else
+                mcp_cache || true
+                if [[ -n "${BEFORE}" && "${BEFORE}" != "${VERSION}" ]]; then
+                    say "updated from ${BEFORE} to ${VERSION}. Restart the agent session so that its MCP server runs ${VERSION}."
+                    # The MCP server runs the npm tag of its version: from a prerelease to a release, @next becomes @latest.
+                    if [[ "${BEFORE}" == *-* && "${VERSION}" != *-* ]]; then
+                        say "${VERSION} is a release and newer than the newest prerelease, so the MCP server uses @latest."
+                    fi
                 fi
             fi
         fi

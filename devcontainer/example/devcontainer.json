@@ -25,6 +25,10 @@
     "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
   },
 
+  // The editor starts the agent only after the Feature installs or updates the toolkit and its MCP server.
+  // Without it, an agent can start the MCP server during that install, and the MCP server then does not start.
+  "waitFor": "postStartCommand",
+
   // Lets the container reach the Host Runtime as host.docker.internal with Docker on Linux.
   // Docker Desktop (macOS, Windows) and Podman do not need it; remove it for Podman.
   "runArgs": ["--add-host=host.docker.internal:host-gateway"],

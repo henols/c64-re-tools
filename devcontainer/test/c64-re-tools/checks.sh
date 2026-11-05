@@ -33,4 +33,13 @@ check "the tools are of the channel ${CHANNEL}: ${VERSION}" bash -c "test \"\$(c
 check "the skills are of the channel ${CHANNEL}: ${VERSION}" bash -c "grep -F '\"version\": \"${VERSION}\"' .claude/skills/c64-knowledge/package.json"
 check "the MCP server runs the npm tag ${TAG}" bash -c "grep -F -- '--package=@henols/c64-re-tools@${TAG}\"' .mcp.json"
 
+# The npx cache folder of the MCP server, as the agent starts it.
+MCP_SPEC="@henols/c64-re-tools@${TAG}"
+MCP_FOLDER="$(grep -lF "\"${MCP_SPEC}\"" "$(npm config get cache)"/_npx/*/package.json | xargs dirname)"
+check "the MCP server starts from the npx cache without the registry" bash -c "npx --offline -y --package=${MCP_SPEC} c64-re-tools-mcp --help | grep -q '^c64-re-tools-mcp'"
+check "a start repairs an incomplete npx cache of the MCP server" bash -c "rm -rf '${MCP_FOLDER}/node_modules/zod/v4' \
+    && ! npx --offline -y --package=${MCP_SPEC} c64-re-tools-mcp --help > /dev/null 2>&1 \
+    && /usr/local/share/c64-re-tools/project.sh update \
+    && npx --offline -y --package=${MCP_SPEC} c64-re-tools-mcp --help | grep -q '^c64-re-tools-mcp'"
+
 reportResults
