@@ -79,9 +79,10 @@ curl -fsSL -o .devcontainer/devcontainer.json https://raw.githubusercontent.com/
 
 Its comments tell what to change: the harness, the release channel, the image
 and the address of the Host Runtime. If the project already has a
-`devcontainer.json`, copy the c64-re-tools Feature, `runArgs` and `appPort` into it.
-`appPort` publishes the page of a c64-testing play run on
-http://localhost:6465/ of your computer; rebuild the container after you add it.
+`devcontainer.json`, copy the c64-re-tools Feature, `runArgs` and `forwardPorts` into it.
+`forwardPorts` lets the editor forward the page of a c64-testing play run to
+http://localhost:6465/ of your computer, or to a free port when 6465 is in use;
+rebuild the container after you add it.
 
 Open the project in the container, for example with "Reopen in Container" in
 VS Code, or with `npx -y @devcontainers/cli up --workspace-folder .`. The

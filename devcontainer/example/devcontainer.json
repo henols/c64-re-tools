@@ -29,9 +29,11 @@
   // Docker Desktop (macOS, Windows) and Podman do not need it; remove it for Podman.
   "runArgs": ["--add-host=host.docker.internal:host-gateway"],
 
-  // Publishes the page of a c64-testing play run (port 6465) on this computer only, at http://localhost:6465/.
-  // When 6465 is in use on this computer (two containers), change the first 6465 and open that port.
-  "appPort": ["127.0.0.1:6465:6465"],
+  // The editor forwards the page of a c64-testing play run (port 6465) to this computer, at http://localhost:6465/.
+  // When 6465 is in use on this computer, the editor uses a different port: see its Ports view.
+  // Without an editor (the devcontainer CLI), use "appPort": ["127.0.0.1:6465:6465"] in its place.
+  "forwardPorts": [6465],
+  "portsAttributes": { "6465": { "label": "c64-testing play" } },
 
   "containerEnv": {
     // "pal" or "ntsc": the video standard of the C64.
