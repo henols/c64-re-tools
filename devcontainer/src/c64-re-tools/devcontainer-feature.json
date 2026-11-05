@@ -22,6 +22,6 @@
   "dependsOn": {
     "ghcr.io/devcontainers/features/node:1": { "version": "24" }
   },
-  "postCreateCommand": "/usr/local/share/c64-re-tools/project.sh install",
+  "onCreateCommand": "/usr/local/share/c64-re-tools/project.sh install",
   "postStartCommand": "/usr/local/share/c64-re-tools/project.sh update"
 }

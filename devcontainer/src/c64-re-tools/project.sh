@@ -4,7 +4,7 @@
 # tools of that version (tools/install-container.sh of its npm package), so
 # the tools and the skills are always of the same version.
 #   project.sh tools     the native tools only (at image build, as root)
-#   project.sh install   the native tools, then the toolkit into the project (after create)
+#   project.sh install   the native tools, then the toolkit into the project (at create)
 #   project.sh update    the same at each start; on a failure the installed copy stays.
 #                        A new version tells the user to restart the agent session.
 # install and update then fill the npx cache of the MCP server (mcp_cache).
@@ -78,13 +78,9 @@ tools() {
     echo "${VERSION}" | as_root tee "${SHARE}/tools.version" > /dev/null
 }
 
-# Fills the npx cache folder of the MCP server, so that no agent session must
-# install it. The MCP declaration starts npx -y --package=<spec> c64-re-tools-mcp
-# with the npm tag of VERSION, and npx keys its folder by that spec. A session
-# that stops during that install, or two sessions that install at the same time,
-# leave an incomplete folder that npx uses again: then the server does not start.
-# --help loads each module of the server, so it finds such a folder. Then the
-# folder is removed and filled again.
+# Fills the npx cache folder that the MCP declaration uses
+# (npx -y --package=<spec> c64-re-tools-mcp). When the server does not start
+# from that folder, removes the folder and fills it again.
 mcp_cache() {
     local spec cache folder
     spec="@henols/c64-re-tools@latest"

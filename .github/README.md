@@ -79,8 +79,7 @@ curl -fsSL -o .devcontainer/devcontainer.json https://raw.githubusercontent.com/
 
 Its comments tell what to change: the harness, the release channel, the image
 and the address of the Host Runtime. If the project already has a
-`devcontainer.json`, copy the c64-re-tools Feature, `waitFor`, `runArgs` and `forwardPorts` into it.
-`waitFor` keeps the agent from starting before the Feature has installed the toolkit.
+`devcontainer.json`, copy the c64-re-tools Feature, `runArgs` and `forwardPorts` into it.
 `forwardPorts` lets the editor forward the page of a c64-testing play run to
 http://localhost:6465/ of your computer, or to a free port when 6465 is in use;
 rebuild the container after you add it.
